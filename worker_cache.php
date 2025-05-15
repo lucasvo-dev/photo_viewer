@@ -206,13 +206,15 @@ while ($running) {
                                 }
 
                             } catch (PDOException $e) {
-                                // Kiểm tra lỗi "database is locked" (SQLITE_BUSY = 5)
-                                if ($e->getCode() == 5 && $attempt < $max_retries) {
-                                    error_log("[{$timestamp}] [Job {$job_id}] DB lock detected on progress update (attempt {$attempt}/{$max_retries}). Retrying in {$retry_delay_ms}ms...");
+                                // MySQL error codes for lock issues: 1205 (Lock wait timeout), 1213 (Deadlock)
+                                // $e->errorInfo[1] usually holds the driver-specific error code.
+                                $driver_error_code = $e->errorInfo[1] ?? null;
+                                if (($driver_error_code == 1205 || $driver_error_code == 1213) && $attempt < $max_retries) {
+                                    error_log("[{$timestamp}] [Job {$job_id}] DB lock/timeout detected on progress update (attempt {$attempt}/{$max_retries}). MySQL Error Code: {$driver_error_code}. Retrying in {$retry_delay_ms}ms...");
                                     usleep($retry_delay_ms * 1000); // Chờ trước khi thử lại
                                 } else {
                                     // Lỗi khác hoặc hết số lần thử lại
-                                    error_log("[{$timestamp}] [Job {$job_id}] Failed to update progress in DB after {$attempt} attempts (processed: {$files_processed_counter}, file: {$current_file_path_relative}): " . $e->getMessage());
+                                    error_log("[{$timestamp}] [Job {$job_id}] Failed to update progress in DB after {$attempt} attempts (processed: {$files_processed_counter}, file: {$current_file_path_relative}): " . $e->getMessage() . " (Driver Code: {$driver_error_code})");
                                     // Thoát khỏi vòng lặp thử lại sau khi log lỗi cuối
                                     return; 
                                 }
