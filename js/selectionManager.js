@@ -218,19 +218,23 @@ export async function handleDownloadSelected() {
     }
 
     if (downloadActionTaken) {
-        const messages = [];
-        if (videosToDownloadDetails.length > 0) {
-            messages.push(`${videosToDownloadDetails.length} video(s) are being downloaded directly.`);
+        const videoMessage = videosToDownloadDetails.length > 0 ? `${videosToDownloadDetails.length} video(s) are being downloaded directly.` : null;
+        const zipRequested = imagesToZipPaths.length > 0;
+
+        if (videoMessage) {
+            // If there are also ZIPs, the panel will handle that feedback.
+            // So, only show modal for videos, or if ONLY videos are actioned.
+            showModalWithMessage(videoMessage);
+        } else if (!zipRequested) {
+            // This case should ideally not be reached if downloadActionTaken is true
+            // unless an unknown item type was processed without feedback.
+            // For safety, show a generic message if only unknown actions occurred.
+            showModalWithMessage('Yêu cầu đã được xử lý.');
         }
-        if (imagesToZipPaths.length > 0) {
-            messages.push(`A ZIP archive for ${imagesToZipPaths.length} item(s) is being prepared.`);
-        }
-        showModalWithMessage(messages.join(' '));
+        // If only zipRequested is true, no modal is shown here. The ZIP panel is the feedback.
         
         clearAllSelections();
-        // Consider if selection mode should always be toggled off or only if downloads were actually started.
-        // For now, consistent with previous behavior if any action was taken.
-        toggleMode();
+        toggleMode(); // toggleMode was named toggleImageSelectionMode before, ensure it's the correct function name
     } else {
         showModalWithMessage('Không có mục hợp lệ nào được tìm thấy để tải về từ lựa chọn của bạn.');
     }
