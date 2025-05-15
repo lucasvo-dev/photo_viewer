@@ -14,12 +14,15 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
     const div = document.createElement('div');
     div.className = 'image-item'; // Masonry will use this class as its itemSelector
     div.dataset.sourcePath = imgData.path;
+    div.dataset.itemType = imgData.type || 'image'; // Store item type
 
     const anchor = document.createElement('a');
     anchor.className = 'photoswipe-trigger';
-    const fullImagePath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
-    anchor.href = fullImagePath;
-    anchor.dataset.pswpSrc = fullImagePath;
+    // For images, fullImagePath is the image itself. For videos, this will be the video file.
+    const mediaPath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
+    anchor.href = mediaPath; 
+    // data-pswp-src will be handled by photoswipeHandler based on type
+    // anchor.dataset.pswpSrc = mediaPath; 
 
     if (imageIndex !== -1) {
         anchor.dataset.pswpIndex = imageIndex;
@@ -30,18 +33,17 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
         if (imageIndex !== -1) {
             openPhotoSwipeCallback(imageIndex);
         } else {
-            // Fallback logic: if the provided index was -1, try to find it dynamically.
-            // This is a safeguard, ideally imageIndex is correctly pre-calculated.
             const freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
             if (freshIndex !== -1) {
                 openPhotoSwipeCallback(freshIndex);
             } else {
-                console.error("Could not find image index for (onclick):", imgData.name, imgData.path);
+                console.error("Could not find media index for (onclick):", imgData.name, imgData.path);
             }
         }
     };
 
     const img = document.createElement('img');
+    // Thumbnail path is the same for images and videos (get_thumbnail handles it)
     const thumbSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
     img.src = thumbSrc;
     img.alt = imgData.name;
@@ -52,6 +54,16 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
     };
 
     anchor.appendChild(img);
+
+    // Add play icon overlay for video items
+    if (imgData.type === 'video') {
+        const playIcon = document.createElement('div');
+        playIcon.className = 'play-icon-overlay';
+        playIcon.innerHTML = '&#9658;'; // Unicode play symbol (▶)
+        anchor.appendChild(playIcon);
+        div.classList.add('video-item'); // Add class for specific video item styling
+    }
+
     div.appendChild(anchor);
     return div;
 }

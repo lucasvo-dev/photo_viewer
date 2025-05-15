@@ -494,5 +494,77 @@ function create_thumbnail($source_path, $cache_path, $thumb_size = 150)
     }
 }
 
+/**
+ * Creates a thumbnail for a video file using FFmpeg.
+ *
+ * @param string $video_source_path Absolute path to the source video file.
+ * @param string $cache_path Absolute path where the thumbnail (JPEG) should be saved.
+ * @param int $thumb_size Target width for the thumbnail. Height will be scaled proportionally.
+ * @param string $ffmpeg_path Path to the FFmpeg executable (optional, defaults to \'ffmpeg\').
+ * @return bool True on success, false on failure.
+ */
+function create_video_thumbnail($video_source_path, $cache_path, $thumb_size = 150, $ffmpeg_path = 'ffmpeg') {
+    if (!is_file($video_source_path) || !is_readable($video_source_path)) {
+        error_log("[create_video_thumbnail] Source video not found or not readable: {$video_source_path}");
+        return false;
+    }
+
+    // Ensure cache directory exists
+    $cache_dir = dirname($cache_path);
+    if (!is_dir($cache_dir)) {
+        if (!@mkdir($cache_dir, 0775, true)) {
+            error_log("[create_video_thumbnail] Failed to create cache directory: {$cache_dir}");
+            return false;
+        }
+    }
+
+    // Delete existing cache file to ensure fresh thumbnail
+    if (file_exists($cache_path)) {
+        @unlink($cache_path);
+    }
+
+    // FFmpeg command to extract a frame, scale it, and save as JPEG
+    // -y: overwrite output files without asking
+    // Seeking to 3 seconds to get a more representative frame.
+    // format=yuvj420p is often needed for broad JPEG compatibility.
+    // -q:v 3 is a good quality setting for JPEG output.
+    $cmd = sprintf('%s -ss 00:00:03 -i "%s" -frames:v 1 -vf "scale=%d:-1,format=yuvj420p" -q:v 3 "%s" 2>&1',
+        escapeshellcmd($ffmpeg_path),      // Sanitize ffmpeg path
+        escapeshellarg($video_source_path), // Sanitize source path
+        $thumb_size,
+        escapeshellarg($cache_path)        // Sanitize cache path
+    );
+
+    $output = [];
+    $return_var = -1;
+    exec($cmd, $output, $return_var);
+
+    if ($return_var !== 0) {
+        error_log("[create_video_thumbnail] FFmpeg failed for '{$video_source_path}'. Return var: {$return_var}. Output: " . implode("\n", $output));
+        if (file_exists($cache_path)) { @unlink($cache_path); } // Clean up failed attempt
+        return false;
+    }
+
+    if (!file_exists($cache_path) || filesize($cache_path) === 0) {
+        error_log("[create_video_thumbnail] FFmpeg command seemed to succeed, but output file '{$cache_path}' was not created or is empty.");
+        if (file_exists($cache_path)) { @unlink($cache_path); } // Clean up
+        return false;
+    }
+
+    // Optionally, verify it's a valid image (though FFmpeg should handle this)
+    // if (!@getimagesize($cache_path)) {
+    //     error_log("[create_video_thumbnail] Output file '{$cache_path}' is not a valid image.");
+    //     if (file_exists($cache_path)) { @unlink($cache_path); }
+    //     return false;
+    // }
+    
+    error_log("[create_video_thumbnail] Successfully created thumbnail for '{$video_source_path}' at '{$cache_path}'");
+    return true;
+}
+
+
+// --- Cache Management ---
+// ... existing code ...
+
 // Add any other helper functions from api.php here...
 // Note: sanitize_subdir was marked as DEPRECATED, so it's omitted unless needed. 

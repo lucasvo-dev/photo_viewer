@@ -228,51 +228,73 @@ while ($running) {
                     if (!$running) break; // Kiểm tra shutdown trước khi xử lý file
 
                     error_log("[{$timestamp}] [Job {$job_id}] Processing item: " . $fileinfo->getPathname());
-                    if ($fileinfo->isFile() && $fileinfo->isReadable() && in_array(strtolower($fileinfo->getExtension()), $allowed_ext, true)) {
-                        $files_processed_counter++; // Tăng biến đếm cục bộ
-                        $image_absolute_path = $fileinfo->getRealPath();
-                        $image_relative_to_source = ltrim(substr($image_absolute_path, strlen(IMAGE_SOURCES[$source_key]['path'])), '\\/');
-                        $image_source_prefixed_path = $source_key . '/' . str_replace('\\', '/', $image_relative_to_source);
+                    $extension = strtolower($fileinfo->getExtension());
+                    // Use the globally defined ALLOWED_EXTENSIONS from db_connect.php (which now includes videos)
+                    if ($fileinfo->isFile() && $fileinfo->isReadable() && in_array($extension, ALLOWED_EXTENSIONS, true)) {
+                        $files_processed_counter++;
+                        $source_absolute_path = $fileinfo->getRealPath();
+                        $item_relative_to_source = ltrim(substr($source_absolute_path, strlen(IMAGE_SOURCES[$source_key]['path'])), '\\/');
+                        $item_source_prefixed_path = $source_key . '/' . str_replace('\\', '/', $item_relative_to_source);
 
-                        // +++ CẬP NHẬT TIẾN TRÌNH (THEO THỜI GIAN) +++
-                        $update_progress($image_relative_to_source); // Thử cập nhật DB (chỉ chạy nếu đủ thời gian)
-                        // +++ KẾT THÚC CẬP NHẬT +++
+                        $update_progress($item_relative_to_source);
 
-                        // CHỈ TẠO KÍCH THƯỚC LỚN:
-                        $size = $large_thumb_size;
-                        $thumb_filename_safe = sha1($image_source_prefixed_path) . '_' . $size . '.jpg';
+                        $size = $large_thumb_size; // Worker only creates largest configured thumbnail size
+                        $thumb_filename_safe = sha1($item_source_prefixed_path) . '_' . $size . '.jpg'; // Video thumbs are also jpg
                         $cache_dir_for_size = CACHE_THUMB_ROOT . DIRECTORY_SEPARATOR . $size;
                         $cache_absolute_path = $cache_dir_for_size . DIRECTORY_SEPARATOR . $thumb_filename_safe;
 
                         if (!is_dir($cache_dir_for_size)) {
-                            if(!@mkdir($cache_dir_for_size, 0775, true)) { // Giữ lại @ ở mkdir vì nó ít quan trọng hơn GD
+                            if(!@mkdir($cache_dir_for_size, 0775, true)) {
                                 error_log("[{$timestamp}] [Job {$job_id}] Failed to create cache subdir: {$cache_dir_for_size}");
                                 $error_count++;
-                                $job_success = false;
-                                continue; // Bỏ qua file này nếu không tạo được thư mục cache
+                                $job_result_message .= "Error creating cache subdir {$cache_dir_for_size}. ";
+                                continue; // Skip this file
                             }
                         }
 
-                        if (file_exists($cache_absolute_path)) {
+                        if (file_exists($cache_absolute_path) && filesize($cache_absolute_path) > 0) {
+                            error_log("[{$timestamp}] [Job {$job_id}] Thumbnail already exists for: {$item_source_prefixed_path}");
                             $skipped_count++;
-                        } else {
-                            try {
-                                error_log("[{$timestamp}] [Job {$job_id}] Calling create_thumbnail for: " . $image_absolute_path . " -> " . $cache_absolute_path);
-                                if (create_thumbnail($image_absolute_path, $cache_absolute_path, $size)) {
-                                    $created_count++;
-                                } 
-                                // No 'else' needed here as create_thumbnail now throws Exception on failure
-                            } catch (Exception $thumb_e) {
-                                $error_count++;
-                                $job_success = false; // Mark job as having errors
-                                error_log("[{$timestamp}] [Job {$job_id}] Failed to create thumbnail for '{$image_absolute_path}': " . $thumb_e->getMessage());
-                                // Continue to the next file
-                            }
+                            continue; // Skip if thumbnail already exists
                         }
-                        // Kết thúc xử lý kích thước lớn cho file này
 
+                        // Determine if it's video or image
+                        $image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']; 
+                        $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+                        
+                        $is_video = in_array($extension, $video_extensions, true);
+                        $is_image = in_array($extension, $image_extensions, true);
+                        $created_thumb = false;
+
+                        if ($is_image) {
+                            error_log("[{$timestamp}] [Job {$job_id}] Creating image thumbnail for: {$item_source_prefixed_path}");
+                            $created_thumb = create_thumbnail($source_absolute_path, $cache_absolute_path, $size);
+                        } elseif ($is_video) {
+                            error_log("[{$timestamp}] [Job {$job_id}] Creating video thumbnail for: {$item_source_prefixed_path}");
+                            // Assuming ffmpeg is in PATH or $ffmpeg_path is configured elsewhere if needed by create_video_thumbnail helper
+                            $created_thumb = create_video_thumbnail($source_absolute_path, $cache_absolute_path, $size);
+                        } else {
+                            error_log("[{$timestamp}] [Job {$job_id}] Skipped unknown file type for thumbnailing: {$extension} for file {$item_source_prefixed_path}");
+                            $skipped_count++; // Count as skipped if neither image nor video we handle
+                            continue;
+                        }
+
+                        if ($created_thumb) {
+                            $created_count++;
+                        } else {
+                            error_log("[{$timestamp}] [Job {$job_id}] Failed to create thumbnail for: {$item_source_prefixed_path}");
+                            $error_count++;
+                            $job_result_message .= "Error creating thumbnail for {$item_source_prefixed_path}. ";
+                            // Optionally, decide if a single failed thumbnail should fail the whole job or just be logged.
+                            // For now, we continue processing other files but mark the job status later based on errors.
+                        }
                     } else {
-                         error_log("[{$timestamp}] [Job {$job_id}] Skipping item (not a valid/readable image file): " . $fileinfo->getPathname());
+                        if ($fileinfo->isFile() && $fileinfo->isReadable()) {
+                           error_log("[{$timestamp}] [Job {$job_id}] Skipped file with unallowed extension: " . $fileinfo->getPathname());
+                        } else if ($fileinfo->isFile() && !$fileinfo->isReadable()){
+                           error_log("[{$timestamp}] [Job {$job_id}] Skipped unreadable file: " . $fileinfo->getPathname());
+                        }
+                        // Do not increment $files_processed_counter for these, as they were not processable targets.
                     }
                      // Check for shutdown signal periodically inside the loop if needed
                      if (function_exists('pcntl_signal_dispatch')) pcntl_signal_dispatch();

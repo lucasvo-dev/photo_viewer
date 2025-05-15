@@ -1829,3 +1829,57 @@ body.select-mode-active .image-item a:hover img {
         display: block;
     }
 }
+
+/* Video Thumbnail Overlay */
+.image-item.video-item {
+    position: relative; /* Needed for absolute positioning of the overlay */
+}
+
+.play-icon-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 48px; /* Adjust size as needed */
+    color: rgba(255, 255, 255, 0.8);
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 50%;
+    width: 70px; /* Adjust size as needed */
+    height: 70px; /* Adjust size as needed */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none; /* Allow clicks to pass through to the anchor tag */
+    transition: opacity 0.2s ease-in-out;
+}
+
+.image-item.video-item:hover .play-icon-overlay {
+    opacity: 1;
+    background-color: rgba(0, 0, 0, 0.5);
+}
+
+/* PhotoSwipe Video Styling */
+.pswp-video-container {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.pswp-video-container video {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* Or cover, depending on desired behavior */
+}
+
+/* Responsive adjustments for play icon if needed */
+@media (max-width: 600px) {
+    .play-icon-overlay {
+        font-size: 32px;
+        width: 50px;
+        height: 50px;
+    }
+}
+
+/* Ensure app.js related styles, if any, are separate or reviewed */

@@ -34,7 +34,7 @@ return [
         ]
     ],
     'cache_thumb_root' => __DIR__ . '/cache/thumbnails', // Use __DIR__ here, db_connect will resolve realpath
-    'allowed_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'],
+    'allowed_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm'],
     'thumbnail_sizes' => [150, 750],
 
     // --- API Settings ---
