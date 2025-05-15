@@ -302,9 +302,6 @@ while ($running) {
             }
 
             $processed_files_count = 0;
-            $last_progress_update_time = time(); // Initialize with current time
-            $progress_update_interval_seconds = 5; // Max seconds between DB updates
-            $progress_update_interval_files = max(1, (int)($total_files_to_zip / 20)); // Update roughly every 5% or at least 1 file
 
             foreach ($files_to_add as $file_entry) {
                 if (!$running) throw new Exception("Worker shutdown initiated during ZIP creation.");
@@ -314,7 +311,7 @@ while ($running) {
                 
                 if ($zip->addFile($disk_path, $zip_path)) {
                     $processed_files_count++;
-                    // Optimized logging: Log first few, last few, and periodically, not every single file for large archives.
+                    // Optimized logging can remain here if needed
                     if ($processed_files_count <= 5 || $processed_files_count == $total_files_to_zip || ($processed_files_count % 100 == 0) ) {
                         error_log("{$log_prefix} Added to ZIP: {$disk_path} as {$zip_path} ({$processed_files_count}/{$total_files_to_zip})");
                     }
@@ -322,19 +319,30 @@ while ($running) {
                     error_log("{$log_prefix} WARNING: Failed to add file to ZIP: {$disk_path}");
                 }
 
-                // Update progress in DB periodically
-                $now = time();
-                if (($processed_files_count % $progress_update_interval_files == 0) || 
-                    ($now - $last_progress_update_time >= $progress_update_interval_seconds) || 
-                    $processed_files_count == $total_files_to_zip) {
-                    $current_file_rel_path = substr($disk_path, strlen($absolute_folder_path) + 1);
-                    update_zip_job_progress($pdo, $job_id, $processed_files_count, $current_file_rel_path, $log_prefix);
-                    $last_progress_update_time = $now;
+                // Update progress after every file is processed by the loop
+                $report_processed_count = $processed_files_count;
+                
+                // Ensure the loop itself doesn't report N/N files.
+                // If this update is for the last logical file processed by the loop:
+                if ($processed_files_count == $total_files_to_zip && $total_files_to_zip > 0) {
+                    // For a 1-file job, report_processed_count remains 1. The "Finalizing" step handles its messaging.
+                    // For a multi-file job, report_processed_count becomes total_files_to_zip - 1.
+                    $report_processed_count = ($total_files_to_zip == 1) ? 1 : max(0, $total_files_to_zip - 1);
                 }
+                
+                $current_file_for_report = substr($disk_path, strlen($absolute_folder_path) + 1);
+                update_zip_job_progress($pdo, $job_id, $report_processed_count, $current_file_for_report, $log_prefix);
             }
 
-            // Final progress update to 100% before marking as completed and closing zip
-            update_zip_job_progress($pdo, $job_id, $total_files_to_zip, $total_files_to_zip, "All files processed.", $current_job_details_for_log);
+            // Update progress to indicate finalization phase
+            $progress_count_for_finalizing = 0; // Default for 0 files
+            $message_for_finalizing = "Finalizing archive...";
+            if ($total_files_to_zip > 0) {
+                 // If total_files_to_zip is 1, this will show 1/1 "Finalizing..."
+                 // If total_files_to_zip > 1, this will show (N-1)/N "Finalizing..."
+                $progress_count_for_finalizing = ($total_files_to_zip == 1) ? 1 : max(0, $total_files_to_zip - 1);
+            }
+            update_zip_job_progress($pdo, $job_id, $progress_count_for_finalizing, $message_for_finalizing, $current_job_details_for_log);
 
             // NOW, close the zip and get filesize, then update DB
             $zip->close(); // SINGLE CLOSE HERE

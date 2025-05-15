@@ -12,7 +12,7 @@ import { closePhotoSwipeIfActive } from './photoswipeHandler.js';
 
 // --- NEW: Single Polling Interval for the Job Panel ---
 let panelPollingIntervalId = null;
-const PANEL_POLLING_INTERVAL_MS = 3000; // Poll every 3 seconds for all active jobs
+const PANEL_POLLING_INTERVAL_MS = 1000; // Poll every 1 second for all active jobs
 
 export function initializeZipManager() {
     console.log("[zipManager.js] ZIP Manager Initialized.");
