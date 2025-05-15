@@ -14,6 +14,8 @@
 *   **Thư viện JS:** PhotoSwipe 5 (xem ảnh)
 *   **Server:** Web server hỗ trợ PHP (ví dụ: XAMPP, Apache, Nginx)
 *   **PHP Extensions yêu cầu:** pdo_mysql, gd, zip, mbstring, fileinfo
+*   **Công cụ xử lý ảnh RAW (Dự kiến):** `dcraw` hoặc ImageMagick (với hỗ trợ RAW) để tạo preview JPEG từ file RAW.
+*   **Công cụ xử lý Video (Dự kiến):** FFmpeg để tạo thumbnail từ video.
 
 ## 3. Cấu trúc Dự án & Tệp quan trọng
 
@@ -53,6 +55,21 @@
 *   **Bảo vệ thư mục:** Mật khẩu hash lưu trong DB. `check_folder_access` kiểm tra quyền dựa trên session/DB. Frontend hiển thị prompt khi cần.
 *   **Thumbnail:** Mặc định tạo "on-the-fly" và cache lại. Worker `worker_cache.php` xử lý tạo cache cho kích thước lớn.
 *   **Quản trị:** Truy cập trang admin sau khi đăng nhập để quản lý mật khẩu và xem thống kê cơ bản.
+*   **(Dự kiến) Xử lý File RAW:**
+    *   Hệ thống sẽ nhận diện các file ảnh RAW (ví dụ: .ARW, .NEF, .CR2).
+    *   Worker nền sẽ tự động tạo các bản preview JPEG (thumbnail nhỏ và ảnh xem kích thước lớn) từ file RAW gốc.
+    *   Người dùng (client, designer, admin) sẽ tương tác (xem, chọn) với các bản preview JPEG này. File RAW gốc được giữ nguyên cho các mục đích xử lý chuyên sâu hoặc tải về (nếu có cấu hình).
+*   **(Dự kiến) Luồng làm việc Lọc ảnh (Culling):**
+    *   **Designer:** Đăng nhập vào khu vực làm việc, duyệt các album chứa file RAW (hiển thị dưới dạng preview JPEG). Designer có thể "chọn" (pick) các ảnh mong muốn. Lựa chọn này được lưu lại, gắn với thông tin của designer.
+    *   **Admin:** Đăng nhập, có thể xem lại các lựa chọn của designer trong từng album. Ảnh được designer chọn sẽ có đánh dấu trực quan. Admin có thể xem thống kê (ví dụ: designer nào chọn bao nhiêu ảnh, tổng số ảnh được chọn). Nhiều designer có thể cùng lọc một bộ ảnh.
+*   **(Dự kiến) Quản lý File & Thư mục cho Admin:**
+    *   Admin có quyền upload ảnh/video mới lên các thư mục nguồn đã định nghĩa.
+    *   Admin có quyền xóa file (ảnh/video và thumbnail tương ứng).
+    *   Admin có quyền tạo và xóa thư mục trong các nguồn ảnh.
+*   **(Dự kiến) Hỗ trợ Video:**
+    *   Nhận diện các định dạng video phổ biến.
+    *   Tạo thumbnail cho video bằng FFmpeg.
+    *   Phát video trong lightbox (ví dụ: PhotoSwipe) sử dụng thẻ HTML5 `<video>`.
 
 ## 5. Tình trạng Hiện tại
 
@@ -84,28 +101,50 @@
     *   Cải thiện UX nút yêu cầu cache để cập nhật trạng thái "Đang chờ xử lý" ngay lập tức.
 *   **Đã triển khai bảng điều khiển (panel) hàng đợi ZIP bất đồng bộ trên giao diện người dùng, cung cấp phản hồi trực quan về nhiều công việc nén ZIP cùng lúc.**
 
-## 6. Các Cải tiến & Tối ưu Tiềm năng trong Tương lai
+## 6. Lộ trình Phát triển Tiếp theo (Roadmap & Features Dự kiến)
 
-*   **Tối ưu Hiệu suất (Ưu tiên cao):**
-    *   **Tạo Thumbnail trước:** Tạo sẵn thumbnail thay vì tạo động qua API.
-    *   **Tối ưu Tạo ZIP:** Sử dụng background job hoặc streaming.
-    *   **Tối ưu Liệt kê Ảnh (`list_files`):** Cache kích thước ảnh, cân nhắc phân trang phía server hiệu quả hơn.
-*   **Cải thiện UX/UI:**
-    *   **Hiệu ứng Skeleton Loading:** Thay thế text "Đang tải..." bằng hiệu ứng khung xương.
-    *   **Cải thiện Tìm kiếm:** Thêm gợi ý (autocomplete), làm nổi bật kết quả.
-    *   **Xử lý Lỗi Tốt hơn:** Hiển thị thông báo lỗi thân thiện hơn.
-    *   **Tinh chỉnh Font chữ:** Xem xét lại font web nếu cần.
-    *   **Kiểm tra Khả năng Tiếp cận (Accessibility - a11y):** Đảm bảo tuân thủ các tiêu chuẩn a11y.
-*   **Chất lượng Mã nguồn & Khả năng Bảo trì:**
-    *   **Biến CSS:** Sử dụng biến CSS cho màu sắc, font, khoảng cách.
-    *   **Modular hóa Code:** Chia nhỏ file CSS/JS khi dự án lớn hơn.
-    *   **Kiểm thử (Testing):** Thêm unit/integration test cho backend.
-*   **Tính năng Mới Tiềm năng:**
-    *   Sắp xếp/lọc album/ảnh.
-    *   Chế độ xem danh sách.
-    *   Chia sẻ/tải ảnh đơn lẻ.
-    *   Hiển thị metadata EXIF.
-    *   Mở rộng Trang Admin.
+Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự kiến phát triển bao gồm:
+
+*   **Hỗ trợ File RAW và Tạo Preview JPEG:**
+    *   Tích hợp công cụ xử lý RAW (ví dụ: `dcraw`, ImageMagick) để tự động tạo thumbnail và ảnh preview JPEG từ các định dạng file RAW phổ biến (ARW, NEF, CR2, v.v.).
+    *   Cập nhật `worker_cache.php` để xử lý các tác vụ này.
+    *   Hiển thị preview JPEG trong lưới ảnh và lightbox, trong khi vẫn quản lý file RAW gốc.
+
+*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin:**
+    *   **Cơ sở dữ liệu:** Tạo bảng `image_selections` để lưu trữ các lựa chọn ảnh của designer.
+    *   **API:** Xây dựng API cho designer để chọn/bỏ chọn ảnh, và cho admin để xem lại các lựa chọn.
+    *   **Giao diện Designer:** Cho phép designer duyệt album (preview JPEG của file RAW) và "pick" ảnh. Lựa chọn được lưu lại.
+    *   **Giao diện Admin (Review):** Hiển thị các ảnh đã được designer chọn (ví dụ: với tag đặc biệt), cung cấp thống kê và khả năng lọc theo designer.
+
+*   **Hỗ trợ Định dạng Video:**
+    *   **Nhận diện & Liệt kê:** Cập nhật hệ thống để nhận diện và liệt kê các file video phổ biến (MP4, MOV, v.v.).
+    *   **Tạo Thumbnail Video:** Tích hợp FFmpeg để tự động tạo thumbnail cho video thông qua `worker_cache.php`.
+    *   **Phát Video:** Cho phép xem video trực tiếp trong PhotoSwipe hoặc một modal riêng biệt, sử dụng thẻ HTML5 `<video>`.
+
+*   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
+    *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.
+    *   **Delete File:** Cho phép admin xóa file ảnh/video (bao gồm cả thumbnail và các dữ liệu liên quan).
+    *   **Create/Delete Folder:** Cho phép admin tạo thư mục mới và xóa thư mục (bao gồm cả nội dung bên trong một cách cẩn trọng).
+
+*   **Tính năng Chọn nhiều ảnh để tải về cho Khách hàng:**
+    *   Cho phép khách hàng chọn nhiều ảnh trong một album.
+    *   Cung cấp nút "Tải về các ảnh đã chọn" để tạo file ZIP chứa các ảnh đó.
+
+*   **Tách biệt Không gian làm việc:**
+    *   Phân định rõ ràng khu vực dành cho khách hàng (xem/tải) và khu vực làm việc của admin/designer (quản lý nội dung, lọc ảnh).
+
+*   **Tối ưu Hiệu suất (Tiếp tục):**
+    *   Đánh giá và tối ưu hiệu suất cho việc tạo preview RAW, thumbnail video.
+    *   Tối ưu các truy vấn CSDL liên quan đến tính năng mới.
+
+*   **Cải thiện UX/UI (Tiếp tục):**
+    *   Đảm bảo giao diện cho các tính năng mới trực quan và dễ sử dụng, đặc biệt là cho việc lọc ảnh và quản lý file.
+
+*   **Chất lượng Mã nguồn & Khả năng Bảo trì (Tiếp tục):**
+    *   Duy trì cấu trúc code rõ ràng khi thêm các module mới.
+
+*   **Kiểm thử (Testing):**
+    *   Kiểm thử kỹ lưỡng các tính năng mới trên nhiều trình duyệt và thiết bị.
 
 ## 7. Ghi chú & Cân nhắc Chung
 
@@ -178,6 +217,12 @@
             *   Thêm bước kiểm tra an toàn vào script dọn dẹp cache (`cron_cache_manager.php`) để ngăn việc xóa toàn bộ cache khi không tìm thấy ảnh gốc.
         *   **Trước đó:**
             *   Thêm cột `image_count` vào DB, sửa worker để lưu số lượng ảnh cache.
+
+*   **2025-05-16 (Bạn & AI):**
+    *   **Hoàn thiện và sửa lỗi chức năng tải ZIP nhiều ảnh đã chọn:**
+        *   Đã sửa worker ZIP để sử dụng đúng hàm validate_source_and_file_path cho từng file được chọn, đảm bảo mọi ảnh trong thư mục đều được nhận diện và nén chính xác.
+        *   Đảm bảo tính ổn định và đồng nhất giữa môi trường dev và production cho tính năng tải ZIP nhiều ảnh.
+        *   Đã kiểm thử thành công end-to-end: chọn nhiều ảnh trong thư mục, tạo ZIP, tải về hoạt động ổn định.
 
 ## 8. Kiểm thử End-to-End (Playwright)
 

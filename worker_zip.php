@@ -239,58 +239,123 @@ while ($running) {
             }
 
             // --- If we reach here, job status is 'processing' ---
-            $folder_source_prefixed_path = $job['source_path'];
+            $source_path_from_job = $job['source_path'];
+            $items_json_from_job = $job['items_json'] ?? null;
+            $zip_filename_hint_from_job = $job['result_message'] ?? null; // Hint stored by API
+            $job_id = $job['id']; // Ensure job_id is available
+            $job_token = $job['job_token']; // Ensure job_token is available
+
             $timestamp = date('Y-m-d H:i:s');
-            $log_prefix = "[{$timestamp}] [Job {$job_id} ({$job['job_token']})]";
+            $log_prefix = "[{$timestamp}] [Job {$job_id} ({$job_token})]";
 
-            echo "\\n{$log_prefix} Found job for folder: {$folder_source_prefixed_path}\\n";
-            error_log("{$log_prefix} Processing job for folder: {$folder_source_prefixed_path}");
+            echo "\n{$log_prefix} Processing job. Source Path: {$source_path_from_job}\n";
+            error_log_worker($job, "Processing job. Source Path: '{$source_path_from_job}', Items JSON: " . ($items_json_from_job ? 'present (' . strlen($items_json_from_job) . ' bytes)' : 'absent') . ", Filename Hint: '{$zip_filename_hint_from_job}'");
 
-            // Brief delay to potentially avoid immediate lock contention if multiple workers start
-            usleep(100000); // 100ms
+            // --- DEBUG LOG ---
+            error_log_worker($job, "DEBUG: source_path_from_job = '$source_path_from_job', items_json_from_job = " . var_export($items_json_from_job, true));
+            // --- END DEBUG LOG ---
 
-            // --- Validate Path and Get Absolute Path ---
-            error_log("{$log_prefix} Validating path: {$folder_source_prefixed_path}");
-            $path_info = validate_source_and_path($folder_source_prefixed_path); // From helpers.php
-
-            if (!$path_info || $path_info['is_root']) {
-                throw new Exception("Invalid or root folder path provided: '{$folder_source_prefixed_path}'. Path validation details: " . print_r($path_info, true));
-            }
-            $absolute_folder_path = $path_info['absolute_path'];
-            $source_key = $path_info['source_key'];
-            // Use the validated relative path for a cleaner ZIP structure if possible
-            $zip_internal_base_folder = !empty($path_info['relative_path']) ? basename($path_info['relative_path']) : $source_key;
-
-
-            error_log("{$log_prefix} Path validated. Absolute: '{$absolute_folder_path}', ZIP base: '{$zip_internal_base_folder}'");
-
-            // --- Count Total Files ---
+            $files_to_add = []; // Format: ['disk_path' => ABSOLUTE_PATH, 'zip_path' => RELATIVE_PATH_IN_ZIP]
             $total_files_to_zip = 0;
-            $files_to_add = []; // Store [absolute_path_on_disk, path_inside_zip]
-            
-            $directory_iterator = new RecursiveDirectoryIterator($absolute_folder_path, RecursiveDirectoryIterator::SKIP_DOTS | FilesystemIterator::FOLLOW_SYMLINKS);
-            $file_iterator = new RecursiveIteratorIterator($directory_iterator, RecursiveIteratorIterator::SELF_FIRST); // SELF_FIRST to get directories too if needed for structure
+            $zip_filename_base = ''; // To be determined based on job type and hint
 
-            foreach ($file_iterator as $fileinfo) {
-                if ($fileinfo->isFile() && $fileinfo->isReadable()) {
-                    $total_files_to_zip++;
-                    $real_file_path = $fileinfo->getRealPath();
-                    // Path inside ZIP: relative to the folder being zipped
-                    $path_in_zip = $zip_internal_base_folder . '/' . substr($real_file_path, strlen($absolute_folder_path) + 1);
-                    $path_in_zip = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $path_in_zip), '/');
-                    $files_to_add[] = ['disk_path' => $real_file_path, 'zip_path' => $path_in_zip];
+            // Determine the overall ZIP filename base first (sanitized, without .zip, token will be added later)
+            if (!empty($zip_filename_hint_from_job)) {
+                $hint_basename_no_ext = basename($zip_filename_hint_from_job, '.zip');
+                $zip_filename_base = preg_replace('/[^a-zA-Z0-9_-]/', '_', $hint_basename_no_ext);
+                if (empty($zip_filename_base)) { // If hint was just '.zip' or all invalid chars
+                    $zip_filename_base = ($source_path_from_job === '_multiple_selected_') ? 'selected_files' : preg_replace('/[^a-zA-Z0-9_-]/', '_', $source_path_from_job);
                 }
+            } else { // No hint provided
+                $zip_filename_base = ($source_path_from_job === '_multiple_selected_') ? 'selected_files' : preg_replace('/[^a-zA-Z0-9_-]/', '_', $source_path_from_job);
             }
-            error_log("{$log_prefix} Counted {$total_files_to_zip} files to zip.");
+            // Sanitize one last time in case source_path_from_job was the fallback and contained invalid chars (e.g. '/')
+             $zip_filename_base = preg_replace('/[^a-zA-Z0-9_-]/', '_', $zip_filename_base);
+             if (empty($zip_filename_base)) $zip_filename_base = "zip_file"; // Absolute fallback
+
+
+            if ($source_path_from_job === '_multiple_selected_' && !empty($items_json_from_job)) {
+                error_log_worker($job, "Job type: _multiple_selected_. Processing items_json.");
+                $selected_files_list = json_decode($items_json_from_job, true);
+
+                // Determine the base folder name for inside the ZIP from hint or default
+                $zip_internal_base_folder = $zip_filename_base; // Use the already derived and sanitized zip name (without token) as internal base
+                error_log_worker($job, "Using ZIP internal base folder for selected files: '{$zip_internal_base_folder}'");
+
+                if (is_array($selected_files_list) && !empty($selected_files_list)) {
+                    foreach ($selected_files_list as $file_source_prefixed_path) {
+                        // Use validate_source_and_file_path for files
+                        $file_path_info = validate_source_and_file_path($file_source_prefixed_path);
+
+                        if ($file_path_info && is_file($file_path_info['absolute_path']) && is_readable($file_path_info['absolute_path'])) {
+                            $disk_path = $file_path_info['absolute_path'];
+                            // Path inside ZIP: internal_base_folder / source_key / relative_path_to_file (which includes filename)
+                            $path_in_zip_parts = [];
+                            if (!empty($zip_internal_base_folder)) $path_in_zip_parts[] = $zip_internal_base_folder;
+                            if (!empty($file_path_info['source_key'])) $path_in_zip_parts[] = $file_path_info['source_key'];
+                            if (!empty($file_path_info['relative_path'])) $path_in_zip_parts[] = $file_path_info['relative_path'];
+                            $path_in_zip = implode('/', $path_in_zip_parts);
+                            $path_in_zip = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $path_in_zip), '/');
+                            $path_in_zip = str_replace('../', '', $path_in_zip);
+                            $files_to_add[] = ['disk_path' => $disk_path, 'zip_path' => $path_in_zip];
+                            error_log_worker($job, "Validated and added selected file: '{$disk_path}' as '{$path_in_zip}'");
+                        } else {
+                            error_log_worker($job, "Skipping invalid or unreadable selected file: '{$file_source_prefixed_path}'. Validation: " . print_r($file_path_info, true));
+                        }
+                    }
+                    $total_files_to_zip = count($files_to_add);
+                } else {
+                    error_log_worker($job, "items_json was empty or invalid after decoding for _multiple_selected_ job.");
+                    throw new Exception("Invalid or empty items_json for _multiple_selected_ job {$job_id}.");
+                }
+            } else { // Existing logic for single folder processing
+                error_log_worker($job, "Job type: single folder. Path: '{$source_path_from_job}'");
+                $path_info = validate_source_and_path($source_path_from_job);
+
+                if (!$path_info || $path_info['is_root'] || $path_info['is_file']) {
+                    error_log_worker($job, "Path validation failed for single folder. Path: '{$source_path_from_job}', Details: " . print_r($path_info, true));
+                    throw new Exception("Invalid folder path, root path, or file path provided for single folder ZIP: '{$source_path_from_job}' for job {$job_id}.");
+                }
+                $absolute_folder_path = $path_info['absolute_path'];
+                
+                // For single folder, the zip_internal_base_folder is derived from the folder's own name or hint.
+                // $zip_filename_base already holds the sanitized name (from hint or folder path).
+                $zip_internal_base_folder = $zip_filename_base; 
+                error_log_worker($job, "Single folder validated. Absolute: '{$absolute_folder_path}', ZIP internal base: '{$zip_internal_base_folder}'");
+
+                $directory_iterator = new RecursiveDirectoryIterator($absolute_folder_path, RecursiveDirectoryIterator::SKIP_DOTS | FilesystemIterator::FOLLOW_SYMLINKS);
+                $file_iterator = new RecursiveIteratorIterator($directory_iterator, RecursiveIteratorIterator::SELF_FIRST);
+
+                foreach ($file_iterator as $fileinfo) {
+                    if ($fileinfo->isFile() && $fileinfo->isReadable()) {
+                        $real_file_path = $fileinfo->getRealPath();
+                        // Path inside ZIP: internal_base_folder / relative_path_from_scanned_folder_root
+                        $path_in_zip = $zip_internal_base_folder . '/' . substr($real_file_path, strlen($absolute_folder_path) + 1);
+                        $path_in_zip = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $path_in_zip), '/');
+                        $files_to_add[] = ['disk_path' => $real_file_path, 'zip_path' => $path_in_zip];
+                    }
+                }
+                $total_files_to_zip = count($files_to_add);
+            }
+
+            error_log_worker($job, "Collected {$total_files_to_zip} files to add to ZIP. Final ZIP filename base (before token and .zip): '{$zip_filename_base}'");
 
             // Update job with total_files
             $sql_update_total = "UPDATE zip_jobs SET total_files = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
             $stmt_update_total = $pdo->prepare($sql_update_total);
             $stmt_update_total->execute([$total_files_to_zip, $job_id]);
 
+            if ($total_files_to_zip === 0) {
+                error_log_worker($job, "No valid files found to zip for job {$job_id}. Marking job as potentially problematic or empty.");
+                // Depending on desired behavior, either fail or create an empty zip
+                // For now, let's throw an exception which will mark it as failed.
+                throw new Exception("No files found to add to ZIP for job {$job_id}.");
+            }
+
             // --- Create ZIP File ---
-            $zip_filename_base = preg_replace('/[^a-zA-Z0-9_-]/', '_', $path_info['source_prefixed_path']) . '_' . $job['job_token'];
-            $zip_filepath = ZIP_CACHE_DIR . $zip_filename_base . '.zip';
+            // Append job token to the base name for guaranteed uniqueness on filesystem
+            $final_zip_filename = $zip_filename_base . '_' . $job_token . '.zip';
+            $zip_filepath = ZIP_CACHE_DIR . $final_zip_filename;
 
             if (file_exists($zip_filepath)) {
                 unlink($zip_filepath); // Delete if exists from a previous failed attempt
@@ -298,7 +363,8 @@ while ($running) {
 
             $zip = new ZipArchive();
             if ($zip->open($zip_filepath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== TRUE) {
-                throw new Exception("Cannot open <{$zip_filepath}> for writing ZIP.");
+                error_log_worker($job, "Cannot open <{$zip_filepath}> for writing ZIP."); // Added job context
+                throw new Exception("Cannot open <{$zip_filepath}> for writing ZIP for job {$job_id}.");
             }
 
             $processed_files_count = 0;
@@ -312,11 +378,11 @@ while ($running) {
                 if ($zip->addFile($disk_path, $zip_path)) {
                     $processed_files_count++;
                     // Optimized logging can remain here if needed
-                    if ($processed_files_count <= 5 || $processed_files_count == $total_files_to_zip || ($processed_files_count % 100 == 0) ) {
-                        error_log("{$log_prefix} Added to ZIP: {$disk_path} as {$zip_path} ({$processed_files_count}/{$total_files_to_zip})");
+                    if ($processed_files_count <= 5 || $processed_files_count == $total_files_to_zip || ($processed_files_count % 100 == 0) ) { // Log more frequently for small zips
+                        error_log_worker($job, "Added to ZIP: {$disk_path} as {$zip_path} ({$processed_files_count}/{$total_files_to_zip})"); // Added job context
                     }
                 } else {
-                    error_log("{$log_prefix} WARNING: Failed to add file to ZIP: {$disk_path}");
+                    error_log_worker($job, "WARNING: Failed to add file to ZIP: {$disk_path} (Job {$job_id})"); // Added job context
                 }
 
                 // Update progress after every file is processed by the loop
@@ -346,7 +412,7 @@ while ($running) {
 
             // NOW, close the zip and get filesize, then update DB
             $zip->close(); // SINGLE CLOSE HERE
-            $zip_filesize = filesize($zip_filepath);
+            $zip_filesize = filesize($zip_filepath); // Ensure this is after zip close
             error_log_worker($job, "ZIP creation successful: {$zip_filepath}, Size: {$zip_filesize} bytes");
             echo_worker_status($job, "ZIP creation successful: {$zip_filepath}");
 
@@ -362,7 +428,7 @@ while ($running) {
                     $sql_complete = "UPDATE zip_jobs SET status = 'completed', zip_filename = ?, zip_filesize = ?, processed_files = total_files, current_file_processing = 'Completed', finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
                     $stmt_complete = $pdo->prepare($sql_complete);
                     
-                    if ($stmt_complete->execute([basename($zip_filepath), $zip_filesize, $job_id])) {
+                    if ($stmt_complete->execute([$final_zip_filename, $zip_filesize, $job_id])) { // Use $final_zip_filename
                         if ($stmt_complete->rowCount() > 0) {
                             error_log_worker($job, "Job marked as 'completed' after {$final_status_update_attempts} attempt(s).");
                             echo_worker_status($job, "Job marked as 'completed'.");
