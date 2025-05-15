@@ -19,16 +19,12 @@ import {
     isLoadingMore, setIsLoadingMore,
     currentPage, setCurrentPage,
     totalImages, setTotalImages,
-    zipDownloadTimerId, setZipDownloadTimerId,
-    currentZipJobToken, setCurrentZipJobToken,
-    zipPollingIntervalId, setZipPollingIntervalId,
     zipProgressBarContainerEl, setZipProgressBarContainerEl,
     zipFolderNameEl, setZipFolderNameEl,
     zipOverallProgressEl, setZipOverallProgressEl,
     zipProgressStatsTextEl, setZipProgressStatsTextEl,
     generalModalOverlay, setGeneralModalOverlay,
-    zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements,
-    activeZipJobs, addOrUpdateZipJob, getZipJob, getAllZipJobs, removeZipJob, clearAllZipJobIntervals
+    zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements
 } from './state.js';
 
 // Import utils
@@ -48,7 +44,8 @@ import {
 import {
     initializeDirectoryView,
     showDirectoryViewOnly,
-    loadTopLevelDirectories
+    loadTopLevelDirectories,
+    createDirectoryListItem
 } from './uiDirectoryView.js';
 import {
     initializeImageView,
@@ -68,7 +65,8 @@ import {
 import {
     initializeZipManager,
     handleDownloadZipAction as appHandleDownloadZipAction,
-    startPanelPolling
+    startPanelPolling,
+    addOrUpdateZipJob
 } from './zipManager.js';
 import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActiveGlobal } from './selectionManager.js';
 
@@ -282,41 +280,14 @@ async function loadSubItems(folderPath) {
         const ul = document.createElement('ul');
         ul.className = 'directory-list-styling subfolder-list';
         subfolders.forEach(sf => {
-            const li = document.createElement('li');
-            const a = document.createElement('a');
-            a.href = `#?folder=${encodeURIComponent(sf.path)}`;
-            a.dataset.dir = sf.path;
-            const imgThumb = document.createElement('img');
-            imgThumb.className = 'folder-thumbnail';
-            const thumbnailUrl = sf.thumbnail 
-                ? `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(sf.thumbnail)}&size=150` 
-                : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-            imgThumb.src = thumbnailUrl;
-            imgThumb.alt = sf.name;
-            imgThumb.loading = 'lazy';
-            imgThumb.onerror = () => { imgThumb.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; imgThumb.alt = 'Lỗi thumbnail'; };
-            const span = document.createElement('span');
-            span.textContent = sf.name;
-            if (sf.protected) { span.innerHTML += sf.authorized ? ' <span class="lock-icon unlocked" title="Đã mở khóa">🔓</span>' : ' <span class="lock-icon locked" title="Yêu cầu mật khẩu">🔒</span>'; }
-            a.append(imgThumb, span);
-            if (sf.protected && !sf.authorized) { 
-                a.onclick = e => { 
-                    e.preventDefault(); 
-                    showPasswordPrompt(sf.path); 
-                }; 
-            }
-            // For non-protected folders, no explicit onclick is needed here.
-            // The browser will navigate to a.href, which triggers handleUrlHash.
-            li.appendChild(a);
-            ul.appendChild(li);
+            const listItem = createDirectoryListItem(sf, null); // Pass null for itemClickHandler
+            ul.appendChild(listItem);
         });
-        // document.getElementById('image-grid').appendChild(ul); // OLD location
-        if (subfolderDisplayArea) subfolderDisplayArea.appendChild(ul); // NEW location
+        if (subfolderDisplayArea) subfolderDisplayArea.appendChild(ul);
         contentRendered = true;
         if (initialImagesMetadata && initialImagesMetadata.length) {
             const hr = document.createElement('hr');
             hr.className = 'folder-image-divider';
-            // document.getElementById('image-grid').appendChild(hr); // OLD location for divider
             if (subfolderDisplayArea) subfolderDisplayArea.appendChild(hr); // Append divider after subfolders
         }
     }
@@ -612,10 +583,6 @@ const toggleSelectModeButton = document.getElementById('toggleSelectModeButton')
 const downloadSelectedButton = document.getElementById('downloadSelectedButton');
 const clearSelectionButton = document.getElementById('clearSelectionButton');
 const downloadAllLink = document.getElementById('download-all-link');
-
-// State for multi-select
-let isSelectModeActive = false;
-const selectedImagePaths = new Set();
 
 function initializeAppEventListeners() {
     // DOM Elements for selection - get them here to pass to the manager

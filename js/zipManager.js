@@ -1,23 +1,58 @@
 import {
-    currentZipJobToken, setCurrentZipJobToken,
-    zipPollingIntervalId, setZipPollingIntervalId,
     zipProgressBarContainerEl, zipFolderNameEl, zipOverallProgressEl, zipProgressStatsTextEl,
-    zipJobsPanelContainerEl, zipJobsListEl, activeZipJobs,
-    addOrUpdateZipJob, removeZipJob, getAllZipJobs, clearAllZipJobIntervals
+    zipJobsPanelContainerEl, zipJobsListEl
 } from './state.js';
 import { ACTIVE_ZIP_JOB_KEY, API_BASE_URL } from './config.js';
 import { fetchDataApi } from './apiService.js';
 import { showModalWithMessage } from './uiModal.js';
 import { closePhotoSwipeIfActive } from './photoswipeHandler.js';
 
+// --- Module-level state for ZIP jobs ---
+let activeZipJobs = {}; // Stores jobToken: { jobData, folderDisplayName, lastUpdated }
+
 // --- NEW: Single Polling Interval for the Job Panel ---
 let panelPollingIntervalId = null;
 const PANEL_POLLING_INTERVAL_MS = 1000; // Poll every 1 second for all active jobs
 
+// --- NEW Event Handler for Panel Actions (using delegation) ---
+function handlePanelActions(event) {
+    const target = event.target;
+    const jobEntry = target.closest('.zip-job-entry');
+    if (!jobEntry) return;
+
+    const jobToken = jobEntry.dataset.jobToken;
+    if (!jobToken) return;
+
+    if (target.matches('.zip-job-retry-button')) {
+        const folderPath = target.dataset.folderPath;
+        const folderName = target.dataset.folderName;
+        console.log(`[zipManager] Retry clicked for job ${jobToken}, path: ${folderPath}, name: ${folderName}`);
+        
+        // It's important to get necessary info before removing the job from state, 
+        // or ensure that handleDownloadZipAction can work with minimal info if it's a generic retry.
+        // The original logic directly used folderPath and folderName from button's dataset.
+        
+        removeZipJob(jobToken); // Remove the old job state first
+
+        if (folderPath && folderName) {
+            handleDownloadZipAction(folderPath, folderName); // Re-request the job
+        } else {
+            console.error("[zipManager] Cannot retry job - missing folderPath or folderName on button for token:", jobToken);
+            // Optionally, try to find the original job details if they were stored elsewhere or pass more context.
+            // For now, this will just log an error if data attributes are missing.
+        }
+    } else if (target.matches('.zip-job-dismiss-button')) {
+        console.log(`[zipManager] Dismiss clicked for job ${jobToken}`);
+        removeZipJob(jobToken);
+    } else if (target.matches('.zip-job-cancel-button')) {
+        console.log(`[zipManager] Cancel clicked for job ${jobToken}`);
+        // TODO: Implement API call to actually attempt to cancel server-side processing
+        removeZipJob(jobToken); 
+    }
+}
+
 export function initializeZipManager() {
     console.log("[zipManager.js] ZIP Manager Initialized.");
-    // Attempt to load and render any jobs stored in sessionStorage from previous page load
-    // This is a simple way to persist jobs across refreshes, more robust would be localStorage and job expiry.
     const persistedJobs = getPersistedZipJobs();
     if (persistedJobs && Object.keys(persistedJobs).length > 0) {
         for (const token in persistedJobs) {
@@ -25,6 +60,19 @@ export function initializeZipManager() {
         }
         renderZipJobsPanel();
         startPanelPolling(); 
+    }
+
+    // Add event listener for panel actions (delegation)
+    // Ensure zipJobsListEl is available. It's set by app.js via setZipJobPanelDOMElements from state.js
+    // This means initializeZipManager should ideally be called AFTER app.js has set these DOM elements.
+    // The current app.js calls setZipJobPanelDOMElements then initializeZipManager, which is correct.
+    if (zipJobsListEl) {
+        zipJobsListEl.addEventListener('click', handlePanelActions);
+    } else {
+        // Fallback or error if zipJobsListEl isn't set up when initializeZipManager runs.
+        // This might happen if the DOM elements aren't found by app.js.
+        console.warn("[zipManager.js] zipJobsListEl not available during initializeZipManager. Action buttons in panel may not work.");
+        // Could try to attach later, or ensure app.js guarantees its availability.
     }
 }
 
@@ -117,23 +165,22 @@ function renderZipJobEntry(jobToken, jobDetails) {
 
 export function renderZipJobsPanel() {
     if (!zipJobsListEl || !zipJobsPanelContainerEl) return;
-
     const jobs = getAllZipJobs();
     const jobTokens = Object.keys(jobs);
 
     if (jobTokens.length === 0) {
         zipJobsPanelContainerEl.style.display = 'none';
         document.body.classList.remove('zip-panel-active');
-        if (zipProgressBarContainerEl) zipProgressBarContainerEl.style.display = 'none'; // Hide old bar too
+        if (zipProgressBarContainerEl) zipProgressBarContainerEl.style.display = 'none';
         return;
     }
 
-    zipJobsListEl.innerHTML = ''; // Clear existing entries
-    jobTokens.sort((a,b) => (jobs[b].jobData?.created_at || 0) - (jobs[a].jobData?.created_at || 0)); // Show newest first
+    zipJobsListEl.innerHTML = ''; 
+    jobTokens.sort((a,b) => (jobs[b].jobData?.created_at || 0) - (jobs[a].jobData?.created_at || 0));
 
     jobTokens.forEach(token => {
         const jobDetails = jobs[token];
-        if (jobDetails && jobDetails.jobData) { // Ensure jobData exists
+        if (jobDetails && jobDetails.jobData) {
             const entryEl = document.createElement('div');
             entryEl.classList.add('zip-job-entry');
             entryEl.setAttribute('data-job-token', token);
@@ -142,43 +189,15 @@ export function renderZipJobsPanel() {
         }
     });
 
-    // Add event listeners for action buttons (retry, dismiss, cancel)
-    // This should be done carefully to avoid duplicate listeners.
-    // It's often better to add listeners to zipJobsListEl and use event delegation.
-    zipJobsListEl.querySelectorAll('.zip-job-retry-button').forEach(button => {
-        button.onclick = (e) => {
-            const token = e.target.dataset.jobToken;
-            const folderPath = e.target.dataset.folderPath;
-            const folderName = e.target.dataset.folderName;
-            removeZipJob(token); // Remove old job from state
-            renderZipJobsPanel(); // Re-render to remove old entry
-            handleDownloadZipAction(folderPath, folderName); // Request a new job
-        };
-    });
-    zipJobsListEl.querySelectorAll('.zip-job-dismiss-button').forEach(button => {
-        button.onclick = (e) => {
-            removeZipJob(e.target.dataset.jobToken);
-            renderZipJobsPanel(); // Re-render
-            if (Object.keys(getAllZipJobs()).length === 0) stopPanelPolling(); // Stop polling if no jobs left
-        };
-    });
-    zipJobsListEl.querySelectorAll('.zip-job-cancel-button').forEach(button => {
-        button.onclick = (e) => {
-            const tokenToCancel = e.target.dataset.jobToken;
-            // For now, cancel just removes from UI. True cancel needs API.
-            console.log(`[zipManager] UI Cancel requested for job ${tokenToCancel}`);
-            removeZipJob(tokenToCancel);
-            renderZipJobsPanel();
-            if (Object.keys(getAllZipJobs()).length === 0) stopPanelPolling();
-            // TODO: Implement API call to actually attempt to cancel server-side processing if desired
-        };
-    });
+    // REMOVE OLD EVENT LISTENER ATTACHMENT LOGIC
+    // zipJobsListEl.querySelectorAll('.zip-job-retry-button').forEach(button => { ... });
+    // zipJobsListEl.querySelectorAll('.zip-job-dismiss-button').forEach(button => { ... });
+    // zipJobsListEl.querySelectorAll('.zip-job-cancel-button').forEach(button => { ... });
 
     zipJobsPanelContainerEl.style.display = 'block';
     document.body.classList.add('zip-panel-active');
-    // Hide the old single progress bar if the panel is active and has jobs
     if (zipProgressBarContainerEl) zipProgressBarContainerEl.style.display = 'none'; 
-    saveZipJobsToSession(); // Persist jobs when panel is rendered
+    saveZipJobsToSession();
 }
 
 // --- Modified Polling Logic ---
@@ -210,7 +229,7 @@ export function startPanelPolling() {
                         console.log(`[PanelPoll] Successfully fetched update for ${token}. New API data:`, JSON.parse(JSON.stringify(updatedJobDataFromApi)));
                         addOrUpdateZipJob(token, { 
                             jobData: updatedJobDataFromApi, 
-                            folderDisplayName: jobDetails.folderDisplayName, // Keep existing display name
+                            folderDisplayName: jobDetails.folderDisplayName,
                             lastUpdated: Date.now() 
                         });
                         // Log state immediately after update for this job
@@ -349,16 +368,54 @@ export async function pollZipStatus(jobToken, folderDisplayNameForUI) {
 // setCurrentZipJobToken also becomes less relevant with panel polling.
 // These are related to the old single-progress bar system.
 
-// Clean up old polling interval if it exists from previous logic
-if (zipPollingIntervalId) {
-    clearInterval(zipPollingIntervalId);
-    setZipPollingIntervalId(null);
-}
-clearAllZipJobIntervals(); // Clear any intervals stored in job state from old system.
-
 console.log("[zipManager.js] Module loaded. Old progress bar elements:", {
     zipProgressBarContainerEl, zipFolderNameEl, zipOverallProgressEl, zipProgressStatsTextEl
 });
 
 // The export for `pollZipStatus` can be removed if it's fully replaced.
 // For now, it is commented out. 
+
+// --- Functions to manage activeZipJobs (now internal to zipManager) ---
+export function addOrUpdateZipJob(jobToken, jobDetails) {
+    activeZipJobs[jobToken] = { ...(activeZipJobs[jobToken] || {}), ...jobDetails };
+    console.log("[zipManager.js] addOrUpdateZipJob:", jobToken, activeZipJobs[jobToken]);
+    renderZipJobsPanel(); 
+    saveZipJobsToSession();
+}
+
+export function getZipJob(jobToken) {
+    return activeZipJobs[jobToken];
+}
+
+export function getAllZipJobs() {
+    return activeZipJobs;
+}
+
+export function removeZipJob(jobToken) {
+    delete activeZipJobs[jobToken];
+    console.log("[zipManager.js] removeZipJob:", jobToken, "Remaining jobs:", Object.keys(activeZipJobs).length);
+    renderZipJobsPanel(); 
+    saveZipJobsToSession();
+    if (Object.keys(activeZipJobs).length === 0) {
+        stopPanelPolling();
+    }
+}
+
+export function clearAllZipJobIntervals() {
+    // This function's original logic was tied to per-job polling intervals
+    // which are not the primary mechanism for the panel (panelPollingIntervalId is).
+    // If it's about clearing the *stored* per-job interval IDs (if any were hypothetically kept):
+    for (const token in activeZipJobs) {
+        if (activeZipJobs[token] && activeZipJobs[token].pollingIntervalId) {
+            clearInterval(activeZipJobs[token].pollingIntervalId);
+            activeZipJobs[token].pollingIntervalId = null; 
+        }
+    }
+    console.log("[zipManager.js] Cleared any per-job pollingIntervalId fields within activeZipJobs.");
+    // If it means to stop all polling and clear jobs, it should be:
+    // stopPanelPolling();
+    // activeZipJobs = {};
+    // renderZipJobsPanel();
+    // saveZipJobsToSession();
+    // For now, sticking to the minimal interpretation of its name.
+} 

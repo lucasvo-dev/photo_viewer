@@ -9,6 +9,54 @@ let masonryInstance = null; // Variable to store the Masonry instance
 let appOpenPhotoSwipe = (index) => console.error('openPhotoSwipe not initialized in uiImageView');
 let appLoadMoreImages = () => console.error('loadMoreImages not initialized in uiImageView');
 
+// NEW INTERNAL HELPER FUNCTION
+function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
+    const div = document.createElement('div');
+    div.className = 'image-item'; // Masonry will use this class as its itemSelector
+    div.dataset.sourcePath = imgData.path;
+
+    const anchor = document.createElement('a');
+    anchor.className = 'photoswipe-trigger';
+    const fullImagePath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
+    anchor.href = fullImagePath;
+    anchor.dataset.pswpSrc = fullImagePath;
+
+    if (imageIndex !== -1) {
+        anchor.dataset.pswpIndex = imageIndex;
+    }
+
+    anchor.onclick = (e) => {
+        e.preventDefault();
+        if (imageIndex !== -1) {
+            openPhotoSwipeCallback(imageIndex);
+        } else {
+            // Fallback logic: if the provided index was -1, try to find it dynamically.
+            // This is a safeguard, ideally imageIndex is correctly pre-calculated.
+            const freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
+            if (freshIndex !== -1) {
+                openPhotoSwipeCallback(freshIndex);
+            } else {
+                console.error("Could not find image index for (onclick):", imgData.name, imgData.path);
+            }
+        }
+    };
+
+    const img = document.createElement('img');
+    const thumbSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
+    img.src = thumbSrc;
+    img.alt = imgData.name;
+    img.loading = 'lazy';
+    img.onerror = () => {
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.alt = 'Lỗi tải ảnh xem trước';
+    };
+
+    anchor.appendChild(img);
+    div.appendChild(anchor);
+    return div;
+}
+// END NEW INTERNAL HELPER FUNCTION
+
 export function initializeImageView(callbacks) {
     console.log('[uiImageView] initializeImageView called.');
     imageViewEl = document.getElementById('image-view');
@@ -81,7 +129,6 @@ export function renderImageItems(imagesDataToRender, append = false) {
     if (!imagesDataToRender || imagesDataToRender.length === 0) {
         console.log('[uiImageView] No imagesDataToRender provided or empty.');
         if (!append && imageGroupContainer) imageGroupContainer.innerHTML = '<p class="info-text">Không có ảnh trong album này.</p>';
-        // If clearing and there was a masonry instance, ensure it's handled (though clearImageGrid should do this)
         if (!append && masonryInstance) {
             try {
                 masonryInstance.destroy();
@@ -96,45 +143,11 @@ export function renderImageItems(imagesDataToRender, append = false) {
     const fragment = document.createDocumentFragment();
 
     imagesDataToRender.forEach((imgData) => {
-        const div = document.createElement('div');
-        div.className = 'image-item'; // Masonry will use this class as its itemSelector
-        div.dataset.sourcePath = imgData.path;
-
-        const anchor = document.createElement('a');
-        anchor.className = 'photoswipe-trigger';
-        const fullImagePath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
-        anchor.href = fullImagePath;
-        anchor.dataset.pswpSrc = fullImagePath;
+        // Determine the correct index from the global currentImageList
         const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
-        if (imageIndex !== -1) {
-            anchor.dataset.pswpIndex = imageIndex;
-        }
-        anchor.onclick = (e) => {
-            e.preventDefault();
-            if (imageIndex !== -1) {
-                appOpenPhotoSwipe(imageIndex);
-            } else {
-                const fallbackIndex = currentImageList.findIndex(item => item.name === imgData.name);
-                if (fallbackIndex !== -1) {
-                    appOpenPhotoSwipe(fallbackIndex);
-                } else {
-                    console.error("Could not find image index for:", imgData.name, imgData.path);
-                }
-            }
-        };
-        const img = document.createElement('img');
-        const thumbSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`; // Reverted to 750 from 300
-        img.src = thumbSrc; 
-        img.alt = imgData.name;
-        img.loading = 'lazy';
-        img.onerror = () => { 
-            img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-            img.alt = 'Lỗi tải ảnh xem trước'; 
-        };
-        anchor.appendChild(img);
-        div.appendChild(anchor);
-        // END of existing image creation logic, now append to fragment
-        fragment.appendChild(div);
+        
+        const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe);
+        fragment.appendChild(imageElement);
     });
 
     imageGroupContainer.appendChild(fragment); // Append all new items at once

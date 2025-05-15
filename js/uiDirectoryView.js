@@ -71,6 +71,46 @@ export function showDirectoryViewOnly() {
     // Any other specific UI elements within directory view can be handled here.
 }
 
+export function createDirectoryListItem(dirData, itemClickHandler) {
+    const li = document.createElement('li');
+    const a  = document.createElement('a');
+    a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
+    a.dataset.dir = dirData.path;
+
+    const img = document.createElement('img');
+    img.className = 'folder-thumbnail';
+    const thumbnailUrl = dirData.thumbnail
+        ? `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(dirData.thumbnail)}&size=150`
+        : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+    img.src = thumbnailUrl;
+    img.alt = dirData.name;
+    img.loading = 'lazy';
+    img.onerror = () => {
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.alt = 'Lỗi thumbnail';
+    };
+
+    const span = document.createElement('span');
+    span.textContent = dirData.name;
+
+    if (dirData.protected) {
+        span.innerHTML += dirData.authorized
+            ? ' <span class="lock-icon unlocked" title="Đã mở khóa">🔓</span>'
+            : ' <span class="lock-icon locked" title="Yêu cầu mật khẩu">🔒</span>';
+    }
+    a.append(img, span);
+
+    if (dirData.protected && !dirData.authorized) {
+        a.onclick = e => { e.preventDefault(); showPasswordPrompt(dirData.path); };
+    } else if (itemClickHandler) {
+        a.onclick = e => { e.preventDefault(); itemClickHandler(dirData.path); };
+    }
+    // If no itemClickHandler, the default href behavior will apply for non-protected items.
+
+    li.appendChild(a);
+    return li;
+}
+
 export function renderTopLevelDirectories(dirs, isSearchResult = false) {
     console.log('[uiDirectoryView] renderTopLevelDirectories called with:', dirs, 'isSearchResult:', isSearchResult);
     if (!directoryListEl || !searchPromptEl) {
@@ -91,61 +131,15 @@ export function renderTopLevelDirectories(dirs, isSearchResult = false) {
 
     if (isSearchResult) {
         searchPromptEl.textContent = `Đã tìm thấy ${dirs.length} album khớp:`;
-        searchPromptEl.style.display = 'block';
     } else {
-        searchPromptEl.textContent = 'Hiển thị một số album nổi bật. Sử dụng ô tìm kiếm để xem thêm.';
-        searchPromptEl.style.display = 'block';
+        searchPromptEl.textContent = `Tìm thấy ${dirs.length} thư mục gốc.`;
     }
+    searchPromptEl.style.display = 'block';
+    
 
     dirs.forEach(dir => {
-        const li = document.createElement('li');
-        const a  = document.createElement('a');
-        a.href = `#?folder=${encodeURIComponent(dir.path)}`;
-        a.dataset.dir = dir.path;
-    
-        const img = document.createElement('img');
-        img.className = 'folder-thumbnail';
-        const thumbnailUrl = dir.thumbnail 
-            ? `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(dir.thumbnail)}&size=150` 
-            : 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-        img.src = thumbnailUrl;
-        img.alt = dir.name;
-        img.loading = 'lazy';
-        img.onerror = () => { 
-            img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; 
-            img.alt = 'Lỗi thumbnail';
-        };
-    
-        const span = document.createElement('span');
-        span.textContent = dir.name;
-
-        const contentWrapper = document.createElement('div');
-        contentWrapper.className = 'directory-item-content';
-        const iconSpan = document.createElement('span');
-        iconSpan.className = 'lock-icon';
-
-        if (dir.protected) {
-            if (dir.authorized) {
-                iconSpan.classList.add('unlocked');
-                iconSpan.title = 'Đã mở khóa';
-                iconSpan.innerHTML = '🔓';
-            } else {
-                iconSpan.classList.add('locked');
-                iconSpan.title = 'Yêu cầu mật khẩu';
-                iconSpan.innerHTML = '🔒';
-            }
-        }
-        contentWrapper.appendChild(iconSpan);
-        contentWrapper.appendChild(span);
-        a.append(img, contentWrapper);
-
-        if (dir.protected && !dir.authorized) {
-            a.onclick = e => { e.preventDefault(); showPasswordPrompt(dir.path); };
-        } else {
-            a.onclick = e => { e.preventDefault(); appNavigateToFolder(dir.path); };
-        }
-        li.appendChild(a);
-        directoryListEl.appendChild(li);
+        const listItem = createDirectoryListItem(dir, appNavigateToFolder);
+        directoryListEl.appendChild(listItem);
     });
 }
 

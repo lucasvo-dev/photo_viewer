@@ -149,24 +149,39 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
 ## 7.1. Kế hoạch Refactor JavaScript (JavaScript Refactoring Plan)
 
 *   **Mục tiêu:** Tối ưu hóa cấu trúc mã JavaScript để tăng tính module, dễ bảo trì và sẵn sàng cho việc mở rộng các tính năng phức tạp trong tương lai.
+*   **Trạng thái chung:** Đã hoàn thành vào 2025-05-16 (AI). Tất cả các mục dưới đây đã được xem xét và triển khai hoặc xác nhận hoàn tất.
 *   **Các bước chính (Ưu tiên):**
     1.  **Tạo `js/selectionManager.js`:**
         *   **Nhiệm vụ:** Di chuyển toàn bộ logic và trạng thái liên quan đến chế độ chọn ảnh (multi-select) từ `js/app.js` vào module này.
-        *   **Bao gồm:** `isSelectModeActive`, `selectedImagePaths`, `toggleImageSelectionMode()`, `handleImageItemSelect()` (hoặc logic cốt lõi của listener click trên lưới ảnh khi ở chế độ chọn), `clearAllImageSelections()`, `updateDownloadSelectedButton()`, `handleDownloadSelected()`.
-        *   `js/app.js` sẽ khởi tạo và ủy quyền các tương tác UI của chế độ chọn cho module này.
+        *   **Trạng thái:** Hoàn thành. Module `js/selectionManager.js` đã tồn tại và đảm nhiệm các chức năng này. Các biến trạng thái và DOM caching dư thừa liên quan đến selection đã được gỡ bỏ khỏi `js/app.js`.
+        *   **Bao gồm (đã xác minh trong `selectionManager.js`):** `isSelectModeActive`, `selectedImagePaths`, `toggleImageSelectionMode()`, `handleImageItemSelect()`, `clearAllImageSelections()`, `updateDownloadSelectedButton()`, `handleDownloadSelected()` (thông qua callback).
+        *   `js/app.js` khởi tạo và ủy quyền đúng cách cho module này.
         *   **Lợi ích:** Giảm kích thước và độ phức tạp của `app.js`, đóng gói logic chọn ảnh, cải thiện SRP.
     2.  **Refactor `loadSubItems()` trong `js/app.js`:**
-        *   **Nhiệm vụ:** Ủy quyền việc tạo các phần tử DOM cho danh sách thư mục con (subfolder list items) cho một hàm trong `js/uiDirectoryView.js` (hoặc một factory tạo element chung).
+        *   **Nhiệm vụ:** Ủy quyền việc tạo các phần tử DOM cho danh sách thư mục con (subfolder list items) cho một hàm trong `js/uiDirectoryView.js`.
+        *   **Trạng thái:** Hoàn thành. Hàm factory `createDirectoryListItem()` đã được tạo và export từ `js/uiDirectoryView.js`. Cả `renderTopLevelDirectories()` (trong `uiDirectoryView.js`) và `loadSubItems()` (trong `app.js`) đều sử dụng hàm factory này, giúp thống nhất việc render item thư mục.
         *   **Lợi ích:** Tách biệt hơn nữa việc lấy dữ liệu/điều phối trong `app.js` khỏi các chi tiết render view cụ thể.
     3.  **Rà soát và áp dụng nguyên tắc DRY (Don't Repeat Yourself):**
-        *   **Nhiệm vụ:** Tìm và loại bỏ các đoạn mã lặp lại, ví dụ như logic render folder item.
+        *   **Nhiệm vụ:** Tìm và loại bỏ các đoạn mã lặp lại, ví dụ như logic render folder item và image item.
+        *   **Trạng thái:** Hoàn thành.
+            *   Logic render folder item đã được giải quyết ở mục 2.
+            *   Logic render image item trong `js/uiImageView.js` cũng đã được refactor để sử dụng hàm factory nội bộ `createImageItemElement()`.
         *   **Lợi ích:** Giảm sự trùng lặp, dễ bảo trì hơn.
     4.  **Đánh giá lại việc quản lý State (`state.js`):**
-        *   **Nhiệm vụ:** Đảm bảo tất cả trạng thái ứng dụng chia sẻ thực sự nằm trong `state.js` hoặc trong các manager module chuyên biệt của chúng.
+        *   **Nhiệm vụ:** Đảm bảo tất cả trạng thái ứng dụng chia sẻ thực sự nằm trong `js/state.js` hoặc trong các manager module chuyên biệt của chúng.
+        *   **Trạng thái:** Hoàn thành.
+            *   Trạng thái và logic quản lý `activeZipJobs` (bao gồm các hàm `addOrUpdateZipJob`, `getZipJob`, `getAllZipJobs`, `removeZipJob`, `clearAllZipJobIntervals`) đã được di chuyển từ `js/state.js` vào `js/zipManager.js`.
+            *   Các biến trạng thái ZIP cũ và không còn sử dụng (`zipDownloadTimerId`, `currentZipJobToken`, `zipPollingIntervalId`) đã được gỡ bỏ khỏi `js/state.js` và các file liên quan.
+        *   Các trạng thái chia sẻ khác vẫn nằm trong `state.js`, trong khi trạng thái cụ thể của module (selection, ZIP jobs) nằm trong các manager tương ứng.
     5.  **Kiểm tra và chuẩn hóa DOM Manipulation & Event Handling:**
         *   **Nhiệm vụ:** Duy trì sự nhất quán trong cách tạo phần tử DOM và quản lý event listener.
+        *   **Trạng thái:** Hoàn thành.
+            *   Việc tạo DOM cho item thư mục và item ảnh đã được chuẩn hóa bằng các hàm factory (xem mục 2 và 3).
+            *   Event handling trong `js/zipManager.js` cho các action của ZIP job panel đã được refactor để sử dụng event delegation, thay vì gắn listener riêng lẻ cho từng button.
+        *   Các module khác đã được xem xét và sử dụng phương pháp gắn event listener phù hợp với phạm vi của chúng.
     6.  **Chuẩn hóa Xử lý Lỗi Asynchronous:**
         *   **Nhiệm vụ:** Đảm bảo tất cả các lỗi từ API và các tác vụ bất đồng bộ được hiển thị nhất quán cho người dùng.
+        *   **Trạng thái:** Hoàn thành. Hệ thống hiện tại sử dụng `fetchDataApi` (trong `js/apiService.js`) với cấu trúc response chuẩn. Các lỗi từ API call do người dùng khởi tạo được hiển thị qua `showModalWithMessage`. Các lỗi từ tác vụ nền (ví dụ: polling ZIP status) được phản ánh trong UI chuyên biệt của chúng (ví dụ: ZIP panel) để tránh làm phiền người dùng bằng modal liên tục. Cách tiếp cận này được đánh giá là nhất quán và phù hợp.
 
 ## Thay đổi gần đây (Latest Changes)
 
