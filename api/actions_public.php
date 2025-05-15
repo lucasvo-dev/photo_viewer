@@ -694,6 +694,11 @@ switch ($action) {
             header('Cache-Control: public, max-age=2592000'); // Cache for 30 days
             header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 2592000) . ' GMT');
             
+            // Release session lock before sending file
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+
             // Clear output buffer before reading file
             if (ob_get_level()) {
                 ob_end_clean();
@@ -768,6 +773,11 @@ switch ($action) {
             header('Content-Length: ' . filesize($source_absolute_path));
             header('Cache-Control: public, max-age=86400'); // Cache for 1 day
             header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 86400) . ' GMT');
+            // Release session lock early if possible, before potentially long file transfer
+            if (session_status() === PHP_SESSION_ACTIVE) {
+                session_write_close();
+            }
+
             // For videos, support byte-range requests if the client asks for it
             if (isset($_SERVER['HTTP_RANGE']) && $mime_type !== 'application/octet-stream' && strpos($mime_type, 'video/') === 0) {
                 // Basic range request handling. For a full implementation, a library might be better.
