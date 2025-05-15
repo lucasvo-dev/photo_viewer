@@ -86,6 +86,18 @@ button:disabled, .button:disabled {
     color: #fff; 
 }
 
+/* Style for the new Download Selected Action Button */
+.download-selected-action-button {
+    background-color: #238636; 
+    border-color: #2ea043; 
+    color: #fff;
+}
+.download-selected-action-button:hover {
+    background-color: #2ea043; 
+    border-color: #3fb950; 
+    color: #fff; 
+}
+
 /* Push download button to the right */
 #download-all-link {
     margin-left: auto;
@@ -1731,3 +1743,67 @@ main.container.user-view {
 /* body.zip-panel-active #zip-progress-bar-container {
     display: none !important; 
 } */
+
+/* Styles for Image Multi-Select Feature */
+.image-view-actions .select-mode-button,
+.image-view-actions .download-selected-button,
+.image-view-actions .clear-selection-button {
+    margin-right: 8px; /* Add some spacing between these buttons */
+}
+
+.image-item .selection-checkbox {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    z-index: 10;
+    cursor: pointer;
+    /* Further styling for appearance - using a simple browser default for now */
+}
+
+.image-item.selected-item {
+    border: 3px solid var(--primary-accent-color, #007bff);
+    box-shadow: 0 0 10px var(--primary-accent-color, #007bff);
+    border-radius: 4px; /* Match thumbnail border-radius if any */
+}
+
+.image-item.selected-item img {
+    opacity: 0.8;
+}
+
+/* Adjust if image-grid uses display: flex or grid directly on gallery-item */
+/* This ensures the border doesn't cause layout shifts if items have margin/padding */
+.image-item.selected-item a {
+    display: block; /* Or inline-block if it makes more sense for your layout */
+}
+
+/* Hide checkboxes by default, shown when select mode is active */
+.image-item .selection-checkbox {
+    display: none;
+}
+
+body.select-mode-active .image-item .selection-checkbox {
+    display: block;
+}
+
+/* Styling for select mode active on the body tag */
+body.select-mode-active .image-item a:hover img {
+    /* Disable or alter hover effect when in select mode to avoid conflict with selection indication */
+    opacity: 1; 
+}
+
+@media (max-width: 600px) {
+    .zip-job-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+        text-align: initial;
+    }
+    .zip-job-actions button,
+    .zip-job-actions .zip-job-download-button {
+        width: 100%;
+        margin-left: 0;
+    }
+}
