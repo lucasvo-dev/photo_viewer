@@ -98,6 +98,7 @@ export function renderImageItems(imagesDataToRender, append = false) {
     imagesDataToRender.forEach((imgData) => {
         const div = document.createElement('div');
         div.className = 'image-item'; // Masonry will use this class as its itemSelector
+        div.dataset.sourcePath = imgData.path;
 
         const anchor = document.createElement('a');
         anchor.className = 'photoswipe-trigger';

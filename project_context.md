@@ -146,12 +146,27 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
 *   **Kiểm thử (Testing):**
     *   Kiểm thử kỹ lưỡng các tính năng mới trên nhiều trình duyệt và thiết bị.
 
-## 7. Ghi chú & Cân nhắc Chung
+## 7.1. Kế hoạch Refactor JavaScript (JavaScript Refactoring Plan)
 
-*   Tiếp tục tập trung vào nguyên tắc thiết kế **Mobile-First**.
-*   Đảm bảo tính nhất quán giữa môi trường phát triển (dev) và sản xuất (prod), đặc biệt về cấu hình đường dẫn trong `config.php`.
-*   Ưu tiên các **tối ưu về hiệu suất** vì chúng ảnh hưởng lớn đến trải nghiệm người dùng.
-*   Cần **kiểm thử kỹ lưỡng** tất cả chức năng sau các thay đổi.
+*   **Mục tiêu:** Tối ưu hóa cấu trúc mã JavaScript để tăng tính module, dễ bảo trì và sẵn sàng cho việc mở rộng các tính năng phức tạp trong tương lai.
+*   **Các bước chính (Ưu tiên):**
+    1.  **Tạo `js/selectionManager.js`:**
+        *   **Nhiệm vụ:** Di chuyển toàn bộ logic và trạng thái liên quan đến chế độ chọn ảnh (multi-select) từ `js/app.js` vào module này.
+        *   **Bao gồm:** `isSelectModeActive`, `selectedImagePaths`, `toggleImageSelectionMode()`, `handleImageItemSelect()` (hoặc logic cốt lõi của listener click trên lưới ảnh khi ở chế độ chọn), `clearAllImageSelections()`, `updateDownloadSelectedButton()`, `handleDownloadSelected()`.
+        *   `js/app.js` sẽ khởi tạo và ủy quyền các tương tác UI của chế độ chọn cho module này.
+        *   **Lợi ích:** Giảm kích thước và độ phức tạp của `app.js`, đóng gói logic chọn ảnh, cải thiện SRP.
+    2.  **Refactor `loadSubItems()` trong `js/app.js`:**
+        *   **Nhiệm vụ:** Ủy quyền việc tạo các phần tử DOM cho danh sách thư mục con (subfolder list items) cho một hàm trong `js/uiDirectoryView.js` (hoặc một factory tạo element chung).
+        *   **Lợi ích:** Tách biệt hơn nữa việc lấy dữ liệu/điều phối trong `app.js` khỏi các chi tiết render view cụ thể.
+    3.  **Rà soát và áp dụng nguyên tắc DRY (Don't Repeat Yourself):**
+        *   **Nhiệm vụ:** Tìm và loại bỏ các đoạn mã lặp lại, ví dụ như logic render folder item.
+        *   **Lợi ích:** Giảm sự trùng lặp, dễ bảo trì hơn.
+    4.  **Đánh giá lại việc quản lý State (`state.js`):**
+        *   **Nhiệm vụ:** Đảm bảo tất cả trạng thái ứng dụng chia sẻ thực sự nằm trong `state.js` hoặc trong các manager module chuyên biệt của chúng.
+    5.  **Kiểm tra và chuẩn hóa DOM Manipulation & Event Handling:**
+        *   **Nhiệm vụ:** Duy trì sự nhất quán trong cách tạo phần tử DOM và quản lý event listener.
+    6.  **Chuẩn hóa Xử lý Lỗi Asynchronous:**
+        *   **Nhiệm vụ:** Đảm bảo tất cả các lỗi từ API và các tác vụ bất đồng bộ được hiển thị nhất quán cho người dùng.
 
 ## Thay đổi gần đây (Latest Changes)
 
