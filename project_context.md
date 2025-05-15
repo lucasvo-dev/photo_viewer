@@ -224,6 +224,7 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
         *   Đảm bảo tính ổn định và đồng nhất giữa môi trường dev và production cho tính năng tải ZIP nhiều ảnh.
         *   Đã kiểm thử thành công end-to-end: chọn nhiều ảnh trong thư mục, tạo ZIP, tải về hoạt động ổn định.
         *   Đã sửa API download_final_zip để cho phép tải ZIP cho các job multi-file (source_path = '_multiple_selected_'), đảm bảo khách hàng luôn tải được file ZIP đã tạo từ ảnh đã chọn.
+        *   **Cải thiện UI mobile:** Các nút trong panel ZIP và thanh action chính trên mobile đã được xếp dọc, có khoảng cách hợp lý, đảm bảo thao tác dễ dàng trên màn hình nhỏ.
 
 ## 8. Kiểm thử End-to-End (Playwright)
 
