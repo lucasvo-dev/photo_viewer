@@ -175,7 +175,8 @@ switch ($action) {
                 }
 
                 // Scan Directory
-                $items = [];
+                $all_folder_items = [];
+                $all_file_items = [];
                 // This inner try-catch handles errors specifically during directory iteration
                 try {
                     $iterator = new DirectoryIterator($current_absolute_path);
@@ -185,37 +186,32 @@ switch ($action) {
                         $item_source_prefixed_path = $current_relative_path ? $source_key . '/' . $current_relative_path . '/' . $filename : $source_key . '/' . $filename;
 
                         if ($fileinfo->isDir()) {
-                            $items[] = ['name' => $filename, 'type' => 'folder', 'path' => $item_source_prefixed_path, 'is_dir' => true, 'source_key' => $source_key, 'absolute_path' => $fileinfo->getPathname()];
+                            $all_folder_items[] = ['name' => $filename, 'type' => 'folder', 'path' => $item_source_prefixed_path, 'is_dir' => true, 'source_key' => $source_key, 'absolute_path' => $fileinfo->getPathname()];
                         } elseif ($fileinfo->isFile()) {
                             $extension = strtolower($fileinfo->getExtension());
                             if (in_array($extension, $allowed_ext, true)) {
                                 $item_path = $item_source_prefixed_path;
+                                $item_data = [
+                                    'name' => $filename,
+                                    'path' => $item_path,
+                                    'is_dir' => false, // For sorting consistency if ever merged, though not strictly needed now
+                                    'size_bytes' => $fileinfo->getSize()
+                                ];
 
                                 $image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']; 
                                 $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 
                                 if (in_array($extension, $image_extensions, true)) {
                                     $dims = @getimagesize($fileinfo->getPathname());
-                                    $items[] = [
-                                        'name' => $filename,
-                                        'type' => 'image',
-                                        'path' => $item_path,
-                                        'is_dir' => false,
-                                        'width' => $dims[0] ?? 0,
-                                        'height' => $dims[1] ?? 0,
-                                        'size_bytes' => $fileinfo->getSize()
-                                    ];
+                                    $item_data['type'] = 'image';
+                                    $item_data['width'] = $dims[0] ?? 0;
+                                    $item_data['height'] = $dims[1] ?? 0;
                                 } elseif (in_array($extension, $video_extensions, true)) {
-                                    $items[] = [
-                                        'name' => $filename,
-                                        'type' => 'video',
-                                        'path' => $item_path,
-                                        'is_dir' => false,
-                                        'width' => 0, // Placeholder, to be updated by frontend or if we get ffprobe data
-                                        'height' => 0, // Placeholder
-                                        'size_bytes' => $fileinfo->getSize()
-                                    ];
+                                    $item_data['type'] = 'video';
+                                    $item_data['width'] = 0; // Placeholder
+                                    $item_data['height'] = 0; // Placeholder
                                 }
+                                $all_file_items[] = $item_data;
                             }
                         }
                     }
@@ -226,61 +222,42 @@ switch ($action) {
                     throw $e; // Or json_error directly if preferred for this specific case
                 }
 
-                // Sort items: folders first, then by name
-                usort($items, function ($a, $b) {
-                    if ($a['is_dir'] !== $b['is_dir']) {
-                        return $a['is_dir'] ? -1 : 1;
-                    }
-                    return strnatcasecmp($a['name'], $b['name']);
-                });
+                // Sort folders and files separately by name
+                usort($all_folder_items, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+                usort($all_file_items, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
 
-                // Pagination
-                $total_items = count($items);
-                $total_pages = ceil($total_items / $items_per_page);
+                // Pagination for files
+                $total_files = count($all_file_items);
+                $total_pages = ceil($total_files / $items_per_page);
                 $offset = ($page - 1) * $items_per_page;
-                $paginated_items = array_slice($items, $offset, $items_per_page);
+                $paginated_files = array_slice($all_file_items, $offset, $items_per_page);
 
-                // Process Paginated Items
+                // Process all folders (not paginated for typical display)
                 $folders_data = [];
-                $files_data = [];
-
-                foreach ($paginated_items as $item) {
-                    if ($item['is_dir']) {
-                        $folder_path_prefixed = $item['path'];
-                        $subfolder_access = check_folder_access($folder_path_prefixed);
-
-                        if (!$subfolder_access['authorized'] && $subfolder_access['password_required']) {
-                            // If password required, add basic info but no thumbnail
-                            $folders_data[] = [
-                                 'name' => $item['name'], 'type' => 'folder', 'path' => $folder_path_prefixed,
-                                 'protected' => true, 'authorized' => false, 'thumbnail' => null
-                            ];
-                        } elseif ($subfolder_access['authorized']) {
-                            // If authorized (or public), find thumbnail
-                            $thumbnail_source_prefixed_path = null;
-                            $subfolder_relative_to_source = substr($folder_path_prefixed, strlen($item['source_key']) + 1);
-
-                            $first_image_relative = find_first_image_in_source(
-                                $item['source_key'],
-                                $subfolder_relative_to_source,
-                                $allowed_ext
-                            );
-                            if ($first_image_relative !== null) {
-                                $thumbnail_source_prefixed_path = $folder_path_prefixed . '/' . $first_image_relative;
-                                $thumbnail_source_prefixed_path = str_replace('//', '/', $thumbnail_source_prefixed_path);
-                            }
-                            $folders_data[] = [
-                                'name' => $item['name'], 'type' => 'folder', 'path' => $folder_path_prefixed,
-                                'protected' => $subfolder_access['protected'], 'authorized' => true, // Must be true here
-                                'thumbnail' => $thumbnail_source_prefixed_path
-                            ];
-                        } // Else (error during check_folder_access or forbidden): Skip folder
-
-                    } else { // Is file
-                        // File data already has dimensions from scan phase
-                        $files_data[] = $item;
+                foreach ($all_folder_items as $item) {
+                    $folder_path_prefixed = $item['path'];
+                    $subfolder_access = check_folder_access($folder_path_prefixed);
+                    
+                    $thumbnail_source_prefixed_path = null;
+                    $first_image_relative_to_subdir = find_first_image_in_source($item['source_key'], $item['name'], $allowed_ext);
+                    if ($first_image_relative_to_subdir !== null) {
+                        $thumbnail_source_prefixed_path = $folder_path_prefixed . '/' . $first_image_relative_to_subdir;
+                        $thumbnail_source_prefixed_path = str_replace('//', '/', $thumbnail_source_prefixed_path); 
                     }
+
+                    $folders_data[] = [
+                        'name' => $item['name'],
+                        'type' => 'folder',
+                        'path' => $folder_path_prefixed,
+                        'protected' => $subfolder_access['protected'],
+                        'authorized' => $subfolder_access['authorized'],
+                        'thumbnail' => $thumbnail_source_prefixed_path
+                    ];
                 }
+
+                // $files_data is already prepared as $paginated_files, just ensure keys match frontend expectation
+                // The structure of $all_file_items already matches what was previously put into $files_data
+                $files_data = $paginated_files; 
 
                 json_response([
                     'files' => $files_data,
@@ -290,7 +267,7 @@ switch ($action) {
                     'pagination' => [
                         'current_page' => $page,
                         'total_pages' => $total_pages,
-                        'total_items' => $total_items
+                        'total_items' => $total_files // This now correctly refers to total files
                     ],
                     'is_root' => false,
                     'is_search' => (bool)$search_term, // Add is_search flag

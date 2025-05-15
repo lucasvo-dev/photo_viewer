@@ -12,7 +12,7 @@ export function initializePhotoSwipeHandler() {
 export function setupPhotoSwipeIfNeeded() {
     if (photoswipeLightbox) {
         photoswipeLightbox.destroy();
-        photoswipeLightbox = null;
+        setPhotoswipeLightbox(null);
     }
 
     const newLightbox = new PhotoSwipeLightbox({
