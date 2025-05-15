@@ -1,10 +1,10 @@
 console.log('[selectionManager.js] Script start');
 
 // External dependencies that might be needed (will be refined)
-// import { fetchDataApi } from './apiService.js';
-// import { showModalWithMessage } from './uiModal.js';
-// import { getCurrentFolderInfo } from './app.js'; // Or pass as dependency
-// import { photoswipeLightbox, setPhotoswipeLightbox } from './state.js'; // If selection mode affects PhotoSwipe
+import { fetchDataApi } from './apiService.js';
+import { API_BASE_URL } from './config.js';
+import { showModalWithMessage } from './uiModal.js';
+import { triggerDirectDownload, getCurrentImageListData, getCurrentFolderInfo, handleDownloadSelectedRequest } from './app.js';
 
 // --- Module State ---
 let isSelectModeActive = false;
@@ -53,7 +53,7 @@ export function initializeSelectionMode(config) {
         toggleSelectModeButtonEl.addEventListener('click', toggleMode);
     }
     if (downloadSelectedButtonEl) {
-        downloadSelectedButtonEl.addEventListener('click', handleDownloadRequest);
+        downloadSelectedButtonEl.addEventListener('click', handleDownloadSelected);
     }
     if (clearSelectionButtonEl) {
         clearSelectionButtonEl.addEventListener('click', clearAllSelections);
@@ -167,26 +167,72 @@ function clearAllSelections() {
     updateSelectionControlsUI();
 }
 
-async function handleDownloadRequest() {
-    if (!downloadSelectedButtonEl || !onDownloadRequestInitiated || !showModalCallback || !getCurrentFolderInfoCallback) {
-        console.error('[selectionManager.js] Download request cannot be handled due to missing dependencies.');
-        return;
-    }
-
+export async function handleDownloadSelected() {
     if (selectedImagePaths.size === 0) {
-        if (showModalCallback) showModalCallback('Chưa chọn ảnh', '<p>Vui lòng chọn ít nhất một ảnh để tải về.</p>');
+        showModalWithMessage('Không có mục nào được chọn để tải về.');
         return;
     }
 
-    const pathsToDownload = Array.from(selectedImagePaths);
-    const currentFolderInfo = getCurrentFolderInfoCallback ? getCurrentFolderInfoCallback() : { name: 'selected_images' };
-    const folderName = currentFolderInfo ? currentFolderInfo.name : 'selected_images';
-    
-    console.log('[selectionManager.js] Selected paths for download:', pathsToDownload);
+    const allItemsInView = getCurrentImageListData();
+    if (!allItemsInView || allItemsInView.length === 0) {
+        showModalWithMessage('Không thể lấy thông tin chi tiết của các mục đã chọn.');
+        return;
+    }
 
-    // The actual API call and job handling will be done in app.js via onDownloadRequestInitiated
-    if (onDownloadRequestInitiated) {
-        onDownloadRequestInitiated(pathsToDownload, folderName);
+    const imagesToZipPaths = [];
+    const videosToDownloadDetails = []; // Store URL and filename
+
+    for (const path of selectedImagePaths) {
+        const itemData = allItemsInView.find(item => item.path === path);
+        if (itemData) {
+            if (itemData.type === 'video') {
+                videosToDownloadDetails.push({
+                    url: `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`,
+                    filename: itemData.name
+                });
+            } else {
+                // Default to adding to ZIP (images, or other types)
+                imagesToZipPaths.push(path);
+            }
+        } else {
+            console.warn(`Could not find item data for selected path: ${path}. It will be ignored for download.`);
+        }
+    }
+
+    let downloadActionTaken = false;
+
+    if (videosToDownloadDetails.length > 0) {
+        videosToDownloadDetails.forEach(video => {
+            triggerDirectDownload(video.url, video.filename);
+        });
+        downloadActionTaken = true;
+    }
+
+    if (imagesToZipPaths.length > 0) {
+        const currentFolderInfo = getCurrentFolderInfo();
+        const folderName = currentFolderInfo ? currentFolderInfo.name : 'selected_items';
+        const zipFilenameHint = `${folderName}_selected_${imagesToZipPaths.length}_items.zip`;
+        
+        handleDownloadSelectedRequest(imagesToZipPaths, zipFilenameHint);
+        downloadActionTaken = true;
+    }
+
+    if (downloadActionTaken) {
+        const messages = [];
+        if (videosToDownloadDetails.length > 0) {
+            messages.push(`${videosToDownloadDetails.length} video(s) are being downloaded directly.`);
+        }
+        if (imagesToZipPaths.length > 0) {
+            messages.push(`A ZIP archive for ${imagesToZipPaths.length} item(s) is being prepared.`);
+        }
+        showModalWithMessage(messages.join(' '));
+        
+        clearAllSelections();
+        // Consider if selection mode should always be toggled off or only if downloads were actually started.
+        // For now, consistent with previous behavior if any action was taken.
+        toggleMode();
+    } else {
+        showModalWithMessage('Không có mục hợp lệ nào được tìm thấy để tải về từ lựa chọn của bạn.');
     }
 }
 

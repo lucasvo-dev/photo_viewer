@@ -79,7 +79,7 @@ import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActive
 // === GLOBAL HELPER FUNCTIONS        ===
 // ========================================
 
-function getCurrentFolderInfo() {
+export function getCurrentFolderInfo() {
     const path = currentFolder; // READ from state
     const nameElement = document.getElementById('current-directory-name');
     const name = nameElement ? nameElement.textContent.replace('Album: ', '').trim() : (path ? path.split('/').pop() : 'Thư mục không xác định');
@@ -617,7 +617,7 @@ function initializeAppEventListeners() {
 }
 
 // New function in app.js to handle the download request initiated by selectionManager
-async function handleDownloadSelectedRequest(pathsToDownload, folderNameHint) {
+export async function handleDownloadSelectedRequest(pathsToDownload, folderNameHint) {
     if (!pathsToDownload || pathsToDownload.length === 0) {
         showModalWithMessage('Lỗi', '<p>Không có đường dẫn nào được cung cấp để tải về.</p>', true);
         return;
@@ -758,5 +758,19 @@ function handleImageItemSelectFromCheckbox(itemData, galleryItemElement, isSelec
 // At the top of app.js, add import for zipManager if not already there:
 // import * as zipManager from './zipManager.js';
 
-// ... existing code ...
+// Function to trigger a direct file download
+export function triggerDirectDownload(url, filename) {
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', filename || 'download'); // Provide a filename
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    // No need to revoke ObjectURL if an actual URL is used.
+}
+
+// Export a getter for the current image list data
+export function getCurrentImageListData() {
+    return currentImageList;
+}
   
