@@ -53,18 +53,24 @@ export function setupPhotoSwipeIfNeeded() {
     // Add custom download button to UI
     newLightbox.on('uiRegister', function() {
         newLightbox.pswp.ui.registerElement({
-            name: 'download-video',
-            order: 8, // Adjust order as needed
+            name: 'download-item',
+            order: 8,
             isButton: true,
             tagName: 'button',
-            title: 'Download video',
+            title: 'Download',
             html: '<svg aria-hidden="true" class="pswp__icn" viewBox="0 0 24 24" width="24" height="24"><path d="M19.35 10.04C18.67 6.59 15.64 4 12 4 9.11 4 6.6 5.64 5.35 8.04 2.34 8.36 0 10.91 0 14c0 3.31 2.69 6 6 6h13c2.76 0 5-2.24 5-5 0-2.64-2.05-4.78-4.65-4.96zM17 13l-5 5-5-5h3V9h4v4h3z"/></svg>',
             onClick: (event, el, pswp) => {
                 const currentSlideData = pswp.currSlide.data;
-                if (currentSlideData && currentSlideData.type === 'video' && currentSlideData.videoSrc && currentSlideData.filename) {
-                    triggerDirectDownload(currentSlideData.videoSrc, currentSlideData.filename);
+                if (currentSlideData && currentSlideData.filename) {
+                    if (currentSlideData.type === 'video' && currentSlideData.videoSrc) {
+                        triggerDirectDownload(currentSlideData.videoSrc, currentSlideData.filename);
+                    } else if (currentSlideData.type === 'image' && currentSlideData.src) {
+                        triggerDirectDownload(currentSlideData.src, currentSlideData.filename);
+                    } else {
+                        console.warn('Download button clicked, but current slide data is incomplete or type is unknown.', currentSlideData);
+                    }
                 } else {
-                    console.warn('Download button clicked, but current slide is not a video or data is missing.');
+                    console.warn('Download button clicked, but current slide data or filename is missing.');
                 }
             }
         });
@@ -74,10 +80,10 @@ export function setupPhotoSwipeIfNeeded() {
     newLightbox.on('change', () => {
         const pswp = newLightbox.pswp;
         if (pswp && pswp.ui && pswp.ui.element) {
-            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-video');
+            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
             if (downloadBtn) {
                 const currentSlideData = pswp.currSlide.data;
-                if (currentSlideData && currentSlideData.type === 'video') {
+                if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
                     downloadBtn.style.display = 'block';
                 } else {
                     downloadBtn.style.display = 'none';
@@ -91,10 +97,10 @@ export function setupPhotoSwipeIfNeeded() {
     newLightbox.on('afterInit', () => {
         const pswp = newLightbox.pswp;
         if (pswp && pswp.ui && pswp.ui.element) {
-            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-video');
+            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
             if (downloadBtn) {
                 const currentSlideData = pswp.currSlide.data;
-                if (currentSlideData && currentSlideData.type === 'video') {
+                if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
                     downloadBtn.style.display = 'block';
                 } else {
                     downloadBtn.style.display = 'none';
