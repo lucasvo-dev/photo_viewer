@@ -1,0 +1,15 @@
+database.sqlite
+database.sqlite-shm
+database.sqlite-wal
+
+# Playwright
+node_modules/
+/test-results/
+/playwright-report/
+/blob-report/
+/playwright/.cache/
+
+/vendor/
+
+# Jest coverage
+/coverage/
