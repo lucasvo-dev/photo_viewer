@@ -294,109 +294,178 @@ switch ($action) {
 
     case 'request_zip':
         try {
-            $folder_to_zip = $_POST['path'] ?? ''; // Expect path via POST
-
-            if (empty($folder_to_zip)) {
-                json_error('Đường dẫn thư mục không được cung cấp.', 400);
-            }
-
-            $path_info = validate_source_and_path($folder_to_zip);
-            if (!$path_info || $path_info['is_root']) {
-                json_error('Đường dẫn thư mục không hợp lệ hoặc là thư mục gốc.', 400);
-            }
-
-            $current_source_prefixed_path = $path_info['source_prefixed_path'];
-            $access = check_folder_access($current_source_prefixed_path);
-            if (!$access['authorized']) {
-                json_error($access['error'] ?? 'Không có quyền truy cập thư mục này để tạo ZIP.', $access['password_required'] ? 401 : 403);
-            }
-
-            // Check if a recent, non-failed job for this path already exists to avoid duplicates
-            try {
-                // Priority 1: Check for ANY existing 'pending' or 'processing' job for this source_path
-                $stmt_check_active = $pdo->prepare("SELECT job_token, status FROM zip_jobs WHERE source_path = ? AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1");
-                $stmt_check_active->execute([$current_source_prefixed_path]);
-                $active_job = $stmt_check_active->fetch(PDO::FETCH_ASSOC);
-
-                if ($active_job) {
-                    // If an active job (pending/processing) exists, always return its info
-                    json_response([
-                        'message' => 'Một yêu cầu tạo ZIP cho thư mục này đã tồn tại và đang được xử lý hoặc chờ xử lý.',
-                        'job_token' => $active_job['job_token'],
-                        'status' => $active_job['status']
-                    ], 202); // 202 Accepted, client should poll this token
-                    return; // Exit early
-                }
-
-                // Priority 2: Check for a RECENT 'completed' job (within 5 minutes) whose file still exists
-                // MySQL: (NOW() - INTERVAL 5 MINUTE)
-                // SQLite: datetime('now', '-5 minutes')
-                $stmt_check_completed = $pdo->prepare("SELECT job_token, status, zip_filename FROM zip_jobs WHERE source_path = ? AND status = 'completed' AND created_at > (NOW() - INTERVAL 5 MINUTE) ORDER BY created_at DESC LIMIT 1");
-                $stmt_check_completed->execute([$current_source_prefixed_path]);
-                $completed_job = $stmt_check_completed->fetch(PDO::FETCH_ASSOC);
-
-                if ($completed_job && !empty($completed_job['zip_filename'])) {
-                    if (!defined('ZIP_CACHE_DIR_API_REQ')) {
-                        define('ZIP_CACHE_DIR_API_REQ', __DIR__ . '/../cache/zips/');
-                    }
-                    $existing_zip_filepath = realpath(ZIP_CACHE_DIR_API_REQ . $completed_job['zip_filename']);
-                    
-                    if ($existing_zip_filepath && is_file($existing_zip_filepath)) {
-                        json_response([
-                            'message' => 'Một file ZIP đã được tạo gần đây cho thư mục này và vẫn tồn tại.',
-                            'job_token' => $completed_job['job_token'],
-                            'status' => 'completed',
-                            'zip_filename' => $completed_job['zip_filename']
-                        ], 200); // OK, file is ready
-                        return; // Exit early
-                    } else {
-                        error_log("[API request_zip] Recent completed job found (token: {$completed_job['job_token']}), but physical file '{$completed_job['zip_filename']}' is missing. Proceeding to create new job.");
-                    }
-                }
-                // If no active job, and no recent valid completed job, proceed to create a new one.
-
-            } catch (PDOException $e) {
-                error_log("API Error (request_zip - check existing): " . $e->getMessage());
-                // Don't fail the request, just proceed to create a new job if check fails
-            }
-
-
-            $job_token = generate_job_token();
-
-            // This inner try-catch is for the INSERT operation itself
-            try {
-                $sql = "INSERT INTO zip_jobs (source_path, job_token, status) VALUES (?, ?, 'pending')";
-                $stmt = $pdo->prepare($sql);
-                if ($stmt->execute([$current_source_prefixed_path, $job_token])) {
-                    json_response([
-                        'message' => 'Yêu cầu tạo ZIP đã được nhận. Quá trình sẽ bắt đầu sớm.',
-                        'job_token' => $job_token,
-                        'status' => 'pending'
-                    ], 202); // 202 Accepted
-                } else {
-                    // This case might not be reached if PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION is set,
-                    // as execute() would throw an exception on failure.
-                    json_error('Không thể tạo yêu cầu ZIP trong cơ sở dữ liệu (lỗi thực thi không xác định).', 500);
-                }
-            } catch (PDOException $e) {
-                error_log("API Error (request_zip - insert new): " . $e->getMessage() . " SQLSTATE: " . ($e->errorInfo[1] ?? $e->getCode()));
-                // MySQL error code for duplicate entry is 1062 (SQLSTATE 23000)
-                if (($e->errorInfo[1] ?? null) == 1062) { 
-                     json_error('Lỗi tạo mã định danh công việc duy nhất. Vui lòng thử lại sau ít phút.', 500); // More specific message
-                } else {
-                     json_error('Lỗi máy chủ khi tạo yêu cầu ZIP (PDO).', 500);
-                }
-            }
-        } catch (Throwable $e) {
-            // Log detailed error for server-side debugging
-            $folder_to_zip_for_log = $_POST['path'] ?? 'N/A';
-            error_log("[request_zip Action Error] Path: '{$folder_to_zip_for_log}'. Error: " . $e->getMessage() . "\nStack Trace:\n" . $e->getTraceAsString());
+            // Correctly determine the request type based on 'source_path' for multi-select
+            // and 'path' for single folder select.
+            $multi_select_indicator = $_POST['source_path'] ?? null;
+            $single_folder_path_param = $_POST['path'] ?? null;
             
-            // Return a generic error to the client
+            $file_paths_for_selection = $_POST['file_paths'] ?? [];
+            $zip_filename_hint = $_POST['zip_filename_hint'] ?? null;
+
+            if ($multi_select_indicator === '_multiple_selected_') {
+                // This is a request for multiple selected files
+                error_log("[API request_zip] Multi-file selection detected. Files: " . count($file_paths_for_selection) . ", Hint: {$zip_filename_hint}");
+                if (empty($file_paths_for_selection) || !is_array($file_paths_for_selection)) {
+                    json_error('Không có tệp nào được chọn hoặc dữ liệu không hợp lệ.', 400);
+                }
+
+                $validated_file_paths = [];
+                foreach ($file_paths_for_selection as $file_path) {
+                    // Use validate_source_and_FILE_path for individual files
+                    $path_info = validate_source_and_file_path($file_path); 
+
+                    if (!$path_info) { // validate_source_and_file_path returns null on any validation failure (not found, not a file, not readable, not in source)
+                        json_error("Đường dẫn tệp không hợp lệ trong danh sách chọn: " . htmlspecialchars($file_path), 400);
+                    }
+                    
+                    // Access check for the parent directory of the file
+                    // dirname() on a source-prefixed path like 'main/foo/bar.jpg' gives 'main/foo'
+                    // If the path is 'main/bar.jpg', dirname gives 'main'.
+                    // If the path is just 'main' (not possible for a file usually), dirname gives '.'.
+                    $parent_dir_for_access_check = dirname($path_info['source_prefixed_path']);
+                    if ($parent_dir_for_access_check === '.') { // This case should ideally not happen if path_info is for a file within a source
+                        // If path_info['source_prefixed_path'] was like 'sourcekey/file.jpg', dirname is 'sourcekey'
+                        // If it was somehow just 'file.jpg' (which validate_source_and_file_path should prevent by requiring source_key),
+                        // this logic might need review, but validate_source_and_file_path checks for source_key.
+                        // For a path like 'main/image.jpg', dirname('main/image.jpg') is 'main'. check_folder_access('main') is fine.
+                         error_log("[API request_zip] Unusual parent directory '{$parent_dir_for_access_check}' for file '{$path_info['source_prefixed_path']}'. Review access check logic if problems arise.");
+                         // Default to checking the source key itself if dirname results in something unexpected for top-level files in a source
+                         if (!isset(IMAGE_SOURCES[$parent_dir_for_access_check])) { // if dirname isn't a source key
+                            $parent_dir_for_access_check = $path_info['source_key'];
+                         }
+                    }
+
+                    $access = check_folder_access($parent_dir_for_access_check);
+                    if (!$access['authorized']) {
+                        json_error('Không có quyền truy cập thư mục chứa một hoặc nhiều tệp đã chọn: (' . htmlspecialchars($parent_dir_for_access_check) . ' cho tệp ' . htmlspecialchars($file_path) . ')', $access['password_required'] ? 401 : 403);
+                    }
+                    $validated_file_paths[] = $path_info['source_prefixed_path'];
+                }
+
+                if (empty($validated_file_paths)) {
+                    json_error('Không có tệp hợp lệ nào được tìm thấy sau khi xác thực các tệp đã chọn.', 400);
+                }
+                
+                $job_token = generate_job_token();
+                $items_json = json_encode($validated_file_paths);
+                $source_path_for_db = '_multiple_selected_';
+
+                // Enhanced logging before DB insert
+                error_log("[API request_zip MULTI] Preparing to insert job. Token: {$job_token}");
+                error_log("[API request_zip MULTI] Source Path for DB: {$source_path_for_db} (Type: " . gettype($source_path_for_db) . ")");
+                error_log("[API request_zip MULTI] Items JSON length: " . strlen($items_json) . " (Type: " . gettype($items_json) . ")");
+                // Log a snippet of items_json to see its structure, be careful with very long strings in logs
+                $items_json_snippet = (strlen($items_json) > 200) ? substr($items_json, 0, 200) . '...' : $items_json;
+                error_log("[API request_zip MULTI] Items JSON snippet: {$items_json_snippet}");
+                error_log("[API request_zip MULTI] ZIP Filename Hint: '{$zip_filename_hint}' (Type: " . gettype($zip_filename_hint) . ")");
+
+                try {
+                    $sql = "INSERT INTO zip_jobs (source_path, job_token, status, items_json, result_message) VALUES (?, ?, 'pending', ?, ?)";
+                    $stmt = $pdo->prepare($sql);
+                    if ($stmt->execute([$source_path_for_db, $job_token, $items_json, $zip_filename_hint])) {
+                        json_response([
+                            'message' => 'Yêu cầu tạo ZIP cho các tệp đã chọn đã được nhận.',
+                            'job_token' => $job_token,
+                            'status' => 'pending',
+                            'source_path' => $source_path_for_db,
+                            'file_count' => count($validated_file_paths)
+                        ], 202);
+                    } else {
+                        json_error('Không thể tạo yêu cầu ZIP cho các tệp đã chọn (lỗi thực thi DB).', 500);
+                    }
+                } catch (PDOException $e) {
+                    error_log("API Error (request_zip - insert multi-file job): " . $e->getMessage());
+                    json_error('Lỗi máy chủ khi tạo yêu cầu ZIP cho các tệp đã chọn (DB).', 500);
+                }
+
+            } else {
+                // This is a request for a single folder
+                error_log("[API request_zip] Single folder selection detected. Path: {$single_folder_path_param}, Hint: {$zip_filename_hint}");
+                $folder_to_zip = $single_folder_path_param;
+                if (empty($folder_to_zip)) {
+                    json_error('Đường dẫn thư mục không được cung cấp.', 400); // This error is correct for this branch
+                }
+
+                $path_info = validate_source_and_path($folder_to_zip);
+                if (!$path_info || $path_info['is_root'] || $path_info['is_file']) { // Ensure it's a directory
+                    json_error('Đường dẫn thư mục không hợp lệ, là thư mục gốc hoặc là một tệp.', 400);
+                }
+
+                $current_source_prefixed_path = $path_info['source_prefixed_path'];
+                $access = check_folder_access($current_source_prefixed_path);
+                if (!$access['authorized']) {
+                    json_error($access['error'] ?? 'Không có quyền truy cập thư mục này để tạo ZIP.', $access['password_required'] ? 401 : 403);
+                }
+
+                // Check for existing active or recent completed job for this single folder
+                try {
+                    $stmt_check_active = $pdo->prepare("SELECT job_token, status FROM zip_jobs WHERE source_path = ? AND items_json IS NULL AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1");
+                    $stmt_check_active->execute([$current_source_prefixed_path]);
+                    $active_job = $stmt_check_active->fetch(PDO::FETCH_ASSOC);
+                    if ($active_job) {
+                        json_response([
+                            'message' => 'Một yêu cầu tạo ZIP cho thư mục này đã tồn tại và đang được xử lý hoặc chờ xử lý.',
+                            'job_token' => $active_job['job_token'],
+                            'status' => $active_job['status']
+                        ], 202);
+                        return;
+                    }
+
+                    $stmt_check_completed = $pdo->prepare("SELECT job_token, status, zip_filename FROM zip_jobs WHERE source_path = ? AND items_json IS NULL AND status = 'completed' AND created_at > (NOW() - INTERVAL 5 MINUTE) ORDER BY created_at DESC LIMIT 1");
+                    $stmt_check_completed->execute([$current_source_prefixed_path]);
+                    $completed_job = $stmt_check_completed->fetch(PDO::FETCH_ASSOC);
+                    if ($completed_job && !empty($completed_job['zip_filename'])) {
+                        if (!defined('ZIP_CACHE_DIR_API_REQ')) {
+                            define('ZIP_CACHE_DIR_API_REQ', __DIR__ . '/../cache/zips/');
+                        }
+                        $existing_zip_filepath = realpath(ZIP_CACHE_DIR_API_REQ . $completed_job['zip_filename']);
+                        if ($existing_zip_filepath && is_file($existing_zip_filepath)) {
+                            json_response([
+                                'message' => 'Một file ZIP đã được tạo gần đây cho thư mục này và vẫn tồn tại.',
+                                'job_token' => $completed_job['job_token'],
+                                'status' => 'completed',
+                                'zip_filename' => $completed_job['zip_filename']
+                            ], 200);
+                            return;
+                        } else {
+                            error_log("[API request_zip] Recent completed job for folder '{$current_source_prefixed_path}' found (token: {$completed_job['job_token']}), but physical file '{$completed_job['zip_filename']}' is missing. Proceeding to create new job.");
+                        }
+                    }
+                } catch (PDOException $e) {
+                    error_log("API Error (request_zip - check existing folder job for '{$current_source_prefixed_path}'): " . $e->getMessage());
+                }
+
+                $job_token = generate_job_token();
+                try {
+                    $sql = "INSERT INTO zip_jobs (source_path, job_token, status, result_message) VALUES (?, ?, 'pending', ?)"; // items_json is NULL by default for folder jobs
+                    $stmt = $pdo->prepare($sql);
+                    if ($stmt->execute([$current_source_prefixed_path, $job_token, $zip_filename_hint])) {
+                        json_response([
+                            'message' => 'Yêu cầu tạo ZIP đã được nhận. Quá trình sẽ bắt đầu sớm.',
+                            'job_token' => $job_token,
+                            'status' => 'pending'
+                        ], 202);
+                    } else {
+                        json_error('Không thể tạo yêu cầu ZIP cho thư mục trong cơ sở dữ liệu (lỗi thực thi không xác định).', 500);
+                    }
+                } catch (PDOException $e) {
+                    error_log("API Error (request_zip - insert new folder job for '{$current_source_prefixed_path}'): " . $e->getMessage() . " SQLSTATE: " . ($e->errorInfo[1] ?? $e->getCode()));
+                    if (($e->errorInfo[1] ?? null) == 1062) { 
+                         json_error('Lỗi tạo mã định danh công việc duy nhất. Vui lòng thử lại sau ít phút.', 500);
+                    } else {
+                         json_error('Lỗi máy chủ khi tạo yêu cầu ZIP cho thư mục (PDO).', 500);
+                    }
+                }
+            } // End of single folder vs multiple files logic
+        } catch (Throwable $e) {
+            $request_path_for_log = $_POST['path'] ?? ($_POST['source_path'] ?? 'N/A');
+            error_log("[request_zip Action Error] Triggering Path/Indicator: '{$request_path_for_log}'. Error: " . $e->getMessage() . "\nStack Trace:\n" . $e->getTraceAsString());
+            
             if ($e instanceof PDOException) {
                 json_error('Lỗi cơ sở dữ liệu khi yêu cầu tạo ZIP.', 500);
             } else {
-                json_error('Lỗi máy chủ không xác định khi yêu cầu tạo ZIP: ' . $e->getMessage(), 500);
+                 $clientErrorMessage = ($e->getCode() >= 400 && $e->getCode() < 500 && !empty($e->getMessage())) ? $e->getMessage() : 'Lỗi máy chủ không xác định khi yêu cầu tạo ZIP.';
+                json_error($clientErrorMessage, $e->getCode() >= 400 && $e->getCode() < 600 ? $e->getCode() : 500);
             }
         }
         break;
@@ -458,22 +527,27 @@ switch ($action) {
                 return;
             }
             
-            $path_info_dl = validate_source_and_path($job['source_path']);
-            if (!$path_info_dl || $path_info_dl['is_root']) { 
-                error_log("[API download_final_zip] Invalid original path for ZIP: " . $job['source_path']);
-                json_error('Đường dẫn gốc của file ZIP không hợp lệ.', 403);
-                return;
-            }
-            $access_dl = check_folder_access($path_info_dl['source_prefixed_path']);
-            if (!$access_dl['authorized']) {
-                error_log("[API download_final_zip] Access denied for original path: " . $job['source_path']);
-                json_error('Không có quyền tải file ZIP này.', $access_dl['password_required'] ? 401 : 403);
-                return;
-            }
-
             $zip_filename_from_db = $job['zip_filename'];
             $zip_filepath = realpath(ZIP_CACHE_DIR_API . $zip_filename_from_db);
             error_log("[API download_final_zip] Attempting to serve file. DB Filename: '{$zip_filename_from_db}', Resolved Path: '" . ($zip_filepath ?: 'false (realpath failed)') . "'");
+
+            // --- FIX: Skip access check for multi-file jobs ---
+            $is_multi_selected = ($job['source_path'] === '_multiple_selected_');
+            if (!$is_multi_selected) {
+                $path_info_dl = validate_source_and_path($job['source_path']);
+                if (!$path_info_dl || $path_info_dl['is_root']) { 
+                    error_log("[API download_final_zip] Invalid original path for ZIP: " . $job['source_path']);
+                    json_error('Đường dẫn gốc của file ZIP không hợp lệ.', 403);
+                    return;
+                }
+                $access_dl = check_folder_access($path_info_dl['source_prefixed_path']);
+                if (!$access_dl['authorized']) {
+                    error_log("[API download_final_zip] Access denied for original path: " . $job['source_path']);
+                    json_error('Không có quyền tải file ZIP này.', $access_dl['password_required'] ? 401 : 403);
+                    return;
+                }
+            }
+            // --- END FIX ---
 
             if ($zip_filepath && is_file($zip_filepath) && is_readable($zip_filepath)) {
                 error_log("[API download_final_zip] File found and readable: {$zip_filepath}. Sending headers.");
