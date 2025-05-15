@@ -794,7 +794,7 @@ function toggleImageSelectionMode() {
         if (downloadSelectedButton) downloadSelectedButton.style.display = 'none';
         if (clearSelectionButton) clearSelectionButton.style.display = 'none';
         
-        document.querySelectorAll('.gallery-item.selected-item').forEach(item => {
+        document.querySelectorAll('.gallery-item.selected-item, .image-item.selected-item').forEach(item => {
             item.classList.remove('selected-item');
             const checkbox = item.querySelector('.selection-checkbox');
             if (checkbox) checkbox.checked = false;
@@ -831,7 +831,7 @@ function handleImageItemSelect(event, itemData, galleryItemElement) {
 
 function clearAllImageSelections() {
     selectedImagePaths.clear();
-    document.querySelectorAll('.gallery-item.selected-item').forEach(item => {
+    document.querySelectorAll('.gallery-item.selected-item, .image-item.selected-item').forEach(item => {
         item.classList.remove('selected-item');
         const checkbox = item.querySelector('.selection-checkbox');
         if (checkbox) checkbox.checked = false;
