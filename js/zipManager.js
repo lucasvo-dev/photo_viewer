@@ -182,7 +182,7 @@ export function renderZipJobsPanel() {
 }
 
 // --- Modified Polling Logic ---
-function startPanelPolling() {
+export function startPanelPolling() {
     if (panelPollingIntervalId) {
         clearInterval(panelPollingIntervalId);
     }

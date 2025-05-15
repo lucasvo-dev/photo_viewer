@@ -184,6 +184,7 @@ try {
             source_path TEXT NOT NULL,
             job_token VARCHAR(255) NOT NULL UNIQUE,
             status VARCHAR(50) NOT NULL DEFAULT 'pending',
+            items_json TEXT DEFAULT NULL,
             total_files INT DEFAULT 0,
             processed_files INT DEFAULT 0,
             current_file_processing TEXT DEFAULT NULL,
@@ -198,6 +199,19 @@ try {
             KEY idx_zip_jobs_job_token (job_token),
             KEY idx_zip_jobs_source_path (source_path(255))
         )");
+
+        // --- AUTO-MIGRATION: Ensure new columns exist ---
+        function add_column_if_not_exists($pdo, $table, $column, $definition) {
+            // Use direct query, not prepared statement, for SHOW COLUMNS
+            $stmt = $pdo->query("SHOW COLUMNS FROM `$table` LIKE " . $pdo->quote($column));
+            if ($stmt->rowCount() === 0) {
+                $pdo->exec("ALTER TABLE `$table` ADD COLUMN $column $definition");
+            }
+        }
+        error_log('[db_connect.php] Checking/adding items_json column to zip_jobs...');
+        add_column_if_not_exists($pdo, 'zip_jobs', 'items_json', 'TEXT DEFAULT NULL');
+        error_log('[db_connect.php] Checking/adding result_message column to zip_jobs...');
+        add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT DEFAULT NULL');
 
     }
 } catch (PDOException $e) {

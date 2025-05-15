@@ -67,7 +67,8 @@ import {
 } from './photoswipeHandler.js';
 import {
     initializeZipManager,
-    handleDownloadZipAction as appHandleDownloadZipAction
+    handleDownloadZipAction as appHandleDownloadZipAction,
+    startPanelPolling
 } from './zipManager.js';
 
 // ========================================
@@ -540,18 +541,16 @@ async function initializeApp() {
     console.log('[app.js] DirectoryView initialized (or call completed).');
 
     initializeImageView({
-        openPhotoSwipe: openPhotoSwipeAtIndex,
+        openPhotoSwipe: (itemIndex) => {
+            if (!isSelectModeActive) {
+                openPhotoSwipeAtIndex(itemIndex);
+            } else {
+                console.log("[app.js] Wrapped openPhotoSwipe: In select mode, PhotoSwipe opening prevented.");
+            }
+        },
         loadMoreImages: loadMoreImages 
     });
     initializePhotoSwipeHandler();
-    initializeZipManager();
-    
-    document.getElementById('backButton').onclick = () => { history.back(); };
-    // LoadMoreBtn listener is now in uiImageView.js
-
-    if (!handleUrlHash()) { /* ... */ }
-    window.addEventListener('hashchange' , handleUrlHash);
-
     // --- NEW: Initialize ZIP Jobs Panel Elements ---
     const panelContainer = document.getElementById('zip-jobs-panel-container');
     const listContainer = document.getElementById('zip-jobs-list');
@@ -561,6 +560,16 @@ async function initializeApp() {
         console.error("[app.js] Failed to find ZIP Job Panel DOM elements.");
     }
     // --- END NEW ---
+    // Now initialize the ZIP Manager (must be after DOM elements are set)
+    initializeZipManager();
+    
+    document.getElementById('backButton').onclick = () => { history.back(); };
+    // LoadMoreBtn listener is now in uiImageView.js
+
+    if (!handleUrlHash()) { /* ... */ }
+    window.addEventListener('hashchange' , handleUrlHash);
+
+    initializeAppEventListeners();
 
     console.log("App initialized.");
 }
@@ -596,4 +605,387 @@ function handleShareAction(folderPath) {
 
 // --- Password Prompt Specific Functions ---
 // ... (showPasswordPrompt, hidePasswordPrompt, escapePasswordPromptListener) ...
+
+// DOM Elements - Gallery View Controls
+const toggleSelectModeButton = document.getElementById('toggleSelectModeButton');
+const downloadSelectedButton = document.getElementById('downloadSelectedButton');
+const clearSelectionButton = document.getElementById('clearSelectionButton');
+const downloadAllLink = document.getElementById('download-all-link');
+
+// State for multi-select
+let isSelectModeActive = false;
+const selectedImagePaths = new Set();
+
+function initializeAppEventListeners() {
+    // ... (other listeners like searchInput, clearSearch, backButton, shareButton, downloadAllLink) ...
+
+    if (toggleSelectModeButton) {
+        console.log("[app.js] Attaching listener to toggleSelectModeButton");
+        toggleSelectModeButton.addEventListener('click', toggleImageSelectionMode);
+    }
+
+    if (downloadSelectedButton) {
+        console.log("[app.js] Attaching listener to downloadSelectedButton");
+        downloadSelectedButton.addEventListener('click', handleDownloadSelected);
+    }
+
+    if (clearSelectionButton) {
+        console.log("[app.js] Attaching listener to clearSelectionButton");
+        clearSelectionButton.addEventListener('click', clearAllImageSelections);
+    }
+
+    const imageGrid = document.getElementById('image-grid');
+    if (imageGrid) {
+        console.log("[app.js] image-grid FOUND. Attaching delegated click listener for selection.");
+        imageGrid.addEventListener('click', function(event) {
+            console.log("[app.js] Image grid clicked. isSelectModeActive:", isSelectModeActive);
+            console.log("[app.js] Click event target:", event.target);
+
+            if (!isSelectModeActive) {
+                return;
+            }
+
+            event.preventDefault();
+            event.stopPropagation();
+
+            // Try to find the anchor tag that PhotoSwipe would use, as this is likely the item boundary
+            const clickedItemLink = event.target.closest('a'); 
+            console.log("[app.js] Closest <a> element found:", clickedItemLink);
+
+            if (!clickedItemLink) {
+                 console.log("[app.js] No <a> element found for click target.");
+                return; 
+            }
+            
+            let itemPath = clickedItemLink.dataset.sourcePath;
+            let itemWrapper = clickedItemLink; 
+            let visualElementToSelect = clickedItemLink; // Default to the link itself
+
+            if (!itemPath && clickedItemLink.href) {
+                // Try to extract path from href as a fallback
+                try {
+                    const url = new URL(clickedItemLink.href, location.origin); // Use location.origin as base if href is relative
+                    const pathParam = url.searchParams.get('path');
+                    if (pathParam) {
+                        itemPath = pathParam; // This will be URL-encoded, e.g., main%2Ffolder%2Ffile.jpg
+                        // We might need to decode it if other parts of the app expect a decoded path for selectedImagePaths Set
+                        // For now, let's try with the encoded path as `data-source-path` would also likely be non-decoded if set directly.
+                        // However, paths in `selectedImagePaths` are usually not URL encoded from other parts of the app.
+                        // Let's assume paths in selectedImagePaths should be decoded.
+                        itemPath = decodeURIComponent(pathParam);
+                        console.log("[app.js] Item path extracted from href:", itemPath);
+                    }
+                } catch (e) {
+                    console.warn("[app.js] Could not parse href to get item path:", clickedItemLink.href, e);
+                }
+            }
+            
+            if (!itemPath) { 
+                const parentGalleryItem = clickedItemLink.closest('.gallery-item');
+                if (parentGalleryItem && parentGalleryItem.dataset.sourcePath) {
+                    itemPath = parentGalleryItem.dataset.sourcePath;
+                    itemWrapper = parentGalleryItem; 
+                    visualElementToSelect = parentGalleryItem; // Apply .selected-item to .gallery-item
+                    console.log("[app.js] Item path found on parent .gallery-item:", itemPath);
+                } else {
+                    // If no .gallery-item parent, try to get the direct parent of the link if it's what uiImageView renders as the item box
+                    if (clickedItemLink.parentElement && clickedItemLink.parentElement.classList.contains('image-group') === false ) {
+                        visualElementToSelect = clickedItemLink.parentElement;
+                        console.log("[app.js] visualElementToSelect set to parent of <a>:", visualElementToSelect);
+                    }
+                }
+            } else { // itemPath was found on clickedItemLink (the <a> tag)
+                 // Try to see if this <a> tag is inside a .gallery-item for styling
+                 const parentGalleryItemForStyle = clickedItemLink.closest('.gallery-item');
+                 if (parentGalleryItemForStyle) {
+                    visualElementToSelect = parentGalleryItemForStyle;
+                    console.log("[app.js] visualElementToSelect set to parent .gallery-item of <a> for styling.");
+                 } else if (clickedItemLink.parentElement && clickedItemLink.parentElement.classList.contains('image-group') === false) {
+                    visualElementToSelect = clickedItemLink.parentElement;
+                    console.log("[app.js] visualElementToSelect set to parent of <a> (no .gallery-item found):", visualElementToSelect);
+                 }
+            }
+
+            // Checkbox finding logic - this is speculative as we don't know how uiImageView.js renders it.
+            // Best guess: it's a child of the itemWrapper (which is currently the <a> tag or a .gallery-item parent)
+            // or a sibling of the <a> tag if the <a> tag is the itemWrapper.
+            let checkbox = visualElementToSelect.querySelector('.selection-checkbox');
+            if (!checkbox && visualElementToSelect.tagName === 'A') { // If visualElementToSelect is the <a> tag, check its parent for the checkbox
+                 if (visualElementToSelect.parentNode && typeof visualElementToSelect.parentNode.querySelector === 'function') {
+                    // Check if the checkbox is a sibling (e.g. <a> and <input> are children of the same div)
+                    checkbox = Array.from(visualElementToSelect.parentNode.children).find(child => child.classList && child.classList.contains('selection-checkbox'));
+                    if (checkbox) {
+                        console.log("[app.js] Checkbox found as sibling of <a> tag.");
+                    } else {
+                        // Fallback: Check if the checkbox is a child of a grand-parent .gallery-item (if a .gallery-item structure is used but path was on <a>)
+                        const grandParentGalleryItem = visualElementToSelect.closest('.gallery-item');
+                        if(grandParentGalleryItem) {
+                            checkbox = grandParentGalleryItem.querySelector('.selection-checkbox');
+                            if(checkbox) console.log("[app.js] Checkbox found in grandparent .gallery-item element.");
+                        }
+                    }
+                 }
+            }
+
+            console.log("[app.js] Item path determined:", itemPath);
+            console.log("[app.js] Visual element to select (for styling):", visualElementToSelect);
+            console.log("[app.js] Checkbox element found:", checkbox);
+
+            // If itemPath is missing, we cannot proceed.
+            // Checkbox is optional for the degraded experience.
+            if (!itemPath) { 
+                console.warn('[app.js] Gallery item clicked in select mode is missing a valid itemPath. Link:', clickedItemLink, 'Path:', itemPath);
+                return;
+            }
+
+            // Toggle selection state
+            if (selectedImagePaths.has(itemPath)) {
+                console.log("[app.js] Deselecting item:", itemPath);
+                selectedImagePaths.delete(itemPath);
+                visualElementToSelect.classList.remove('selected-item');
+                if (checkbox) { 
+                    checkbox.checked = false;
+                }
+            } else {
+                console.log("[app.js] Selecting item:", itemPath);
+                selectedImagePaths.add(itemPath);
+                visualElementToSelect.classList.add('selected-item');
+                if (checkbox) { 
+                    checkbox.checked = true;
+                }
+            }
+            updateDownloadSelectedButton();
+        });
+    } else {
+        console.error("[app.js] image-grid NOT FOUND. Delegated click listener for selection NOT attached.");
+    }
+}
+
+function updateDownloadSelectedButton() {
+    if (downloadSelectedButton) {
+        const count = selectedImagePaths.size;
+        downloadSelectedButton.textContent = `Tải ảnh đã chọn (${count})`;
+        downloadSelectedButton.style.display = count > 0 ? 'inline-block' : 'none';
+        if (clearSelectionButton && isSelectModeActive) {
+            clearSelectionButton.style.display = count > 0 ? 'inline-block' : 'none';
+        } else if (clearSelectionButton) {
+            clearSelectionButton.style.display = 'none';
+        }
+    }
+}
+
+function toggleImageSelectionMode() {
+    isSelectModeActive = !isSelectModeActive;
+    document.body.classList.toggle('select-mode-active', isSelectModeActive);
+
+    if (isSelectModeActive) {
+        toggleSelectModeButton.textContent = 'Thoát chọn';
+        if (downloadAllLink) downloadAllLink.style.display = 'none';
+        updateDownloadSelectedButton(); 
+        if (photoswipeLightbox) {
+            console.log("[app.js] Destroying PhotoSwipe lightbox for select mode.");
+            photoswipeLightbox.destroy();
+            setPhotoswipeLightbox(null);
+        }
+    } else {
+        toggleSelectModeButton.textContent = 'Chọn ảnh';
+        if (downloadAllLink) downloadAllLink.style.display = 'inline-block';
+        clearAllImageSelections(); 
+        if (downloadSelectedButton) downloadSelectedButton.style.display = 'none';
+        if (clearSelectionButton) clearSelectionButton.style.display = 'none';
+        
+        document.querySelectorAll('.gallery-item.selected-item').forEach(item => {
+            item.classList.remove('selected-item');
+            const checkbox = item.querySelector('.selection-checkbox');
+            if (checkbox) checkbox.checked = false;
+        });
+
+        const imageView = document.getElementById('image-view');
+        if (imageView && imageView.style.display !== 'none') {
+            console.log("[app.js] Re-initializing PhotoSwipe lightbox after exiting select mode.");
+            setupPhotoSwipeIfNeeded();
+        }
+    }
+}
+
+function handleImageItemSelect(event, itemData, galleryItemElement) {
+    if (!isSelectModeActive) return;
+
+    event.preventDefault(); 
+    event.stopPropagation();
+
+    const checkbox = galleryItemElement.querySelector('.selection-checkbox');
+    const itemPath = itemData.source_path;
+
+    if (selectedImagePaths.has(itemPath)) {
+        selectedImagePaths.delete(itemPath);
+        galleryItemElement.classList.remove('selected-item');
+        if (checkbox) checkbox.checked = false;
+    } else {
+        selectedImagePaths.add(itemPath);
+        galleryItem.classList.add('selected-item');
+        if (checkbox) checkbox.checked = true;
+    }
+    updateDownloadSelectedButton();
+}
+
+function clearAllImageSelections() {
+    selectedImagePaths.clear();
+    document.querySelectorAll('.gallery-item.selected-item').forEach(item => {
+        item.classList.remove('selected-item');
+        const checkbox = item.querySelector('.selection-checkbox');
+        if (checkbox) checkbox.checked = false;
+    });
+    updateDownloadSelectedButton();
+    if (isSelectModeActive && clearSelectionButton) {
+        clearSelectionButton.style.display = 'none'; 
+    }
+}
+
+async function handleDownloadSelected() {
+    if (selectedImagePaths.size === 0) {
+        showModalWithMessage('Chưa chọn ảnh', '<p>Vui lòng chọn ít nhất một ảnh để tải về.</p>');
+        return;
+    }
+    const pathsToDownload = Array.from(selectedImagePaths);
+    const currentFolderInfo = getCurrentFolderInfo();
+    const folderName = currentFolderInfo ? currentFolderInfo.name : 'selected_images';
+    
+    console.log('Selected paths for download:', pathsToDownload);
+
+    const formData = new FormData();
+    pathsToDownload.forEach(path => {
+        formData.append('file_paths[]', path);
+    });
+    formData.append('zip_filename_hint', `selected_images_from_${folderName}.zip`);
+    formData.append('source_path', '_multiple_selected_'); // Add dummy source_path
+
+    try {
+        const result = await fetchDataApi('request_zip', {}, {
+            method: 'POST',
+            body: formData
+        });
+
+        if (result.status === 'success' && result.data && result.data.job_token) {
+            const initialJobData = result.data;
+            const jobToken = initialJobData.job_token;
+            if (!initialJobData.status) initialJobData.status = 'pending';
+
+            addOrUpdateZipJob(jobToken, { 
+                jobData: initialJobData, 
+                folderDisplayName: `Tuyển chọn (${pathsToDownload.length} ảnh)`, 
+                lastUpdated: Date.now() 
+            });
+            
+            // Start panel polling after adding the job
+            startPanelPolling();
+            
+        } else {
+            const errorMessage = result.message || result.data?.error || 'Không thể yêu cầu tạo ZIP cho các ảnh đã chọn.';
+            showModalWithMessage('Lỗi tạo ZIP', `<p>${errorMessage}</p>`, true);
+        }
+    } catch (error) {
+        console.error("[app.js] Error in handleDownloadSelected during fetchDataApi for request_zip:", error);
+        showModalWithMessage('Lỗi kết nối', '<p>Không thể kết nối đến máy chủ để yêu cầu tạo ZIP.</p>', true);
+    }
+}
+
+// Modify renderImageItem to include checkbox and attach selection listener
+function renderImageItem(item, parentElement, isSubfolderItem = false) {
+    const galleryItem = document.createElement(isSubfolderItem ? 'li' : 'div');
+    galleryItem.className = 'gallery-item';
+    galleryItem.dataset.sourcePath = item.source_path; // Store for selection
+
+    const link = document.createElement('a');
+    link.href = '#'; // Prevent actual navigation, PhotoSwipe handles click
+
+    const img = document.createElement('img');
+    img.src = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(item.source_path)}&size=${THUMBNAIL_SIZE_GALLERY_VIEW}`;
+    img.alt = item.name;
+    img.loading = 'lazy';
+
+    link.appendChild(img);
+
+    // Checkbox for selection mode - always add, CSS handles visibility
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.className = 'selection-checkbox';
+    checkbox.setAttribute('aria-label', `Chọn ${item.name}`);
+    galleryItem.appendChild(checkbox);
+
+    // Item Name Overlay (Optional - if you want names on thumbnails)
+    const nameOverlay = document.createElement('div');
+    nameOverlay.className = 'item-name-overlay';
+    nameOverlay.textContent = item.name;
+    link.appendChild(nameOverlay);
+    
+    galleryItem.appendChild(link);
+
+    // Event listener for selection (delegation is better, but for simplicity now direct if fewer items)
+    galleryItem.addEventListener('click', (event) => {
+        if (isSelectModeActive) {
+            event.preventDefault();
+            event.stopPropagation();
+
+            if (event.target !== checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+            handleImageItemSelectFromCheckbox(item, galleryItem, checkbox.checked);
+        }
+    });
+
+    // Listener for PhotoSwipe if not in select mode
+    link.addEventListener('click', (e) => {
+        if (!isSelectModeActive) {
+            e.preventDefault();
+            const itemIndex = currentLoadedItems.findIndex(loadedItem => loadedItem.source_path === item.source_path);
+            if (itemIndex !== -1) {
+                openPhotoSwipe(itemIndex, currentLoadedItems); 
+            }
+        } else {
+            e.preventDefault();
+        }
+    });
+
+    parentElement.appendChild(galleryItem);
+    return galleryItem;
+}
+
+// New helper for selection logic tied to checkbox state
+function handleImageItemSelectFromCheckbox(itemData, galleryItemElement, isSelected) {
+    if (!isSelectModeActive) return;
+
+    const itemPath = itemData.source_path;
+    if (isSelected) {
+        selectedImagePaths.add(itemPath);
+        galleryItemElement.classList.add('selected-item');
+    } else {
+        selectedImagePaths.delete(itemPath);
+        galleryItemElement.classList.remove('selected-item');
+    }
+    updateDownloadSelectedButton();
+}
+
+// Make sure to call initializeAppEventListeners in your main app flow
+// Example: document.addEventListener('DOMContentLoaded', initializeAppEventListeners);
+// Or if initializeAppEventListeners is part of a larger init function, ensure it's called.
+
+// Also, ensure zipManager is imported if you are calling its methods directly like zipManager.addOrUpdateZipJob
+// import * as zipManager from './zipManager.js'; // At the top of app.js
+
+// Modify showThumbnailsForDirectory to correctly pass item data to renderImageItem
+// Ensure currentLoadedItems is populated correctly for PhotoSwipe indexing.
+
+// Near the top of app.js, with other DOM element declarations:
+// const downloadAllLink = document.getElementById('download-all-link');
+
+// Ensure getCurrentFolderInfo() is defined and returns { name: 'current_folder_name' }
+// function getCurrentFolderInfo() {
+//    return currentDirectoryPath ? { name: currentDirectoryPath.split('/').pop() || 'gallery' } : { name: 'gallery' };
+// }
+
+// At the top of app.js, add import for zipManager if not already there:
+// import * as zipManager from './zipManager.js';
+
+// ... existing code ...
   

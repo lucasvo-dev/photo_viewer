@@ -52,11 +52,11 @@
             <div class="image-view-header">
                 <h2 id="current-directory-name"></h2>
                  <div class="image-view-actions">
-                    <!-- Keep original buttons, remove mobile specific classes/elements -->
+                    <button id="toggleSelectModeButton" class="button select-mode-button">Chọn ảnh</button>
+                    <button id="downloadSelectedButton" class="button download-selected-button download-selected-action-button" style="display: none;">Tải ảnh đã chọn (0)</button>
+                    <button id="clearSelectionButton" class="button clear-selection-button" style="display: none;">Bỏ chọn tất cả</button>
                     <button id="shareButton" class="button share-button">Sao chép Link</button>
                     <a id="download-all-link" href="#" class="button download-all">Tải tất cả (ZIP)</a>
-                    
-                    <!-- REMOVED "More" button and menu -->
                  </div>
             </div>
             <div id="subfolder-display-area"></div>
