@@ -66,8 +66,9 @@ body.jet-app-active {
     height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: hidden; /* Prevent body scroll when Jet app is active */
+    overflow: auto; /* Allow body scroll if content exceeds viewport */
     padding: 0;
+    /* pointer-events: none; /* REVERTED DIAGNOSTIC */
 }
 
 .jet-app-active .header h1 { /* Assuming a general .header class might be on Jet's header */
@@ -89,6 +90,7 @@ body.jet-app-active {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
+    min-height: 0; /* Added to ensure proper flex shrinking for overflow */
     /* padding: 10px; /* Padding is now on children or specific areas */
     /* overflow: hidden; /* REMOVED - To allow child scroller to work */
 }
@@ -97,8 +99,8 @@ body.jet-app-active {
     display: flex;
     flex-direction: column;
     flex-grow: 1;
-    /* overflow: hidden; /* REMOVED - To allow child scroller to work */
     min-height: 0;
+    overflow: hidden; /* ADDED: Ensure this container clips its content if #jet-item-list-container tries to overflow it */
 }
 
 .jet-app-active #jet-header-area {
@@ -131,8 +133,10 @@ body.jet-app-active {
     flex-grow: 1;
     overflow-y: auto;
     min-height: 0;
+    /* height: auto !important; /* REMOVED: Let flexbox determine height */
     padding: 10px;
     background-color: var(--jet-bg-primary);
+    /* pointer-events: auto; /* REVERTED DIAGNOSTIC */
 }
 
 /* --- Jet Image Grid --- */
@@ -298,9 +302,23 @@ body.jet-app-active {
     display: flex;
     flex-wrap: wrap;
     gap: 8px;
-    justify-content: flex-start;
+    justify-content: space-between;
+    align-items: center;
     margin-bottom: 10px;
 }
+
+.jet-app-active .filter-group-main,
+.jet-app-active .filter-group-colors {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.jet-app-active .filter-group-colors {
+    justify-content: flex-start;
+}
+
 .jet-app-active .jet-filter-button {
     background-color: var(--jet-bg-filter-button);
     color: var(--jet-text-filter-button);
@@ -320,6 +338,61 @@ body.jet-app-active {
     border-color: var(--jet-border-filter-button-active);
     font-weight: bold;
 }
+
+/* Styles for Color Filter Buttons */
+.jet-app-active .jet-filter-button.color-filter {
+    width: 28px;  /* Increased from 24px */
+    height: 28px; /* Increased from 24px */
+    padding: 0;   /* Remove padding to rely on explicit width/height */
+    font-size: 0; /* Hide any accidental text or space if button markup is empty */
+    flex-shrink: 0; /* Prevent shrinking in flex layout */
+    vertical-align: middle; /* Align with text of other buttons if in same line */
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="red"] {
+    background-color: var(--jet-color-picked-red);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="red"]:hover {
+    border-color: var(--jet-color-picked-red-border);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="red"].active {
+    border-color: var(--jet-color-picked-red-border);
+    box-shadow: 0 0 0 2px var(--jet-color-picked-red-border);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="green"] {
+    background-color: var(--jet-color-picked-green);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="green"]:hover {
+    border-color: var(--jet-color-picked-green-border);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="green"].active {
+    border-color: var(--jet-color-picked-green-border);
+    box-shadow: 0 0 0 2px var(--jet-color-picked-green-border);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="blue"] {
+    background-color: var(--jet-color-picked-blue);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="blue"]:hover {
+    border-color: var(--jet-color-picked-blue-border);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="blue"].active {
+    border-color: var(--jet-color-picked-blue-border);
+    box-shadow: 0 0 0 2px var(--jet-color-picked-blue-border);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="grey"] {
+    background-color: var(--jet-color-picked-grey-flag); /* Using -flag for the button swatch */
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="grey"]:hover {
+    border-color: var(--jet-color-picked-grey-border);
+}
+.jet-app-active .jet-filter-button.color-filter[data-color="grey"].active {
+    border-color: var(--jet-color-picked-grey-border);
+    box-shadow: 0 0 0 2px var(--jet-color-picked-grey-border);
+}
+/* End of Styles for Color Filter Buttons */
 
 .jet-app-active #jet-sort-controls {
     display: flex;
@@ -440,3 +513,29 @@ body.jet-app-active {
     color: var(--jet-text-on-dark-accent);
 }
 /* .jet-preview-overlay-container #jet-preview-pick-button.picked is handled by .picked-COLOR classes */
+
+/* Media Query for Mobile Layout of Filters */
+@media (max-width: 768px) {
+    .jet-app-active #jet-filter-controls {
+        flex-direction: column;
+        align-items: stretch;
+        justify-content: flex-start;
+    }
+
+    .jet-app-active .filter-group-main {
+        justify-content: flex-start;
+        width: 100%;
+        margin-bottom: 8px;
+    }
+
+    .jet-app-active .filter-group-colors {
+        justify-content: flex-start;
+        width: 100%;
+    }
+
+    /* Optional: if buttons themselves should take more width on mobile */
+    /* .jet-app-active .filter-group-main .jet-filter-button {
+        flex-grow: 1; 
+        text-align: center;
+    } */
+}

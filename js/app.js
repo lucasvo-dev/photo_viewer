@@ -1,3 +1,43 @@
+(function() {
+    console.log('[DIAGNOSTIC] Applying addEventListener wrapper for wheel/mousewheel events.');
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    EventTarget.prototype.addEventListener = function(type, listener, optionsOrCapture) {
+        if (type === 'wheel' || type === 'mousewheel') {
+            console.log('[DIAGNOSTIC] addEventListener CALLED for:', type, 'on:', this, 'Listener fn:', listener ? listener.toString().substring(0, 100) + '...' : 'undefined');
+            const originalListener = listener;
+            const newListener = function(event) {
+                console.log('[DIAGNOSTIC] Event FIRED:', type, 'Default prevented BEFORE listener execution:', event.defaultPrevented, 'Target:', event.target, 'CurrentTarget:', event.currentTarget);
+                
+                // Temporarily block preventDefault to see if scrolling works
+                const originalPreventDefault = event.preventDefault;
+                let preventDefaultCalledDuringListener = false;
+                event.preventDefault = function() {
+                    console.warn('[DIAGNOSTIC] event.preventDefault() CALLED by listener for WHEEL/MOUSEWHEEL event! Blocking for test. Listener:', originalListener ? originalListener.toString().substring(0,100) + '...' : 'undefined' );
+                    preventDefaultCalledDuringListener = true;
+                    // Not calling originalPreventDefault();
+                };
+
+                try {
+                    originalListener.call(this, event);
+                } catch (e) {
+                    console.error('[DIAGNOSTIC] Error in wrapped listener:', e);
+                    // Restore original preventDefault if an error occurs in the listener
+                    event.preventDefault = originalPreventDefault; 
+                    throw e; 
+                }
+                
+                // Restore original preventDefault after listener execution
+                event.preventDefault = originalPreventDefault; 
+                console.log('[DIAGNOSTIC] Event FINISHED:', type, 'Default prevented AFTER listener (reflects if original would have called it):', event.defaultPrevented, 'Was preventDefault attempted by listener during this call:', preventDefaultCalledDuringListener);
+            };
+            originalAddEventListener.call(this, type, newListener, optionsOrCapture);
+        } else {
+            originalAddEventListener.call(this, type, listener, optionsOrCapture);
+        }
+    };
+    console.log('[DIAGNOSTIC] addEventListener wrapper APPLIED.');
+})();
+
 console.log('[app.js] Script start'); // VERY FIRST LINE
 
 // js/app.js

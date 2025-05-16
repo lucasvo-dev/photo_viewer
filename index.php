@@ -1,4 +1,24 @@
-<?php require_once 'config.php'; ?>
+<?php
+require_once 'config.php'; // Defines constants like BASE_URL
+require_once 'db_connect.php'; // Connects to DB, defines IMAGE_SOURCES
+require_once 'api/helpers.php'; // For functions like validate_source_and_path
+
+session_start();
+
+// Basic security check - check if user is logged in
+$is_logged_in = isset($_SESSION['user']);
+$is_admin = $is_logged_in && $_SESSION['user'] === ADMIN_USER; 
+
+// Determine initial view based on query parameters or default
+$initial_view = 'directory'; // Default to directory view
+$initial_folder_path = '';
+
+if (isset($_GET['folder'])) {
+    $initial_view = 'image';
+    $initial_folder_path = trim($_GET['folder'], '/');
+}
+
+?>
 <!DOCTYPE html>
 <html lang="vi">
 <head>
@@ -7,12 +27,55 @@
     <title><?php echo htmlspecialchars($config['app_title'] ?? 'Photo Gallery'); ?></title>
     <link rel="icon" type="image/png" href="theme/favicon.png"> <!-- Favicon -->
 
+    <script>
+    console.log('[DIAGNOSTIC from index.php HEAD] SCRIPT RUNNING'); // Initial check
+
+    const originalAddEventListener = EventTarget.prototype.addEventListener;
+    console.log('[DIAGNOSTIC from index.php HEAD] Applying EventTarget.prototype.addEventListener wrapper...');
+
+    EventTarget.prototype.addEventListener = function(type, listener, options) {
+        const eventTypesToLog = ['wheel', 'mousewheel', 'scroll', 'DOMMouseScroll'];
+        if (eventTypesToLog.includes(type)) {
+            console.log(`[DIAGNOSTIC AddListener WRAPPER] type: ${type}, target:`, this, 'listener:', listener, 'options:', options);
+
+            const originalListener = listener;
+            listener = function(event) {
+                console.log(`[DIAGNOSTIC Event FIRED via WRAPPER] type: ${event.type}, target:`, event.target, 'currentTarget:', event.currentTarget, 'event:', event);
+                if (event.defaultPrevented) {
+                    console.log('[DIAGNOSTIC Event DefaultPrevented via WRAPPER] Default was already prevented for:', event.type);
+                }
+                const result = originalListener.apply(this, arguments);
+                return result;
+            };
+        }
+        return originalAddEventListener.call(this, type, listener, options);
+    };
+    console.log('[DIAGNOSTIC from index.php HEAD] EventTarget.prototype.addEventListener wrapper APPLIED.');
+
+    function diagnosticWheelHandler(event) {
+        console.log(`[DIAGNOSTIC DIRECT ${event.currentTarget === window ? 'WINDOW' : 'DOCUMENT'} LISTENER] Event FIRED: ${event.type}, target:`, event.target, 'event:', event);
+        if (event.defaultPrevented) {
+            console.log(`[DIAGNOSTIC DIRECT ${event.currentTarget === window ? 'WINDOW' : 'DOCUMENT'} LISTENER] Default was PREVENTED for: ${event.type}`);
+        }
+        // Do not call event.preventDefault() here, just observe.
+    }
+
+    console.log('[DIAGNOSTIC from index.php HEAD] Adding DIRECT wheel/mousewheel listeners to window and document (capturing)...');
+    window.addEventListener('wheel', diagnosticWheelHandler, true);
+    window.addEventListener('mousewheel', diagnosticWheelHandler, true); // For older browsers/compatibility
+    document.addEventListener('wheel', diagnosticWheelHandler, true);
+    document.addEventListener('mousewheel', diagnosticWheelHandler, true); // For older browsers/compatibility
+    console.log('[DIAGNOSTIC from index.php HEAD] DIRECT wheel/mousewheel listeners ADDED.');
+
+    </script>
+
     <!-- Corrected PhotoSwipe 5 CSS CDN -->
     <link rel="stylesheet" href="https://unpkg.com/photoswipe@5/dist/photoswipe.css">
     <!-- Your custom styles -->
     <link rel="stylesheet" href="css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
-<body>
+<body class="<?php echo $is_admin ? 'admin-logged-in' : ''; ?>">
     <header class="app-header">
         <div class="container header-container">
             <a href="#" class="logo-link" aria-label="Trang chủ Guustudio">

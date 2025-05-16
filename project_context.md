@@ -102,6 +102,36 @@
     *   Sửa lỗi logic frontend (`js/admin.js`) để modal hiển thị đúng thông tin và cảnh báo lỗi chỉ xuất hiện khi job gần nhất thực sự `failed`.
     *   Cải thiện UX nút yêu cầu cache để cập nhật trạng thái "Đang chờ xử lý" ngay lập tức.
 *   **Đã triển khai bảng điều khiển (panel) hàng đợi ZIP bất đồng bộ trên giao diện người dùng, cung cấp phản hồi trực quan về nhiều công việc nén ZIP cùng lúc.**
+*   **Đã khắc phục các vấn đề CSS và UI (Giao diện Người dùng):**
+    *   **Giao diện Thư viện Ảnh Chính:** Đã giải quyết sự không nhất quán về chiều rộng hiển thị lưới ảnh giữa trang chủ và chế độ xem thư mục con. Hiện tại, trang chủ có giao diện "đóng hộp" (boxed-in) và chế độ xem thư mục con/album có giao diện toàn chiều rộng (full-width) như mong muốn, thông qua việc sử dụng lớp `gallery-view-active` trên `<body>` và CSS điều kiện.
+    *   **Không gian làm việc Jet (Jet Culling Workspace):** Đã khắc phục lỗi không thể cuộn trang bằng chuột (mouse wheel scroll) và lỗi không thể zoom trang (Ctrl+MouseWheel). Nguyên nhân do `overflow: hidden` trên `body.jet-app-active` đã được sửa thành `overflow: auto` trong `css/views/jet_view.css`.
+*   **Triển khai Giao diện và Chức năng Cơ bản cho Jet Culling Workspace:**
+    *   **Cấu trúc Giao diện và CSS:** Thiết lập giao diện người dùng cơ bản cho không gian làm việc Jet, bao gồm refactor CSS với việc sử dụng Biến tùy chỉnh CSS (CSS Custom Properties) trong `css/views/jet_view.css`.
+    *   **Hiển thị Lưới Ảnh:** Hiển thị danh sách ảnh (preview từ file RAW) dưới dạng lưới trong không gian làm việc.
+    *   **Chức năng Lọc Ảnh (Filtering):**
+        *   Người dùng có thể lọc ảnh theo các tiêu chí: "Tất cả", "Đã chọn (Bất kỳ màu nào)", "Chưa chọn".
+        *   Hỗ trợ lọc theo các màu đã chọn (pick colors): Đỏ (Red), Xanh lá (Green), Xanh dương (Blue), Xám (Grey).
+        *   Các nút lọc màu được hiển thị dưới dạng swatch màu (ô màu vuông).
+    *   **Chức năng Sắp xếp Ảnh (Sorting):**
+        *   Người dùng có thể sắp xếp ảnh theo: Tên file (A-Z, Z-A), Ngày sửa đổi (Mới nhất, Cũ nhất).
+    *   **Giao diện Điều khiển Lọc Linh hoạt (Responsive Filter Controls):**
+        *   HTML trong `js/jet_app.js` được cấu trúc lại với các `div` (`.filter-group-main`, `.filter-group-colors`) để quản lý nhóm nút lọc.
+        *   CSS trong `css/views/jet_view.css` được cập nhật để:
+            *   Trên Desktop: Các nút lọc chính (Tất cả, Đã chọn,...) ở bên trái, các nút lọc màu (swatches) ở bên phải, sử dụng `justify-content: space-between`.
+            *   Trên Mobile (breakpoint 768px): Các nút lọc màu tự động xuống dòng bên dưới các nút lọc chính, sử dụng `flex-direction: column`. Các nút được căn chỉnh `align-items: center` và có kích thước phù hợp cho thiết bị di động.
+    *   **Chế độ Xem trước Ảnh (Image Preview Mode):**
+        *   Khi người dùng nhấp đúp vào một ảnh trong lưới, hoặc chọn ảnh rồi nhấn phím `Space`, một lớp phủ (overlay) hiển thị ảnh đó với kích thước lớn hơn.
+        *   **Điều hướng:**
+            *   Nút "Trước" (Previous) và "Sau" (Next) trên màn hình cho phép duyệt qua các ảnh trong thư mục hiện tại.
+            *   Phím mũi tên Trái (`ArrowLeft`) và Phải (`ArrowRight`) trên bàn phím cũng thực hiện chức năng điều hướng tương tự.
+        *   **Chọn/Bỏ chọn Màu từ Xem trước:**
+            *   Nút chọn màu (hiển thị màu hiện tại) và các phím số (0-3) cho phép người dùng gán hoặc bỏ gán màu (Đỏ, Xanh lá, Xanh dương, Xám/Không màu) cho ảnh đang xem trước.
+            *   Trạng thái chọn màu được cập nhật đồng bộ trên cả nút trong chế độ xem trước và mục ảnh tương ứng trong lưới nền.
+        *   **Đóng Xem trước:**
+            *   Nút "Đóng (Esc)" chuyên dụng trên màn hình.
+            *   Nhấn phím `Space` hoặc phím `Escape` (Esc) trên bàn phím.
+        *   **Hiển thị Trạng thái Chọn Màu (Color Pick Status Display in Grid):**
+            *   Các mục ảnh trong lưới (`image grid`) được chọn màu sẽ hiển thị một cờ màu nhỏ ở góc dưới bên phải của thumbnail.
 
 ## 6. Lộ trình Phát triển Tiếp theo (Roadmap & Features Dự kiến)
 
@@ -132,6 +162,7 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
             *   Lọc ảnh theo trạng thái "đã chọn" (picked).
             *   Lọc theo nhãn màu hoặc đánh giá sao (nếu có).
             *   Sắp xếp ảnh theo tên file, ngày chụp, hoặc các siêu dữ liệu khác.
+            *   (Tiếp theo) Xem xét các tùy chọn lọc/sắp xếp nâng cao hơn dựa trên siêu dữ liệu EXIF.
         *   **Lưu Lựa chọn (Saving Selections):**
             *   Các lựa chọn (picks, tags, ratings, colors) cần được lưu trữ bền vững.
             *   Dữ liệu này phải được liên kết với ảnh cụ thể (ví dụ: đường dẫn có tiền tố nguồn) và người dùng (designer) đã thực hiện lựa chọn.
@@ -179,6 +210,8 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
             *   **Mở/Đóng Xem trước Ảnh (Open/Close Image Preview):**
                 *   Người dùng có thể mở chế độ xem trước cho một ảnh bằng cách nhấp đúp chuột vào ảnh đó trong lưới, hoặc chọn ảnh đó (bằng một cú nhấp chuột hoặc phím mũi tên) rồi nhấn phím `Space`.
                 *   Khi chế độ xem trước đang mở, nhấn phím `Space` hoặc phím `Escape`, hoặc nhấp vào nút "Đóng (Esc)" chuyên dụng sẽ đóng lại chế độ xem trước.
+            *   **(Tiếp theo)** Hoàn thiện các tương tác nâng cao trong chế độ xem trước (ví dụ: zoom chi tiết hơn nếu cần cho việc culling).
+            *   **(Tiếp theo)** Tích hợp sâu hơn với hệ thống đánh giá sao (star ratings) nếu được triển khai.
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.

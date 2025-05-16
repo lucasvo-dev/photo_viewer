@@ -72,27 +72,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function initializeAppLayout() {
         if (!appContainer) return;
+
         appContainer.innerHTML = `
             <div id="jet-header-area">
                 <div id="jet-breadcrumb"></div>
                 <div id="jet-controls">
                     <div id="jet-filter-controls" style="display: none;">
-                        <button id="filter-all" class="button jet-filter-button active">Tất cả</button>
-                        <button id="filter-red" class="button jet-filter-button" data-color="red">Đỏ</button>
-                        <button id="filter-green" class="button jet-filter-button" data-color="green">Xanh lá</button>
-                        <button id="filter-blue" class="button jet-filter-button" data-color="blue">Xanh dương</button>
-                        <button id="filter-grey" class="button jet-filter-button" data-color="grey">Xám</button>
-                        <button id="filter-picked-any" class="button jet-filter-button">Đã chọn (Màu bất kỳ)</button>
-                        <button id="filter-not-picked" class="button jet-filter-button">Chưa chọn</button>
+                        <div class="filter-group-main">
+                            <button class="jet-filter-button active" id="filter-all">Tất cả</button>
+                            <button class="jet-filter-button" id="filter-picked-any">Đã chọn (Bất kỳ)</button>
+                            <button class="jet-filter-button" id="filter-not-picked">Chưa chọn</button>
+                        </div>
+                        <div class="filter-group-colors">
+                            <button class="jet-filter-button color-filter" data-color="red" aria-label="Lọc màu đỏ"></button>
+                            <button class="jet-filter-button color-filter" data-color="green" aria-label="Lọc màu xanh lá"></button>
+                            <button class="jet-filter-button color-filter" data-color="blue" aria-label="Lọc màu xanh dương"></button>
+                            <button class="jet-filter-button color-filter" data-color="grey" aria-label="Lọc màu xám"></button>
+                        </div>
                     </div>
-                    <div id="jet-sort-controls" style="display: none; margin-top: 10px;">
-                        <label for="sort-order" style="margin-right: 5px;">Sắp xếp theo:</label>
-                        <select id="sort-order" class="jet-sort-select button">
-                            <option value="default">Mặc định (Tên file A-Z)</option>
-                            <option value="name-asc">Tên file (A-Z)</option>
-                            <option value="name-desc">Tên file (Z-A)</option>
-                            <option value="date-desc">Ngày sửa đổi (Mới nhất)</option>
-                            <option value="date-asc">Ngày sửa đổi (Cũ nhất)</option>
+                    <div id="jet-sort-controls" style="display: none;">
+                        <label for="sort-order">Sắp xếp theo:</label>
+                        <select id="sort-order" class="jet-sort-select">
+                            <option value="default">Mặc định (Tên A-Z)</option>
+                            <option value="name-asc">Tên A-Z</option>
+                            <option value="name-desc">Tên Z-A</option>
+                            <option value="date-desc">Ngày mới nhất</option>
+                            <option value="date-asc">Ngày cũ nhất</option>
                         </select>
                     </div>
                 </div>
@@ -100,13 +105,14 @@ document.addEventListener('DOMContentLoaded', () => {
             <div id="jet-item-list-container">
                 <!-- Content will be loaded here -->
             </div>
-            <div id="jet-preview-area"></div>
+            <div id="jet-preview-area">
+                <!-- Preview will be loaded here if using a dedicated area -->
+            </div>
         `;
-        // currentRawSourceKey and currentRelativePath are null/empty initially
-        renderBreadcrumb(); 
-        fetchAndRenderTopLevelFolders(); // New initial fetch function
-        addFilterButtonListeners(); 
-        addSortControlListener(); // ADDED
+        renderBreadcrumb(); // Initial breadcrumb for top level
+        fetchAndRenderTopLevelFolders(); // Load initial view
+        addFilterButtonListeners(); // Add listeners for filter buttons
+        addSortControlListener(); // Add listener for sort dropdown
     }
 
     // NEW: Function to add event listeners to filter buttons
@@ -949,18 +955,14 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // If preview is open, let preview key handler take precedence for most keys
-        // EXCEPT for Escape (which preview also handles but good to have here too)
-        // and Space (which we want to use for closing preview from global context)
         if (isPreviewOpen) {
             if (event.key === 'Escape') {
                 closeImagePreview();
-                event.preventDefault(); // Prevent other potential global actions
-            } else if (event.code === 'Space') { // NEW: Space to close preview
+                event.preventDefault(); // RESTORED
+            } else if (event.code === 'Space') { 
                 closeImagePreview();
-                event.preventDefault();
+                event.preventDefault(); // RESTORED
             }
-            // Most other keys are handled by handlePreviewKeyPress if preview is open
             return; 
         }
 
@@ -983,9 +985,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                     break;
                 case 'ArrowUp':
-                    // Approximate moving up: subtract number of columns.
-                    // This requires knowing the grid layout or an approximation.
-                    // For simplicity, let's try to find number of items per row.
                     const gridContainer = document.getElementById('jet-item-list-container');
                     if (gridContainer && currentGridImages.length > 0) {
                         const firstItem = gridContainer.querySelector('.jet-image-item-container');
@@ -996,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (newIndex - itemsPerRow >= 0) {
                                 newIndex -= itemsPerRow;
                                 handled = true;
-                            } else { // Go to first item if trying to go above top row
+                            } else { 
                                 newIndex = 0;
                                 handled = true;
                             }
@@ -1014,16 +1013,15 @@ document.addEventListener('DOMContentLoaded', () => {
                             if (newIndex + itemsPerRowDown < currentGridImages.length) {
                                 newIndex += itemsPerRowDown;
                                 handled = true;
-                            } else { // Go to last item if trying to go below last row
+                            } else { 
                                 newIndex = currentGridImages.length - 1;
                                 handled = true;
                             }
                         }
                     }
                     break;
-                // Color pick keys (0-3) when an item is selected in the grid
-                case '0': // Grey
-                    if (currentGridSelection.imageObject) { // Check if imageObject exists
+                case '0': 
+                    if (currentGridSelection.imageObject) { 
                         let targetGrey = PICK_COLORS.GREY;
                         if (currentGridSelection.imageObject.pick_color === targetGrey) {
                             targetGrey = PICK_COLORS.NONE;
@@ -1032,17 +1030,17 @@ document.addEventListener('DOMContentLoaded', () => {
                         handled = true;
                     }
                     break;
-                case '1': // Red
+                case '1': 
                     if (currentGridSelection.imageObject) {
                         let targetRed = PICK_COLORS.RED;
                         if (currentGridSelection.imageObject.pick_color === targetRed) {
-                            targetRed = PICK_COLORS.NONE;
+                            targetRed = PICK_COLORS.NONE; 
                         }
                         setGridItemPickColorAPI(currentGridSelection.imageObject, targetRed, currentGridSelection.element);
                         handled = true;
                     }
                     break;
-                case '2': // Green
+                case '2': 
                     if (currentGridSelection.imageObject) {
                         let targetGreen = PICK_COLORS.GREEN;
                         if (currentGridSelection.imageObject.pick_color === targetGreen) {
@@ -1052,7 +1050,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         handled = true;
                     }
                     break;
-                case '3': // Blue
+                case '3': 
                     if (currentGridSelection.imageObject) {
                         let targetBlue = PICK_COLORS.BLUE;
                         if (currentGridSelection.imageObject.pick_color === targetBlue) {
@@ -1062,24 +1060,21 @@ document.addEventListener('DOMContentLoaded', () => {
                         handled = true;
                     }
                     break;
-                 // Add other grid-specific hotkeys here if needed
             }
 
             if (handled) {
-                event.preventDefault(); // Prevent browser scrolling with arrow keys
+                event.preventDefault(); // RESTORED
                 const allRenderedItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
                 if (newIndex !== currentGridSelection.index && allRenderedItems[newIndex]) {
                     selectImageInGrid(currentGridImages[newIndex], allRenderedItems[newIndex], newIndex);
-                     // Scroll the new item into view if necessary
                     allRenderedItems[newIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
                 }
             }
         }
         
-        // NEW: Space to open preview if an item is selected in grid and preview is not open
         if (event.code === 'Space' && !isPreviewOpen && currentGridSelection.imageObject) {
             openImagePreview(currentGridSelection.imageObject, currentGridSelection.index);
-            event.preventDefault();
+            event.preventDefault(); // RESTORED
         }
     }
     
