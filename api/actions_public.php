@@ -239,9 +239,17 @@ switch ($action) {
                     $subfolder_access = check_folder_access($folder_path_prefixed);
                     
                     $thumbnail_source_prefixed_path = null;
-                    $first_image_relative_to_subdir = find_first_image_in_source($item['source_key'], $item['name'], $allowed_ext);
+                    // Construct the path of the subfolder relative to its source root
+                    // $item['source_key'] is e.g., "extra_drive"
+                    // $item['path'] is e.g., "extra_drive/AlbumX/SubfolderY"
+                    // We need "AlbumX/SubfolderY" for find_first_image_in_source's second argument
+                    $path_within_source = substr($item['path'], strlen($item['source_key']) + 1);
+
+                    $first_image_relative_to_subdir = find_first_image_in_source($item['source_key'], $path_within_source, $allowed_ext);
                     if ($first_image_relative_to_subdir !== null) {
-                        $thumbnail_source_prefixed_path = $folder_path_prefixed . '/' . $first_image_relative_to_subdir;
+                        // $item['path'] is the full source-prefixed path to the subfolder itself.
+                        // $first_image_relative_to_subdir is just the filename.jpg found within that subfolder.
+                        $thumbnail_source_prefixed_path = $item['path'] . '/' . $first_image_relative_to_subdir;
                         $thumbnail_source_prefixed_path = str_replace('//', '/', $thumbnail_source_prefixed_path); 
                     }
 

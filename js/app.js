@@ -243,7 +243,7 @@ async function loadSubItems(folderPath) {
         console.log('[app.js] loadSubItems: isLoadingMore is true, returning.');
         return;
     }
-    showLoadingIndicator();
+    showLoadingIndicator(); // Show at the very beginning
     setCurrentFolder(folderPath);
     setCurrentPage(1);
     setCurrentImageList([]);
@@ -252,78 +252,90 @@ async function loadSubItems(folderPath) {
     const subfolderDisplayArea = document.getElementById('subfolder-display-area');
     if (subfolderDisplayArea) subfolderDisplayArea.innerHTML = ''; // Clear subfolder area too
 
-    // alert('Attempting to load path: ' + folderPath); // REMOVED Temporary debug alert
-    console.log(`[app.js] loadSubItems: Fetching list_files for path: ${folderPath}`);
-    const responseData = await fetchDataApi('list_files', 
-        { path: folderPath, page: currentPage, limit: IMAGES_PER_PAGE }
-    );
-    console.log(`[app.js] loadSubItems: API response for ${folderPath}:`, responseData);
-    hideLoadingIndicator();
-    if (responseData.status === 'password_required') {
-        showPasswordPrompt(responseData.folder || folderPath);
-        return;
-    }
-    if (responseData.status !== 'success') {
-        showModalWithMessage('Lỗi tải album', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
-        return;
-    }
-    const { folders: subfolders, files: initialImagesMetadata, pagination, current_dir_name: apiDirName } = responseData.data;
-    const directoryName = apiDirName || folderPath.split('/').pop();
-    console.log(`[app.js] loadSubItems: Directory name: ${directoryName}`);
-    console.log('[app.js] loadSubItems: initialImagesMetadata:', initialImagesMetadata); // Log the metadata
-    document.title = `Album: ${directoryName} - Guustudio`;
-    updateImageViewHeader(directoryName);
-    const fetchedTotal = pagination ? pagination.total_items : (initialImagesMetadata ? initialImagesMetadata.length : 0);
-    setTotalImages(fetchedTotal || 0);
-    let contentRendered = false;
-    if (subfolders && subfolders.length) {
-        const ul = document.createElement('ul');
-        ul.className = 'directory-list-styling subfolder-list';
-        subfolders.forEach(sf => {
-            const listItem = createDirectoryListItem(sf, null); // Pass null for itemClickHandler
-            ul.appendChild(listItem);
-        });
-        if (subfolderDisplayArea) subfolderDisplayArea.appendChild(ul);
-        contentRendered = true;
-        if (initialImagesMetadata && initialImagesMetadata.length) {
-            const hr = document.createElement('hr');
-            hr.className = 'folder-image-divider';
-            if (subfolderDisplayArea) subfolderDisplayArea.appendChild(hr); // Append divider after subfolders
+    try {
+        console.log(`[app.js] loadSubItems: Fetching list_files for path: ${folderPath}`);
+        const responseData = await fetchDataApi('list_files', 
+            { path: folderPath, page: currentPage, limit: IMAGES_PER_PAGE }
+        );
+        console.log(`[app.js] loadSubItems: API response for ${folderPath}:`, responseData);
+
+        if (responseData.status === 'password_required') {
+            hideLoadingIndicator(); // Explicitly hide before password prompt
+            showPasswordPrompt(responseData.folder || folderPath);
+            return; // Exit, finally will also run
         }
-    }
-    createImageGroupIfNeeded(); // This creates .image-group inside #image-grid
-    if (initialImagesMetadata && initialImagesMetadata.length) {
-        console.log('[app.js] loadSubItems: initialImagesMetadata IS valid and has length. About to call renderImageItemsToGrid.');
-        setCurrentImageList(initialImagesMetadata); 
-        renderImageItemsToGrid(initialImagesMetadata);
-        contentRendered = true;
-        setupPhotoSwipeIfNeeded();
-    } else {
-        setCurrentImageList([]);
-    }
-    const zipLink = document.getElementById('download-all-link');
-    const shareBtn = document.getElementById('shareButton');
-    zipLink.href = `#`;
-    zipLink.onclick = (e) => { 
-        e.preventDefault(); 
-        const currentFolderInfo = getCurrentFolderInfo(); 
-        appHandleDownloadZipAction(currentFolderInfo.path, currentFolderInfo.name);
-    };
-    shareBtn.onclick = () => { handleShareAction(currentFolder); };
+        if (responseData.status !== 'success') {
+            hideLoadingIndicator(); // Explicitly hide before error modal
+            showModalWithMessage('Lỗi tải album', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
+            return; // Exit, finally will also run
+        }
 
-    console.log('[app.js] loadSubItems: About to call showImageView().');
-    showImageView();
-    toggleLoadMoreButton(currentImageList.length < totalImages);
-    if (currentImageList.length >= totalImages && !contentRendered) {
-         // document.getElementById('image-grid').innerHTML = '<p class="info-text">Album này trống.</p>';
-         const targetEmptyMessageContainer = subfolderDisplayArea && subfolderDisplayArea.hasChildNodes() ? subfolderDisplayArea : document.getElementById('image-grid');
-         if (targetEmptyMessageContainer) targetEmptyMessageContainer.innerHTML = '<p class="info-text">Album này trống.</p>';
+        const { folders: subfolders, files: initialImagesMetadata, pagination, current_dir_name: apiDirName } = responseData.data;
+        const directoryName = apiDirName || folderPath.split('/').pop();
+        console.log(`[app.js] loadSubItems: Directory name: ${directoryName}`);
+        console.log('[app.js] loadSubItems: initialImagesMetadata:', initialImagesMetadata); // Log the metadata
+        document.title = `Album: ${directoryName} - Guustudio`;
+        updateImageViewHeader(directoryName);
+        const fetchedTotal = pagination ? pagination.total_items : (initialImagesMetadata ? initialImagesMetadata.length : 0);
+        setTotalImages(fetchedTotal || 0);
 
-    }
-    if (!contentRendered && currentImageList.length === 0) {
-        // document.getElementById('image-grid').innerHTML = '<p class="info-text">Album này trống.</p>';
-        const targetEmptyMessageContainer = subfolderDisplayArea && subfolderDisplayArea.hasChildNodes() ? subfolderDisplayArea : document.getElementById('image-grid');
-        if (targetEmptyMessageContainer) targetEmptyMessageContainer.innerHTML = '<p class="info-text">Album này trống.</p>';
+        let contentRendered = false;
+        if (subfolders && subfolders.length) {
+            const ul = document.createElement('ul');
+            ul.className = 'directory-list-styling subfolder-list';
+            subfolders.forEach(sf => {
+                const listItem = createDirectoryListItem(sf, null); // Pass null for itemClickHandler
+                ul.appendChild(listItem);
+            });
+            if (subfolderDisplayArea) subfolderDisplayArea.appendChild(ul);
+            contentRendered = true;
+            if (initialImagesMetadata && initialImagesMetadata.length) {
+                const hr = document.createElement('hr');
+                hr.className = 'folder-image-divider';
+                if (subfolderDisplayArea) subfolderDisplayArea.appendChild(hr); // Append divider after subfolders
+            }
+        }
+
+        createImageGroupIfNeeded(); // This creates .image-group inside #image-grid
+        if (initialImagesMetadata && initialImagesMetadata.length) {
+            console.log('[app.js] loadSubItems: initialImagesMetadata IS valid and has length. About to call renderImageItemsToGrid.');
+            setCurrentImageList(initialImagesMetadata); 
+            renderImageItemsToGrid(initialImagesMetadata);
+            contentRendered = true;
+            setupPhotoSwipeIfNeeded();
+        } else {
+            setCurrentImageList([]);
+        }
+
+        const zipLink = document.getElementById('download-all-link');
+        const shareBtn = document.getElementById('shareButton');
+        zipLink.href = `#`;
+        zipLink.onclick = (e) => { 
+            e.preventDefault(); 
+            const currentFolderInfo = getCurrentFolderInfo(); 
+            appHandleDownloadZipAction(currentFolderInfo.path, currentFolderInfo.name);
+        };
+        shareBtn.onclick = () => { handleShareAction(currentFolder); };
+
+        console.log('[app.js] loadSubItems: About to call showImageView().');
+        showImageView();
+        toggleLoadMoreButton(currentImageList.length < totalImages);
+
+        if (currentImageList.length >= totalImages && !contentRendered) {
+            const targetEmptyMessageContainer = subfolderDisplayArea && subfolderDisplayArea.hasChildNodes() ? subfolderDisplayArea : document.getElementById('image-grid');
+            if (targetEmptyMessageContainer) targetEmptyMessageContainer.innerHTML = '<p class="info-text">Album này trống.</p>';
+        }
+        if (!contentRendered && currentImageList.length === 0) { // This condition might be redundant or could be merged with the one above.
+            const targetEmptyMessageContainer = subfolderDisplayArea && subfolderDisplayArea.hasChildNodes() ? subfolderDisplayArea : document.getElementById('image-grid');
+            if (targetEmptyMessageContainer) targetEmptyMessageContainer.innerHTML = '<p class="info-text">Album này trống.</p>';
+        }
+        // Successful rendering/processing complete
+    } catch (error) {
+        console.error('[app.js] Error in loadSubItems (catch block):', error);
+        showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải nội dung thư mục: ${error.message}</p>`, true);
+        // The finally block will handle hiding the loading indicator
+    } finally {
+        hideLoadingIndicator(); // Ensure it's hidden after all processing (success or caught error)
     }
 }
 
