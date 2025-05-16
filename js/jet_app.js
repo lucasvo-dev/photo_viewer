@@ -14,6 +14,11 @@ document.addEventListener('DOMContentLoaded', () => {
                                  // For top-level folders, it will be just the folder name.
     let currentGridImages = []; // Store the currently displayed images array
 
+    // Variables for manual double-click detection
+    let lastClickTime = 0;
+    let lastClickedItemPath = null;
+    const DOUBLE_CLICK_THRESHOLD = 400; // Milliseconds
+
     // State for Preview Mode
     let isPreviewOpen = false;
     let currentPreviewImageObject = null; // Will store the image object with its pick_color
@@ -226,14 +231,34 @@ document.addEventListener('DOMContentLoaded', () => {
             imageItemContainer.appendChild(imgElement);
             imageItemContainer.appendChild(imageNameElement);
             
-            // MODIFIED: Click listener now selects the image in the grid
+            // MODIFIED: Click listener now selects the image in the grid, and handles manual double-click
             imageItemContainer.addEventListener('click', () => {
-                selectImageInGrid(image, imageItemContainer, index);
-                // openImagePreview(image, currentGridImages); // OLD: Open preview mode
+                const currentTime = new Date().getTime();
+
+                if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD && lastClickedItemPath === image.path) {
+                    // Double click detected
+                    openImagePreview(image, index);
+                    // Reset last click info to prevent triple click issues
+                    lastClickTime = 0;
+                    lastClickedItemPath = null;
+                } else {
+                    // Single click
+                    selectImageInGrid(image, imageItemContainer, index);
+                    // Store info for next click detection
+                    lastClickTime = currentTime;
+                    lastClickedItemPath = image.path;
+                }
             });
 
             itemListContainer.appendChild(imageItemContainer);
         });
+
+        // REMOVE Event delegation for double-click on the container
+        if (itemListContainer.handleDoubleClickEvent) { 
+            itemListContainer.removeEventListener('dblclick', itemListContainer.handleDoubleClickEvent);
+            delete itemListContainer.handleDoubleClickEvent; // Clean up the custom property
+        }
+
         // Automatically select the first image if available after rendering
         if (images.length > 0) {
             const firstImageElement = itemListContainer.querySelector('.jet-image-item-container');
@@ -249,16 +274,13 @@ document.addEventListener('DOMContentLoaded', () => {
         const allItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
         allItems.forEach(item => {
             if (item.classList.contains('grid-item-selected')) {
-                 console.log('[Jet Grid Select] Removing .grid-item-selected from (during sweep):', item);
                  item.classList.remove('grid-item-selected');
             }
         });
 
         // Now, add .grid-item-selected ONLY to the target imageElement.
         if (imageElement) {
-            console.log('[Jet Grid Select] Adding .grid-item-selected to:', imageElement, 'Classes before add:', imageElement.classList.toString());
             imageElement.classList.add('grid-item-selected');
-            console.log('[Jet Grid Select] Classes after add:', imageElement.classList.toString());
             imageElement.focus();
             imageElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
         }
@@ -269,8 +291,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentGridSelection.element = imageElement;
         currentGridSelection.index = index;
         currentGridSelection.imageObject = imageObject; // Store the full image object
-
-        console.log(`[Jet Grid] Selected: ${imageObject.name}, Index: ${index}`);
     }
 
     async function toggleImagePickAPI(imageObject, targetColor, itemContainerElement) { // Modified to accept targetColor
@@ -448,22 +468,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Image Preview Mode Functions ---
 
-    function openImagePreview(imageObject, allImagesInGrid) {
-        if (isPreviewOpen) return; // Should not happen if UI is managed correctly
-
+    function openImagePreview(imageObject, imageIndexInGrid) {
+        if (!imageObject) {
+            console.error('[Jet Preview] Attempted to open preview with no imageObject.');
+            return;
+        }
+        currentPreviewImageObject = imageObject; // Store the full object
+        currentPreviewIndex = imageIndexInGrid;  // Store its original index from currentGridImages
         isPreviewOpen = true;
-        currentPreviewImageObject = imageObject;
-        currentPreviewIndex = allImagesInGrid.findIndex(img => img.path === imageObject.path && img.source_key === imageObject.source_key);
-        
-        console.log(`[Jet Preview] Opening preview for: ${imageObject.name}, Index: ${currentPreviewIndex}`);
-        renderPreviewOverlay(imageObject);
-        // Add keyboard listeners for preview navigation
+
+        const previewArea = document.getElementById('jet-preview-area');
+        if (!previewArea) {
+            console.error('Preview area element not found!');
+            return;
+        }
+        previewArea.innerHTML = ''; // Clear previous preview
+        renderPreviewOverlay(currentPreviewImageObject); 
+
+        // Add event listeners for preview navigation (keyboard)
         document.addEventListener('keydown', handlePreviewKeyPress);
     }
 
     function closeImagePreview() {
-        if (!isPreviewOpen) return;
-
         const overlay = document.getElementById('jet-image-preview-overlay');
         if (overlay) {
             overlay.remove();
@@ -471,7 +497,6 @@ document.addEventListener('DOMContentLoaded', () => {
         isPreviewOpen = false;
         currentPreviewImageObject = null;
         currentPreviewIndex = -1;
-        console.log('[Jet Preview] Closed preview.');
         // Remove keyboard listeners
         document.removeEventListener('keydown', handlePreviewKeyPress);
     }
@@ -609,11 +634,15 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nextIndex >= currentGridImages.length) {
             nextIndex = 0; // Loop to the beginning
         }
-        // Update current preview state and re-render overlay content
         currentPreviewIndex = nextIndex;
         currentPreviewImageObject = currentGridImages[currentPreviewIndex];
-        console.log(`[Jet Preview] Navigating Next to: ${currentPreviewImageObject.name}, Index: ${currentPreviewIndex}`);
         renderPreviewOverlay(currentPreviewImageObject); // Re-render with new image
+
+        // Update grid selection to match preview
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        if (gridItems[currentPreviewIndex]) {
+            selectImageInGrid(currentPreviewImageObject, gridItems[currentPreviewIndex], currentPreviewIndex);
+        }
     }
 
     function navigatePreviewPrev() {
@@ -625,8 +654,13 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         currentPreviewImageObject = currentGridImages[prevIndex];
         currentPreviewIndex = prevIndex; // Update index after setting object
-        console.log(`[Jet Preview] Navigating Previous to: ${currentPreviewImageObject.name}, Index: ${currentPreviewIndex}`);
         renderPreviewOverlay(currentPreviewImageObject);
+
+        // Update grid selection to match preview
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        if (gridItems[currentPreviewIndex]) {
+            selectImageInGrid(currentPreviewImageObject, gridItems[currentPreviewIndex], currentPreviewIndex);
+        }
     }
 
     // Renamed from togglePickFromPreview and adapted for specific color setting
@@ -723,75 +757,144 @@ document.addEventListener('DOMContentLoaded', () => {
     // This will handle grid navigation and color picking when preview is NOT open.
     // Preview mode has its own handler (handlePreviewKeyPress)
     function handleGlobalJetKeyPress(event) {
-        if (isPreviewOpen) return; // Let preview handler take over if preview is open
+        // console.log('[Jet Global KeyPress]', event.key, event.code, 'Target:', event.target);
 
-        const { key } = event;
-        const gridContainer = document.getElementById('jet-item-list-container');
-
-        // Ensure focus is somewhat within the app or grid for these global keys to make sense
-        // For simplicity now, we assume if jet-app-container is visible, these keys apply.
-        // A more robust check might involve document.activeElement to see if focus is outside input fields.
-
-        if (!gridContainer || !currentGridImages || currentGridImages.length === 0) return;
-
-        let newIndex = currentGridSelection.index;
-
-        if (key === 'ArrowRight') {
-            event.preventDefault();
-            if (currentGridSelection.index < currentGridImages.length - 1) {
-                newIndex = currentGridSelection.index + 1;
-            } else {
-                newIndex = 0; // Wrap around to the beginning
-            }
-        } else if (key === 'ArrowLeft') {
-            event.preventDefault();
-            if (currentGridSelection.index > 0) {
-                newIndex = currentGridSelection.index - 1;
-            } else {
-                newIndex = currentGridImages.length - 1; // Wrap around to the end
-            }
+        // Prevent actions if typing in an input, textarea, etc.
+        if (event.target.matches('input, textarea, select, [contenteditable="true"]')) {
+            return;
         }
 
-        if (newIndex !== currentGridSelection.index) {
-            const newImageObject = currentGridImages[newIndex];
-            const newImageElement = gridContainer.querySelector(`.jet-image-item-container[data-index='${newIndex}']`);
-            if (newImageObject && newImageElement) {
-                selectImageInGrid(newImageObject, newImageElement, newIndex);
-            }
-            return; // Navigation handled
-        }
-
-        // Color picking for the currently selected grid item
-        if (currentGridSelection.imageObject && currentGridSelection.element) {
-            let targetColor = null;
-            let colorKeyPressed = false;
-
-            switch (key) {
-                case '0': targetColor = PICK_COLORS.GREY; colorKeyPressed = true; break;
-                case '1': targetColor = PICK_COLORS.RED; colorKeyPressed = true; break;
-                case '2': targetColor = PICK_COLORS.GREEN; colorKeyPressed = true; break;
-                case '3': targetColor = PICK_COLORS.BLUE; colorKeyPressed = true; break;
-            }
-
-            if (colorKeyPressed) {
+        // If preview is open, let preview key handler take precedence for most keys
+        // EXCEPT for Escape (which preview also handles but good to have here too)
+        // and Space (which we want to use for closing preview from global context)
+        if (isPreviewOpen) {
+            if (event.key === 'Escape') {
+                closeImagePreview();
+                event.preventDefault(); // Prevent other potential global actions
+            } else if (event.code === 'Space') { // NEW: Space to close preview
+                closeImagePreview();
                 event.preventDefault();
-                const currentSelectedImageActual = currentGridImages.find(img => img.path === currentGridSelection.image_path && img.source_key === currentGridSelection.source_key);
-                
-                if (!currentSelectedImageActual) {
-                    console.error("Could not find the actual image data for current grid selection.");
-                    return;
-                }
-
-                // If the pressed key's color is already active, unpick it (set to NONE)
-                if (currentSelectedImageActual.pick_color === targetColor) {
-                    targetColor = PICK_COLORS.NONE;
-                }
-                // Call the modified API function
-                // toggleImagePickAPI(currentSelectedImageActual, targetColor, currentGridSelection.element);
-                // Let's use a more direct approach similar to setPickColorViaAPI, but for grid context
-                setGridItemPickColorAPI(currentSelectedImageActual, targetColor, currentGridSelection.element);
-
             }
+            // Most other keys are handled by handlePreviewKeyPress if preview is open
+            return; 
+        }
+
+        // Grid Navigation & Interaction (Preview is NOT open)
+        if (currentGridSelection.element) {
+            let newIndex = currentGridSelection.index;
+            let handled = false;
+
+            switch (event.key) {
+                case 'ArrowLeft':
+                    if (newIndex > 0) {
+                        newIndex--;
+                        handled = true;
+                    }
+                    break;
+                case 'ArrowRight':
+                    if (newIndex < currentGridImages.length - 1) {
+                        newIndex++;
+                        handled = true;
+                    }
+                    break;
+                case 'ArrowUp':
+                    // Approximate moving up: subtract number of columns.
+                    // This requires knowing the grid layout or an approximation.
+                    // For simplicity, let's try to find number of items per row.
+                    const gridContainer = document.getElementById('jet-item-list-container');
+                    if (gridContainer && currentGridImages.length > 0) {
+                        const firstItem = gridContainer.querySelector('.jet-image-item-container');
+                        if (firstItem) {
+                            const containerWidth = gridContainer.offsetWidth;
+                            const itemWidth = firstItem.offsetWidth + parseFloat(getComputedStyle(firstItem).marginLeft) + parseFloat(getComputedStyle(firstItem).marginRight);
+                            const itemsPerRow = Math.max(1, Math.floor(containerWidth / itemWidth));
+                            if (newIndex - itemsPerRow >= 0) {
+                                newIndex -= itemsPerRow;
+                                handled = true;
+                            } else { // Go to first item if trying to go above top row
+                                newIndex = 0;
+                                handled = true;
+                            }
+                        }
+                    }
+                    break;
+                case 'ArrowDown':
+                    const gridContainerDown = document.getElementById('jet-item-list-container');
+                    if (gridContainerDown && currentGridImages.length > 0) {
+                        const firstItemDown = gridContainerDown.querySelector('.jet-image-item-container');
+                        if (firstItemDown) {
+                            const containerWidthDown = gridContainerDown.offsetWidth;
+                            const itemWidthDown = firstItemDown.offsetWidth + parseFloat(getComputedStyle(firstItemDown).marginLeft) + parseFloat(getComputedStyle(firstItemDown).marginRight);
+                            const itemsPerRowDown = Math.max(1, Math.floor(containerWidthDown / itemWidthDown));
+                            if (newIndex + itemsPerRowDown < currentGridImages.length) {
+                                newIndex += itemsPerRowDown;
+                                handled = true;
+                            } else { // Go to last item if trying to go below last row
+                                newIndex = currentGridImages.length - 1;
+                                handled = true;
+                            }
+                        }
+                    }
+                    break;
+                // Color pick keys (0-3) when an item is selected in the grid
+                case '0': // Grey
+                    if (currentGridSelection.imageObject) { // Check if imageObject exists
+                        let targetGrey = PICK_COLORS.GREY;
+                        if (currentGridSelection.imageObject.pick_color === targetGrey) {
+                            targetGrey = PICK_COLORS.NONE;
+                        }
+                        setGridItemPickColorAPI(currentGridSelection.imageObject, targetGrey, currentGridSelection.element);
+                        handled = true;
+                    }
+                    break;
+                case '1': // Red
+                    if (currentGridSelection.imageObject) {
+                        let targetRed = PICK_COLORS.RED;
+                        if (currentGridSelection.imageObject.pick_color === targetRed) {
+                            targetRed = PICK_COLORS.NONE;
+                        }
+                        setGridItemPickColorAPI(currentGridSelection.imageObject, targetRed, currentGridSelection.element);
+                        handled = true;
+                    }
+                    break;
+                case '2': // Green
+                    if (currentGridSelection.imageObject) {
+                        let targetGreen = PICK_COLORS.GREEN;
+                        if (currentGridSelection.imageObject.pick_color === targetGreen) {
+                            targetGreen = PICK_COLORS.NONE;
+                        }
+                        setGridItemPickColorAPI(currentGridSelection.imageObject, targetGreen, currentGridSelection.element);
+                        handled = true;
+                    }
+                    break;
+                case '3': // Blue
+                    if (currentGridSelection.imageObject) {
+                        let targetBlue = PICK_COLORS.BLUE;
+                        if (currentGridSelection.imageObject.pick_color === targetBlue) {
+                            targetBlue = PICK_COLORS.NONE;
+                        }
+                        setGridItemPickColorAPI(currentGridSelection.imageObject, targetBlue, currentGridSelection.element);
+                        handled = true;
+                    }
+                    break;
+                 // Add other grid-specific hotkeys here if needed
+            }
+
+            if (handled) {
+                event.preventDefault(); // Prevent browser scrolling with arrow keys
+                const allRenderedItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+                if (newIndex !== currentGridSelection.index && allRenderedItems[newIndex]) {
+                    selectImageInGrid(currentGridImages[newIndex], allRenderedItems[newIndex], newIndex);
+                     // Scroll the new item into view if necessary
+                    allRenderedItems[newIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                }
+            }
+        }
+        
+        // NEW: Space to open preview if an item is selected in grid and preview is not open
+        if (event.code === 'Space' && !isPreviewOpen && currentGridSelection.imageObject) {
+            openImagePreview(currentGridSelection.imageObject, currentGridSelection.index);
+            event.preventDefault();
         }
     }
     

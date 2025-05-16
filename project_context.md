@@ -173,6 +173,12 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
                     *   Nhấp vào nút này hoặc nhấn phím `P` sẽ thay đổi trạng thái chọn (pick/unpick) cho ảnh đang xem trước.
                     *   Trạng thái chọn được cập nhật đồng bộ trên cả nút trong chế độ xem trước và mục ảnh tương ứng trong lưới nền.
             *   **Cải thiện Giao diện:** Áp dụng chủ đề tối và bố cục lưới cải tiến cho không gian làm việc Jet, tương đồng với ứng dụng thư viện ảnh chính.
+            *   **Hiển thị Trạng thái Chọn Màu (Color Pick Status Display):**
+                *   Các mục ảnh trong lưới (`image grid`) được chọn màu sẽ hiển thị một cờ màu nhỏ ở góc dưới bên phải của thumbnail, thay vì sử dụng viền hoặc bóng đổ màu.
+                *   Trong chế độ xem trước ảnh (`preview overlay`), nút chọn màu sẽ hiển thị một chỉ báo màu tương ứng.
+            *   **Mở/Đóng Xem trước Ảnh (Open/Close Image Preview):**
+                *   Người dùng có thể mở chế độ xem trước cho một ảnh bằng cách nhấp đúp chuột vào ảnh đó trong lưới, hoặc chọn ảnh đó (bằng một cú nhấp chuột hoặc phím mũi tên) rồi nhấn phím `Space`.
+                *   Khi chế độ xem trước đang mở, nhấn phím `Space` hoặc phím `Escape`, hoặc nhấp vào nút "Đóng (Esc)" chuyên dụng sẽ đóng lại chế độ xem trước.
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.
