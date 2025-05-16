@@ -33,9 +33,22 @@ return [
             // 'name' => 'SSD Guu 2020'
         ]
     ],
+     // --- RAW Image Sources for Jet Culling App ---
+     'raw_image_sources' => [
+        'my_raw_drive_g' => ['path' => 'G:\\RAW'], // Key can be anything descriptive
+        // You can add other sources later if needed:
+        // 'another_raw_source' => ['path' => 'D:\\Path\\To\\Other\\RAWs'],
+    ],
     'cache_thumb_root' => __DIR__ . '/cache/thumbnails', // Use __DIR__ here, db_connect will resolve realpath
     'allowed_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm'],
     'thumbnail_sizes' => [150, 750],
+
+    // --- RAW File Extensions for Jet Culling App ---
+    'raw_file_extensions' => ['cr2', 'nef', 'arw', 'dng', 'cr3', 'raf', 'orf', 'pef', 'rw2'], // Add more as needed
+
+    // --- Jet Culling App Specific Settings ---
+    'jet_preview_cache_root' => __DIR__ . '/cache/jet_previews',
+    'jet_preview_size' => 750, // Default width for grid previews in Jet app
 
     // --- API Settings ---
     'pagination_limit' => 100, // Default limit for list_files pagination (API currently uses 100, JS uses 50)

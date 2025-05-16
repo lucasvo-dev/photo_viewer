@@ -112,11 +112,53 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
     *   Cập nhật `worker_cache.php` để xử lý các tác vụ này.
     *   Hiển thị preview JPEG trong lưới ảnh và lightbox, trong khi vẫn quản lý file RAW gốc.
 
-*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin:**
-    *   **Cơ sở dữ liệu:** Tạo bảng `image_selections` để lưu trữ các lựa chọn ảnh của designer.
-    *   **API:** Xây dựng API cho designer để chọn/bỏ chọn ảnh, và cho admin để xem lại các lựa chọn.
-    *   **Giao diện Designer:** Cho phép designer duyệt album (preview JPEG của file RAW) và "pick" ảnh. Lựa chọn được lưu lại.
-    *   **Giao diện Admin (Review):** Hiển thị các ảnh đã được designer chọn (ví dụ: với tag đặc biệt), cung cấp thống kê và khả năng lọc theo designer.
+*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin (Lấy cảm hứng từ Photo Mechanic):**
+    *   **Mục tiêu:** Cung cấp một công cụ mạnh mẽ và hiệu quả cho designer để duyệt và chọn lựa (cull) ảnh từ các bộ ảnh lớn, đặc biệt là ảnh RAW. Admin có thể xem lại và quản lý các lựa chọn này.
+    *   **Các Tính năng Cốt lõi & Luồng làm việc:**
+        *   **Nạp ảnh nhanh & Tạo Xem trước (Fast Image Ingestion & Preview Generation):**
+            *   Cho phép trỏ tới thư mục nguồn (đã được hỗ trợ qua `IMAGE_SOURCES`).
+            *   **Hiển thị nhanh các bản xem trước JPEG** từ file RAW (thông qua `worker_cache.php` với `dcraw` hoặc ImageMagick). Tốc độ là yếu tố then chốt.
+            *   Tạo thumbnail nhỏ nhanh chóng.
+            *   Hiển thị siêu dữ liệu cơ bản kèm theo ảnh xem trước (tên file, ngày chụp, có thể cả thông số máy ảnh nếu dễ truy cập).
+        *   **Duyệt & Xem ảnh Hiệu quả (Efficient Image Browsing & Viewing):**
+            *   Trình xem ảnh toàn màn hình hoặc gần toàn màn hình (có thểปรับ PhotoSwipe hiện tại hoặc xây dựng mới cho nhu cầu culling).
+            *   **Điều hướng bằng bàn phím** để di chuyển nhanh giữa các ảnh (ví dụ: phím mũi tên trái/phải).
+            *   Khả năng **zoom và pan (kéo)** để kiểm tra chi tiết độ nét và các yếu tố quan trọng.
+        *   **Hệ thống Gắn thẻ/Chọn lựa (Picking) & Đánh giá (Rating System):**
+            *   Cơ chế **"Chọn" (Pick/Tag)** đơn giản: Cách nhanh chóng (ví dụ: phím tắt như 'T' hoặc nút bấm) để đánh dấu ảnh là đã chọn/giữ lại.
+            *   **(Tùy chọn) Nhãn màu (Color Labels):** Gán nhãn màu (ví dụ: đỏ, vàng, xanh lá, xanh dương) cho các giai đoạn hoặc hạng mục lựa chọn khác nhau.
+            *   **(Tùy chọn) Đánh giá sao (Star Ratings):** Hệ thống đánh giá từ 0-5 sao.
+        *   **Lọc & Sắp xếp (Filtering & Sorting):**
+            *   Lọc ảnh theo trạng thái "đã chọn" (picked).
+            *   Lọc theo nhãn màu hoặc đánh giá sao (nếu có).
+            *   Sắp xếp ảnh theo tên file, ngày chụp, hoặc các siêu dữ liệu khác.
+        *   **Lưu Lựa chọn (Saving Selections):**
+            *   Các lựa chọn (picks, tags, ratings, colors) cần được lưu trữ bền vững.
+            *   Dữ liệu này phải được liên kết với ảnh cụ thể (ví dụ: đường dẫn có tiền tố nguồn) và người dùng (designer) đã thực hiện lựa chọn.
+            *   **Hợp tác Đa người dùng (Multi-User Collaboration):**
+                *   Cho phép các designer khác nhau đăng nhập và thực hiện các lựa chọn riêng của họ trên cùng một bộ ảnh.
+                *   Admin có thể xem lại các lựa chọn từ các designer khác nhau, có thể kèm theo dấu hiệu trực quan hoặc thống kê.
+        *   **Giao diện & Trải nghiệm Người dùng (UI/UX):**
+            *   **Mật độ thông tin (Information Density):** Hiển thị thông tin liên quan một cách hợp lý, không làm rối giao diện.
+            *   **Tốc độ và Độ phản hồi (Speed and Responsiveness):** Giao diện phải cực kỳ nhanh, đặc biệt khi duyệt và gắn thẻ ảnh.
+            *   **(Tiềm năng) Bố cục Tùy chỉnh (Customizable Layout):** Xem xét khả năng cho phép người dùng tùy chỉnh siêu dữ liệu hiển thị, kích thước thumbnail, v.v. trong tương lai.
+            *   **Chỉ báo Trực quan Rõ ràng (Clear Visual Indicators):** Dấu hiệu trực quan rõ ràng cho các ảnh đã pick, ảnh đang được chọn, nhãn màu, đánh giá.
+        *   **Cân nhắc Kỹ thuật Triển khai:**
+            *   **Cơ sở dữ liệu:** Bảng `image_selections` sẽ là trung tâm. Cần lưu ít nhất `image_path` (đường dẫn đầy đủ có tiền tố nguồn), `user_id` (của designer), `pick_status` (boolean), và tùy chọn các trường cho `rating`, `color_label`. Cân nhắc thêm `timestamp` cho mỗi lựa chọn.
+            *   **API (ví dụ: `api/actions_designer.php` hoặc mở rộng `actions_admin.php`):**
+                *   Endpoints để thiết lập/cập nhật trạng thái pick, rating, color label cho một ảnh.
+                *   Endpoints để lấy danh sách ảnh kèm dữ liệu lựa chọn cho một thư mục/album cụ thể, có thể lọc theo designer.
+            *   **Frontend (JavaScript):**
+                *   Xây dựng một view (khu vực giao diện) riêng cho quy trình culling.
+                *   Logic xử lý việc tải ảnh nhanh, các phím tắt, cập nhật UI dựa trên lựa chọn.
+                *   Giao tiếp với các API endpoints mới.
+            *   **Xử lý RAW:** Tận dụng `worker_cache.php` hiện có để tạo preview JPEG từ file RAW. App culling sẽ chủ yếu tương tác với các file JPEG này.
+        *   **Tập trung cho phiên bản MVP (Minimum Viable Product):**
+            *   Hiển thị nhanh các bản xem trước JPEG từ file RAW trong một thư mục được chọn.
+            *   Điều hướng bằng bàn phím qua các ảnh xem trước.
+            *   Chức năng "Chọn" (Pick) đơn giản (boolean: chọn/bỏ chọn) bằng phím tắt.
+            *   Lưu các lựa chọn "Pick" này vào CSDL, liên kết với ảnh và người dùng (designer).
+            *   Admin có thể xem lại những ảnh nào đã được designer "pick".
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.

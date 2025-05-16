@@ -49,6 +49,59 @@ if (isset($config['image_sources']) && is_array($config['image_sources'])) {
 // Define the constant with VALIDATED sources only
 define('IMAGE_SOURCES', $valid_image_sources);
 
+// --- RAW Image Source Configuration (Get from config) ---
+// Validate RAW_IMAGE_SOURCES paths from config
+$valid_raw_image_sources = [];
+if (isset($config['raw_image_sources']) && is_array($config['raw_image_sources'])) {
+    foreach ($config['raw_image_sources'] as $key => $source_config) { // Can be simple key => path string or key => [path=>, name=>]
+        $path_to_check = null;
+        $source_name = $key; // Default name is the key
+
+        if (is_string($source_config)) { // Simple format: 'key' => '/path/to/raws'
+            $path_to_check = $source_config;
+        } elseif (is_array($source_config) && isset($source_config['path'])) { // Advanced format: 'key' => ['path' => '/path', 'name' => 'My RAWs']
+            $path_to_check = $source_config['path'];
+            if (isset($source_config['name'])) {
+                $source_name = $source_config['name'];
+            }
+        }
+
+        if ($path_to_check) {
+            $resolved_path = realpath($path_to_check);
+            if ($resolved_path && is_dir($resolved_path) && is_readable($resolved_path)) {
+                $valid_raw_image_sources[$key] = [
+                    'path' => $resolved_path,
+                    'name' => $source_name
+                ];
+            } else {
+                error_log("CONFIG WARNING: RAW Image source '{$key}' path '{$path_to_check}' is invalid or not readable. Skipping.");
+            }
+        } else {
+             error_log("CONFIG WARNING: RAW Image source '{$key}' is missing path or has incorrect format. Skipping.");
+        }
+    }
+} else {
+     error_log("CONFIG WARNING: 'raw_image_sources' is not defined or not an array in config.php. Jet app might not find sources.");
+     // Not a critical error for the main app, but Jet app will be affected.
+}
+
+// Define the constant with VALIDATED RAW sources only
+define('RAW_IMAGE_SOURCES', $valid_raw_image_sources);
+
+// --- RAW Image Extensions (Get from config) ---
+// Default RAW extensions WITHOUT leading dots
+$default_raw_extensions = ['arw', 'nef', 'cr2', 'cr3', 'raf', 'dng', 'orf', 'pef', 'rw2']; 
+
+// Get from config or use the dot-less default
+$loaded_raw_extensions = $config['raw_image_extensions'] ?? $default_raw_extensions;
+
+// Ensure all extensions are lowercase and have no leading dots
+$processed_raw_extensions = array_map(function($ext) {
+    return strtolower(ltrim(trim($ext), '.'));
+}, $loaded_raw_extensions);
+
+define('RAW_IMAGE_EXTENSIONS', $processed_raw_extensions);
+
 // --- Cache and Thumbnail Configuration (Get from config) ---
 $allowed_extensions = $config['allowed_extensions'] ?? ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
 $thumbnail_sizes = $config['thumbnail_sizes'] ?? [150, 750];
@@ -95,6 +148,41 @@ try {
         header('Content-Type: text/plain; charset=utf-8', true, 500);
     }
     die("Server Configuration Error: Cache path setup failed. Please check server logs and permissions.");
+}
+
+// --- Jet App Preview Cache Configuration ---
+$jet_preview_size = $config['jet_preview_size'] ?? 750;
+define('JET_PREVIEW_SIZE', $jet_preview_size);
+
+try {
+    $jet_cache_root_path = $config['jet_preview_cache_root'] ?? (__DIR__ . '/cache/jet_previews');
+    $resolved_jet_cache_path = realpath($jet_cache_root_path);
+
+    if (!$resolved_jet_cache_path) {
+        if (!is_dir(dirname($jet_cache_root_path))) @mkdir(dirname($jet_cache_root_path), 0775, true);
+        if (!is_dir($jet_cache_root_path)) @mkdir($jet_cache_root_path, 0775, true);
+        clearstatcache();
+        $resolved_jet_cache_path = realpath($jet_cache_root_path);
+    }
+
+    if (!$resolved_jet_cache_path || !is_dir($resolved_jet_cache_path) || !is_writable($resolved_jet_cache_path)) {
+        throw new Exception("Failed to resolve, create, or write to JET_PREVIEW_CACHE_ROOT path: '" . htmlspecialchars($jet_cache_root_path) . "'. Resolved to: " . ($resolved_jet_cache_path ?: 'false'));
+    }
+    define('JET_PREVIEW_CACHE_ROOT', $resolved_jet_cache_path);
+
+    // Pre-create size directory for Jet previews if it doesn't exist
+    $jet_size_dir = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . JET_PREVIEW_SIZE;
+    if (!is_dir($jet_size_dir)) {
+        if (!@mkdir($jet_size_dir, 0775, true)) {
+            error_log("Warning: Failed to automatically create Jet preview size directory: {$jet_size_dir}");
+        }
+    }
+
+} catch (Throwable $e) {
+    $error_msg = "CRITICAL JET CONFIG ERROR: Failed to configure Jet preview cache paths - " . $e->getMessage();
+    error_log($error_msg);
+    // For now, we won't die, but Jet previews might fail.
+    // Consider if this should be a fatal error for the Jet app context.
 }
 
 // --- PDO Connection Options ---
@@ -180,25 +268,30 @@ try {
 
         // Create zip_jobs table
         $pdo->exec("CREATE TABLE IF NOT EXISTS zip_jobs (
-            id INT PRIMARY KEY AUTO_INCREMENT,
+            token VARCHAR(255) PRIMARY KEY,
             source_path TEXT NOT NULL,
-            job_token VARCHAR(255) NOT NULL UNIQUE,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            items_json TEXT DEFAULT NULL,
-            total_files INT DEFAULT 0,
-            processed_files INT DEFAULT 0,
-            current_file_processing TEXT DEFAULT NULL,
-            zip_filename VARCHAR(255) DEFAULT NULL,
-            zip_filesize BIGINT DEFAULT 0,
-            error_message TEXT DEFAULT NULL,
-            result_message TEXT DEFAULT NULL,
-            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            finished_at DATETIME DEFAULT NULL,
-            KEY idx_zip_jobs_status (status),
-            KEY idx_zip_jobs_job_token (job_token),
-            KEY idx_zip_jobs_source_path (source_path(255))
+            status VARCHAR(50) NOT NULL DEFAULT 'pending', /* pending, processing, completed, failed, downloaded */
+            progress INT DEFAULT 0, /* 0-100 */
+            file_count INT DEFAULT 0,
+            total_size BIGINT DEFAULT 0,
+            final_zip_name VARCHAR(255) NULL,
+            final_zip_path TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            items_json TEXT NULL, /* JSON array of selected file paths if source_path is _multiple_selected_ */
+            result_message TEXT NULL /* Store detailed success/error message from worker */
         )");
+
+        // Create jet_image_picks table for Jet Culling App
+        $pdo->exec("CREATE TABLE IF NOT EXISTS jet_image_picks (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_username VARCHAR(255) NOT NULL,
+            source_key VARCHAR(255) NOT NULL,
+            image_relative_path TEXT NOT NULL,
+            is_picked BOOLEAN NOT NULL DEFAULT FALSE,
+            picked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            UNIQUE KEY user_image_pick (user_username, source_key, image_relative_path(767))
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
         // --- AUTO-MIGRATION: Ensure new columns exist ---
         function add_column_if_not_exists($pdo, $table, $column, $definition) {

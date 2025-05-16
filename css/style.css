@@ -1883,3 +1883,159 @@ body.select-mode-active .image-item a:hover img {
 }
 
 /* Ensure app.js related styles, if any, are separate or reviewed */
+
+/* --- Jet App Specific Styles --- */
+
+/* General Dark Theme for Jet App Body */
+body.jet-app-active {
+    background-color: #222;
+    color: #eee;
+    font-family: sans-serif; /* Or your preferred font stack */
+}
+
+.jet-app-active .header h1 {
+    color: #eee; /* Ensure Jet header text is light */
+}
+
+.jet-app-active .logout-link {
+    color: #79bbff; /* Light blue for logout link */
+    border-color: #79bbff;
+}
+.jet-app-active .logout-link:hover {
+    color: #fff;
+    background-color: #79bbff;
+    border-color: #79bbff;
+}
+
+
+/* Style links to be visible on dark background */
+.jet-app-active #jet-breadcrumb a {
+    color: #79bbff; /* Light blue for links */
+}
+
+/* Image Grid Enhancements */
+.jet-app-active .image-grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); /* Responsive grid */
+    gap: 10px; /* Space between items */
+    padding: 10px;
+}
+
+.jet-app-active .jet-image-item-container {
+    background-color: #333; /* Darker item background */
+    border: 1px solid #444;
+    border-radius: 4px;
+    padding: 5px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out, border-color 0.1s ease-in-out;
+}
+
+.jet-app-active .jet-image-item-container:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+    border-color: #555;
+}
+
+.jet-app-active .jet-preview-image {
+    max-width: 100%;
+    height: auto; /* Maintain aspect ratio */
+    max-height: 120px; /* Limit preview height initially */
+    display: block;
+    margin: 0 auto 5px auto; /* Center image and add space below */
+    border-radius: 3px;
+    background-color: #2a2a2a; /* Placeholder bg for image itself */
+}
+
+.jet-app-active .image-item-name {
+    font-size: 0.8em;
+    color: #ccc;
+    word-wrap: break-word; /* Prevent long names from breaking layout */
+    padding: 0 2px; /* Add a little horizontal padding */
+}
+
+/* Picked item style */
+.jet-app-active .jet-image-item-container.picked {
+    border: 3px solid #007bff;
+    box-shadow: 0 0 10px rgba(0, 123, 255, 0.5);
+    background-color: #3a4a5f; /* Slightly different background for picked */
+}
+
+/* Feedback messages styling */
+.jet-app-active #jet-feedback {
+    padding: 10px;
+    margin: 10px auto; /* Center feedback */
+    max-width: 600px;
+    border-radius: 4px;
+    display: none; /* Hidden by default */
+    text-align: center;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+}
+.jet-app-active #jet-feedback.info {
+    background-color: #17a2b8; /* Info blue */
+    color: white;
+}
+.jet-app-active #jet-feedback.success {
+    background-color: #28a745; /* Success green */
+    color: white;
+}
+.jet-app-active #jet-feedback.warning {
+    background-color: #ffc107; /* Warning yellow */
+    color: #333;
+}
+.jet-app-active #jet-feedback.error {
+    background-color: #dc3545; /* Error red */
+    color: white;
+}
+
+/* Loading indicator */
+.jet-app-active #jet-loading-indicator {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background-color: rgba(0,0,0,0.7);
+    color: white;
+    padding: 8px 15px;
+    border-radius: 4px;
+    z-index: 1000;
+    display: none; /* Hidden by default */
+}
+
+/* Basic breadcrumb styling */
+.jet-app-active #jet-breadcrumb {
+    padding: 10px 15px;
+    background-color: #2a2a2a;
+    border-bottom: 1px solid #444;
+    margin-bottom: 10px;
+    font-size: 0.9em;
+}
+.jet-app-active #jet-breadcrumb span { /* For non-link parts */
+    color: #bbb;
+}
+
+/* Ensure main container in Jet app takes up space */
+.jet-app-active .container.jet-view {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+}
+
+.jet-app-active #jet-app-container {
+    flex-grow: 1;
+    /* Add any specific styling if needed for the container of breadcrumbs/grid */
+}
+
+/* Preview error styling for image items */
+.jet-app-active .jet-image-item-container.preview-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px; /* Ensure it has some height */
+    border: 1px dashed #777;
+}
+.jet-app-active .jet-image-item-container.preview-error span:not(.image-item-name) { /* The '!' span */
+    font-size: 2em;
+    color: #ffc107;
+    margin-bottom: 5px;
+}

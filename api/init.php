@@ -18,6 +18,17 @@ error_reporting(E_ALL); // Report all errors
 // --- Session Start & JSON Header (with robust error handling) ---
 try {
     if (session_status() == PHP_SESSION_NONE) {
+        // Set session cookie parameters explicitly for better control
+        // $cookieParams = session_get_cookie_params(); // Get existing defaults if needed
+        session_set_cookie_params([
+            'lifetime' => 0, // 0 means until browser is closed
+            'path' => '/',     // Cookie available for the whole domain/site
+            'domain' => isset($_SERVER['HTTP_HOST']) ? explode(':', $_SERVER['HTTP_HOST'])[0] : '', // Current domain, strip port
+            'secure' => false,   // IMPORTANT: Set to false for HTTP (localhost)
+            'httponly' => true,  // Good practice, prevents JS access to cookie
+            'samesite' => 'Lax' // 'Lax' is a good default. Use 'Strict' for more security if possible.
+                               // For testing, if 'Lax' fails, you could try 'None' but it typically requires 'secure' => true.
+        ]);
         session_start();
     } else {
         // Optionally log if session was already started unexpectedly
