@@ -2169,22 +2169,55 @@ body.jet-app-active {
 
 /* --- Jet App Color Pick Specific Styles --- */
 
-/* Grid item borders for picked colors */
+/* Grid item borders for picked colors - MODIFIED */
 .jet-app-active .jet-image-item-container.picked-red {
-    border-color: #e53935; /* Red */
-    box-shadow: 0 0 8px #e53935;
+    /* border-color: #e53935; */ /* REMOVED */
+    /* box-shadow: 0 0 8px #e53935; */ /* REMOVED */
+    /* The ::after pseudo-element will now indicate the color */
 }
 .jet-app-active .jet-image-item-container.picked-green {
-    border-color: #43a047; /* Green */
-    box-shadow: 0 0 8px #43a047;
+    /* border-color: #43a047; */ /* REMOVED */
+    /* box-shadow: 0 0 8px #43a047; */ /* REMOVED */
 }
 .jet-app-active .jet-image-item-container.picked-blue {
-    border-color: #1e88e5; /* Blue */
-    box-shadow: 0 0 8px #1e88e5;
+    /* border-color: #1e88e5; */ /* REMOVED */
+    /* box-shadow: 0 0 8px #1e88e5; */ /* REMOVED */
 }
 .jet-app-active .jet-image-item-container.picked-grey {
-    border-color: #757575; /* Grey */
-    box-shadow: 0 0 8px #757575;
+    /* border-color: #757575; */ /* REMOVED */
+    /* box-shadow: 0 0 8px #757575; */ /* REMOVED */
+}
+
+/* NEW: Flag styles using pseudo-element */
+.jet-app-active .jet-image-item-container::after {
+    content: '';
+    position: absolute;
+    bottom: 4px; 
+    right: 4px;  
+    width: 12px;
+    height: 12px;
+    border-radius: 3px; 
+    border: 1px solid rgba(0,0,0,0.4); 
+    box-sizing: border-box;
+    display: none; /* Hidden by default */
+    z-index: 1; 
+}
+
+.jet-app-active .jet-image-item-container.picked-red::after {
+    background-color: #e53935; /* Red */
+    display: block;
+}
+.jet-app-active .jet-image-item-container.picked-green::after {
+    background-color: #43a047; /* Green */
+    display: block;
+}
+.jet-app-active .jet-image-item-container.picked-blue::after {
+    background-color: #1e88e5; /* Blue */
+    display: block;
+}
+.jet-app-active .jet-image-item-container.picked-grey::after {
+    background-color: #757575; /* Grey */
+    display: block;
 }
 
 /* Preview pick button/indicator color styles */
