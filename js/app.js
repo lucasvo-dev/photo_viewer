@@ -101,6 +101,22 @@ function hideLoadingIndicator() {
     }
 }
 
+// --- Global Overlay Functions --- START
+function showGlobalLoadingOverlay() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'block'; // Or 'flex' if it's styled with flex
+    }
+}
+
+function hideGlobalLoadingOverlay() {
+    const overlay = document.getElementById('loading-overlay');
+    if (overlay) {
+        overlay.style.display = 'none';
+    }
+}
+// --- Global Overlay Functions --- END
+
 // ========================================
 // === FUNCTION DECLARATIONS             ===
 // ========================================
@@ -346,23 +362,32 @@ async function loadMoreImages() {
     }
     setIsLoadingMore(true);
     setCurrentPage(currentPage + 1);
-    showLoadingIndicator();
-    const responseData = await fetchDataApi('list_files', 
-        { path: currentFolder, page: currentPage, limit: IMAGES_PER_PAGE }
-    );
-    if (responseData.status === 'success' && responseData.data.files) {
-        const newImagesMetadata = responseData.data.files;
-        if (newImagesMetadata.length > 0) {
-            setCurrentImageList(currentImageList.concat(newImagesMetadata));
-            renderImageItemsToGrid(newImagesMetadata, true);
-            setupPhotoSwipeIfNeeded(); 
-        } 
-        toggleLoadMoreButton(currentImageList.length < totalImages);
-    } else {
-        showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
-        toggleLoadMoreButton(false);
+    showLoadingIndicator('Đang tải thêm ảnh...'); // Specific message for loading more
+
+    try {
+        const responseData = await fetchDataApi('list_files', 
+            { path: currentFolder, page: currentPage, limit: IMAGES_PER_PAGE }
+        );
+        if (responseData.status === 'success' && responseData.data.files) {
+            const newImagesMetadata = responseData.data.files;
+            if (newImagesMetadata.length > 0) {
+                setCurrentImageList(currentImageList.concat(newImagesMetadata));
+                renderImageItemsToGrid(newImagesMetadata, true);
+                setupPhotoSwipeIfNeeded(); 
+            } 
+            toggleLoadMoreButton(currentImageList.length < totalImages);
+        } else {
+            showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
+            toggleLoadMoreButton(false);
+        }
+    } catch (error) {
+        console.error('[app.js] Error in loadMoreImages:', error);
+        showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
+        toggleLoadMoreButton(false); // Also hide load more button on critical error
+    } finally {
+        hideLoadingIndicator(); // Ensure indicator is hidden
+        setIsLoadingMore(false);
     }
-    setIsLoadingMore(false);
 }
 
 // --- Navigate Function (handles hash update) ---
@@ -378,28 +403,48 @@ document.getElementById('backButton').onclick = () => {
 };
 
 // --- Hash Handling ---
-function handleUrlHash() {
-    console.log("[app.js] handleUrlHash: Hash changed to:", location.hash); // Existing log, made it more specific
-    const hash = location.hash;
-    if (hash.startsWith('#?folder=')) {
-        try {
-            const encodedFolderName = hash.substring('#?folder='.length);
-            const folderRelativePath = decodeURIComponent(encodedFolderName);
-            console.log(`[app.js] handleUrlHash: Decoded folder path: ${folderRelativePath}`);
-            if (folderRelativePath && !folderRelativePath.includes('..')) {
-                console.log('[app.js] handleUrlHash: Path is valid, calling loadSubItems.');
-                loadSubItems(folderRelativePath);
-                return true; 
+async function handleUrlHash() { // Make function async
+    console.log("[app.js] handleUrlHash: Hash changed to:", location.hash);
+    showGlobalLoadingOverlay(); // Show global overlay at the start
+
+    try {
+        const hash = location.hash;
+        if (hash.startsWith('#?folder=')) {
+            try {
+                const encodedFolderName = hash.substring('#?folder='.length);
+                const folderRelativePath = decodeURIComponent(encodedFolderName);
+                console.log(`[app.js] handleUrlHash: Decoded folder path: ${folderRelativePath}`);
+                if (folderRelativePath && !folderRelativePath.includes('..')) {
+                    console.log('[app.js] handleUrlHash: Path is valid, calling loadSubItems.');
+                    await loadSubItems(folderRelativePath); // Await the async operation
+                    // return true; // Return value might not be strictly needed if not used by caller
+                } else {
+                    // If folderRelativePath is invalid (e.g. empty after decode, or contains '..')
+                    // Fall through to show directory view
+                    console.warn('[app.js] handleUrlHash: Invalid folder path after decoding. Showing directory view.');
+                    showDirectoryView();
+                    await loadTopLevelDirectories(); // Await the async operation
+                }
+            } catch (e) { 
+                console.error("[app.js] Error parsing URL hash or loading sub items:", e);
+                history.replaceState(null, '', ' '); 
+                // Fallback to directory view on error
+                showDirectoryView();
+                await loadTopLevelDirectories(); // Await the async operation
             }
-        } catch (e) { 
-            console.error("[app.js] Error parsing URL hash:", e);
-            history.replaceState(null, '', ' '); 
+        } else {
+            console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
+            showDirectoryView();
+            await loadTopLevelDirectories(); // Await the async operation
+            // return false; // Return value might not be strictly needed
         }
+    } catch (error) {
+        console.error('[app.js] Critical error in handleUrlHash logic:', error);
+        // Optionally show a user-friendly error message here using showModalWithMessage
+        // For now, just logging, as specific views also have error handling.
+    } finally {
+        hideGlobalLoadingOverlay(); // Hide global overlay at the end, regardless of success or failure
     }
-    console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
-    showDirectoryView();
-    loadTopLevelDirectories(); // This is the imported one
-    return false;
 }
 
 // --- Load Top Level Directories --- (MOVED to uiDirectoryView.js)

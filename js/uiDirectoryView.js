@@ -150,8 +150,9 @@ export async function loadTopLevelDirectories(searchTerm = null) {
         return;
     }
 
-    appShowLoadingIndicator();
-    searchPromptEl.style.display = 'none';
+    appShowLoadingIndicator(); // Show main loading indicator
+    searchPromptEl.style.display = 'none'; // Hide specific search prompt text while loading
+    // Display a placeholder message within the list area itself
     directoryListEl.innerHTML = '<div class="loading-placeholder">Đang tải danh sách album...</div>';
 
     const isSearching = searchTerm !== null && searchTerm !== '';
@@ -159,7 +160,7 @@ export async function loadTopLevelDirectories(searchTerm = null) {
     clearSearchBtnEl.style.display = isSearching ? 'inline-block' : 'none';
 
     if (searchAbortController) {
-        searchAbortController.abort();
+        searchAbortController.abort(); // Abort previous search if any
     }
     const newAbortController = new AbortController();
     setSearchAbortController(newAbortController);
@@ -169,31 +170,47 @@ export async function loadTopLevelDirectories(searchTerm = null) {
     if (searchTerm) {
         params.search = searchTerm;
     }
-    console.log('[uiDirectoryView] Fetching top level directories with params:', params);
-    const responseData = await fetchDataApi('list_files', params, { signal });
-    console.log('[uiDirectoryView] API response for list_files:', responseData);
 
-    appHideLoadingIndicator();
-    directoryListEl.innerHTML = ''; 
+    try {
+        console.log('[uiDirectoryView] Fetching top level directories with params:', params);
+        const responseData = await fetchDataApi('list_files', params, { signal });
+        console.log('[uiDirectoryView] API response for list_files:', responseData);
 
-    if (responseData.status === 'error' && responseData.isAbortError) {
-        console.log('Search aborted by user.');
-        return; 
-    }
+        // Clear the placeholder only after API response, before rendering or showing API error
+        directoryListEl.innerHTML = ''; 
 
-    if (responseData.status === 'success') {
-        let dirs = responseData.data.folders || [];
-        if (isSearching) {
-            dirs = dirs.filter(dir => 
-                dir.name.toLowerCase().includes(searchTerm.toLowerCase())
-            );
+        if (responseData.status === 'error' && responseData.isAbortError) {
+            console.log('[uiDirectoryView] Search aborted by user.');
+            searchPromptEl.textContent = 'Tìm kiếm đã được hủy.';
+            searchPromptEl.style.display = 'block';
+            // The finally block will hide the main loading indicator.
+            return; 
         }
-        // if (!isSearching) { setAllTopLevelDirs(dirs); } // Consider if allTopLevelDirs state is still needed
-        renderTopLevelDirectories(dirs, isSearching);
-    } else {
-        console.error("Lỗi tải album:", responseData.message);
-        directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi tải danh sách album: ${responseData.message}</div>`;
-        searchPromptEl.textContent = 'Đã xảy ra lỗi. Vui lòng thử lại.';
+
+        if (responseData.status === 'success') {
+            let dirs = responseData.data.folders || [];
+            // Client-side filtering might still be needed if server doesn't fully support search on root
+            if (isSearching && dirs.length > 0 && searchTerm) { // Added searchTerm check for safety
+                 // dirs = dirs.filter(dir => 
+                 //    dir.name.toLowerCase().includes(searchTerm.toLowerCase())
+                 // );
+                 // Assuming server-side search is preferred if params.search is sent.
+                 // If server returns all and client must filter, uncomment above.
+            }
+            renderTopLevelDirectories(dirs, isSearching);
+        } else {
+            console.error("[uiDirectoryView] Error loading albums:", responseData.message);
+            directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi tải danh sách album: ${responseData.message || 'Unknown error'}</div>`;
+            searchPromptEl.textContent = 'Đã xảy ra lỗi khi tải album. Vui lòng thử lại.';
+            searchPromptEl.style.display = 'block';
+        }
+    } catch (error) {
+        // This catches critical errors (e.g., network failure in fetchDataApi, or errors in processing logic)
+        console.error("[uiDirectoryView] Critical error in loadTopLevelDirectories:", error);
+        directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi nghiêm trọng: ${error.message || 'Không rõ lỗi'}</div>`;
+        searchPromptEl.textContent = 'Đã xảy ra lỗi nghiêm trọng. Vui lòng làm mới trang.';
         searchPromptEl.style.display = 'block';
+    } finally {
+        appHideLoadingIndicator(); // Ensure main loading indicator is hidden regardless of outcome
     }
 } 
