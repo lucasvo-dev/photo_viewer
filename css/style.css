@@ -2216,7 +2216,7 @@ body.jet-app-active {
     display: block;
 }
 .jet-app-active .jet-image-item-container.picked-grey::after {
-    background-color: #757575; /* Grey */
+    background-color: #9e9e9e; /* Grey */
     display: block;
 }
 
@@ -2249,4 +2249,60 @@ body.jet-app-active {
 .jet-app-active .jet-preview-pick-button-base.picked-blue .jet-preview-pick-color-indicator,
 .jet-app-active .jet-preview-pick-button-base.picked-grey .jet-preview-pick-color-indicator {
     /* color: white; /* Default to white, JS might override for lighter greens etc. */
+}
+
+/* --- Jet App Specific Styles --- */
+.jet-app-active {
+    /* Styles for the main Jet app container if needed */
+    /* For example, to ensure it takes full height or has specific background */
+    background-color: #222; /* Dark background for the Jet app area */
+    color: #eee; /* Light text */
+    height: 100vh; /* Full viewport height */
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent body scroll when Jet app is active */
+    padding: 0;
+}
+
+/* NEW: Styles for Jet Filter Controls */
+.jet-app-active #jet-filter-controls {
+    padding: 10px;
+    display: flex;
+    flex-wrap: wrap; /* Allow buttons to wrap on smaller screens */
+    gap: 8px; /* Spacing between buttons */
+    justify-content: flex-start; /* Align to the start */
+    border-bottom: 1px solid #444; /* Separator */
+    margin-bottom: 10px;
+}
+
+.jet-app-active .jet-filter-button {
+    background-color: #4a4a4a;
+    color: #ddd;
+    border: 1px solid #555;
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+
+.jet-app-active .jet-filter-button:hover {
+    background-color: #5a5a5a;
+    border-color: #666;
+}
+
+.jet-app-active .jet-filter-button.active {
+    background-color: var(--accent-color); /* Use accent color for active filter */
+    color: white;
+    border-color: var(--accent-color-dark);
+}
+
+/* End NEW Styles for Jet Filter Controls */
+
+
+#jet-breadcrumb {
+    padding: 10px 15px;
+    background-color: #2a2a2a;
+    border-bottom: 1px solid #444;
+    margin-bottom: 10px;
+    font-size: 0.9em;
 }

@@ -24,6 +24,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentPreviewImageObject = null; // Will store the image object with its pick_color
     let currentPreviewIndex = -1;
 
+    // NEW: State for Filtering
+    let currentFilter = 'all'; // Initial filter state
+
     // NEW: State for Grid Selection
     let currentGridSelection = {
         source_key: null,
@@ -34,7 +37,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const PICK_COLORS = {
-        NONE: null, // Or a specific string like 'none' if preferred for API communication then mapped to NULL server-side
+        NONE: 'none', // Represents unpicked or null in DB
         GREY: 'grey',
         RED: 'red',
         GREEN: 'green',
@@ -68,7 +71,17 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!appContainer) return;
         appContainer.innerHTML = `
             <div id="jet-breadcrumb"></div>
-            <div id="jet-controls"></div>
+            <div id="jet-controls">
+                <div id="jet-filter-controls" style="display: none;">
+                    <button id="filter-all" class="button jet-filter-button active">Tất cả</button>
+                    <button id="filter-red" class="button jet-filter-button" data-color="red">Đỏ</button>
+                    <button id="filter-green" class="button jet-filter-button" data-color="green">Xanh lá</button>
+                    <button id="filter-blue" class="button jet-filter-button" data-color="blue">Xanh dương</button>
+                    <button id="filter-grey" class="button jet-filter-button" data-color="grey">Xám</button>
+                    <button id="filter-picked-any" class="button jet-filter-button">Đã chọn (Màu bất kỳ)</button>
+                    <button id="filter-not-picked" class="button jet-filter-button">Chưa chọn</button>
+                </div>
+            </div>
             <div id="jet-item-list-container">
                 <!-- Content will be loaded here -->
             </div>
@@ -77,6 +90,68 @@ document.addEventListener('DOMContentLoaded', () => {
         // currentRawSourceKey and currentRelativePath are null/empty initially
         renderBreadcrumb(); 
         fetchAndRenderTopLevelFolders(); // New initial fetch function
+        addFilterButtonListeners(); 
+    }
+
+    // NEW: Function to add event listeners to filter buttons
+    function addFilterButtonListeners() {
+        const filterControls = document.getElementById('jet-filter-controls');
+        if (!filterControls) return;
+
+        filterControls.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target.classList.contains('jet-filter-button')) {
+                // Remove active class from all filter buttons
+                const buttons = filterControls.querySelectorAll('.jet-filter-button');
+                buttons.forEach(btn => btn.classList.remove('active'));
+
+                // Add active class to the clicked button
+                target.classList.add('active');
+
+                // Update currentFilter based on the button clicked
+                if (target.id === 'filter-all') {
+                    currentFilter = 'all';
+                } else if (target.id === 'filter-picked-any') {
+                    currentFilter = 'picked-any';
+                } else if (target.id === 'filter-not-picked') {
+                    currentFilter = 'not-picked';
+                } else if (target.dataset.color) {
+                    currentFilter = target.dataset.color; // e.g., 'red', 'green'
+                }
+                
+                applyCurrentFilterAndRender();
+            }
+        });
+    }
+
+    // NEW: Function to apply the current filter and re-render the grid
+    function applyCurrentFilterAndRender() {
+        if (!currentGridImages || currentGridImages.length === 0) {
+            renderImageGrid([]); // Render empty if no images
+            return;
+        }
+
+        let filteredImages = [];
+        switch (currentFilter) {
+            case 'all':
+                filteredImages = [...currentGridImages];
+                break;
+            case 'picked-any':
+                filteredImages = currentGridImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE);
+                break;
+            case 'not-picked':
+                filteredImages = currentGridImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE);
+                break;
+            default: // This will handle specific color filters like 'red', 'green', etc.
+                if (Object.values(PICK_COLORS).includes(currentFilter) && currentFilter !== PICK_COLORS.NONE) {
+                    filteredImages = currentGridImages.filter(img => img.pick_color === currentFilter);
+                } else {
+                    console.warn('[Jet Filter] Unknown filter type:', currentFilter, 'defaulting to all.');
+                    filteredImages = [...currentGridImages]; // Fallback to all if filter is unknown
+                }
+                break;
+        }
+        renderImageGrid(filteredImages);
     }
 
     async function fetchAndRenderTopLevelFolders() {
@@ -86,6 +161,10 @@ document.addEventListener('DOMContentLoaded', () => {
         const itemListContainer = document.getElementById('jet-item-list-container');
         if(itemListContainer) itemListContainer.innerHTML = ''; // Clear previous items
         renderBreadcrumb(); // Render breadcrumb for the top level
+
+        // Hide filter controls when showing top-level folders
+        const filterControls = document.getElementById('jet-filter-controls');
+        if (filterControls) filterControls.style.display = 'none';
 
         try {
             const response = await fetch('api.php?action=jet_list_raw_sources', { credentials: 'include' }); 
@@ -140,63 +219,86 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    async function fetchAndRenderImages(sourceKey, folderPath) {
-        showLoading(`Đang tải hình ảnh từ ${sourceKey}/${folderPath}...`);
-        currentRawSourceKey = sourceKey;
-        currentRelativePath = folderPath;
-        const itemListContainer = document.getElementById('jet-item-list-container');
-        if(itemListContainer) itemListContainer.innerHTML = ''; // Clear previous items (folders or images)
-        renderBreadcrumb();
-
+    // NEW: API helper to fetch list of images for a given source and path
+    async function listImagesAPI(sourceKey, relativePath) {
+        const apiUrl = `api.php?action=jet_list_images&source_key=${encodeURIComponent(sourceKey)}&path=${encodeURIComponent(relativePath)}`;
+        showLoading('Đang tải danh sách ảnh...'); // Show loading specific to this action
         try {
-            const apiUrl = `api.php?action=jet_list_images&source_key=${encodeURIComponent(sourceKey)}&path=${encodeURIComponent(folderPath)}`;
-            const response = await fetch(apiUrl);
+            const response = await fetch(apiUrl, { credentials: 'include' });
             hideLoading();
-            if (!response.ok) throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
+            if (!response.ok) {
+                throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
+            }
             const data = await response.json();
-
             if (data.error) {
-                showFeedback(`Lỗi tải hình ảnh: ${data.error}${data.details ? ' (' + data.details + ')' : ''}`, 'error');
-                if(itemListContainer) itemListContainer.innerHTML = `<p>Không thể tải hình ảnh: ${data.error}</p>`;
-                return;
+                throw new Error(data.error + (data.details ? ` (${data.details})` : ''));
             }
-            
-            if (data.success && data.images) {
-                renderImageGrid(data.images);
-                if (data.images.length === 0) {
-                    showFeedback(`Không tìm thấy hình ảnh nào trong thư mục ${folderPath}.`, 'info');
-                }
-            } else {
-                throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải hình ảnh.');
+            if (data.success && Array.isArray(data.images)) {
+                return data.images;
             }
-
+            throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải danh sách ảnh.');
         } catch (error) {
             hideLoading();
-            console.error('[Jet] Failed to fetch images:', error);
-            showFeedback(`Không thể tải hình ảnh: ${error.message}`, 'error');
-            if(itemListContainer) itemListContainer.innerHTML = `<p>Lỗi khi tải hình ảnh. ${error.message}</p>`;
+            console.error('[Jet API] Failed to list images:', error);
+            // Re-throw to be caught by the caller, which will update the UI with an error message
+            throw error; 
         }
     }
 
-    function renderImageGrid(images) {
-        currentGridImages = images; // Store the images array when rendering the grid
+    async function fetchAndRenderImages(sourceKey, relativePath) {
+        // Update current state for breadcrumb and future navigation
+        currentRawSourceKey = sourceKey;
+        currentRelativePath = relativePath;
+        currentGridSelection.source_key = sourceKey; // Keep selection context updated
+        renderBreadcrumb(); // Update breadcrumb
+
+        // Show filter controls when showing images
+        const filterControls = document.getElementById('jet-filter-controls');
+        if (filterControls) filterControls.style.display = 'flex'; // Use 'flex' as it's styled with display:flex
+
+        const itemListContainer = document.getElementById('jet-item-list-container');
+        if (!itemListContainer) return;
+        itemListContainer.innerHTML = '<div class="jet-loading-indicator">Đang tải danh sách ảnh...</div>';
+        currentGridImages = []; // Clear previous images
+
+        try {
+            const images = await listImagesAPI(sourceKey, relativePath);
+            currentGridImages = images; // Store the full list
+            applyCurrentFilterAndRender(); // Apply current filter and render
+            // renderImageGrid(images); // OLD: Directly render all images
+        } catch (error) {
+            console.error('Error fetching images for grid:', error);
+            itemListContainer.innerHTML = `<div class="jet-feedback-message error">Lỗi khi tải ảnh: ${error.message}</div>`;
+        }
+    }
+
+    function renderImageGrid(imagesToRender) {
+        // currentGridImages = images; // REMOVE THIS LINE - currentGridImages should hold the master list
         const itemListContainer = document.getElementById('jet-item-list-container');
         if (!itemListContainer) return;
         itemListContainer.innerHTML = ''; // Clear previous items
         itemListContainer.classList.add('image-grid-container'); // Add class for grid styling
-        currentGridSelection = { source_key: null, image_path: null, element: null, index: -1, imageObject: null }; // Reset grid selection
+        // currentGridSelection = { source_key: null, image_path: null, element: null, index: -1, imageObject: null }; // Reset grid selection
+        // NB: Resetting grid selection here might be too aggressive if we want to maintain selection across filter changes.
+        // Let's defer resetting selection until a new folder is loaded or explicitly cleared.
 
-        if (images.length === 0) {
-            itemListContainer.innerHTML = '<p class="empty-message">Không có hình ảnh nào để hiển thị trong thư mục này.</p>';
+        if (imagesToRender.length === 0) {
+            itemListContainer.innerHTML = '<p class="empty-message">Không có hình ảnh nào khớp với bộ lọc hiện tại.</p>'; // Updated message
+            // Clear selection if filter results in no images
+            currentGridSelection = { source_key: currentRawSourceKey, image_path: null, element: null, index: -1, imageObject: null }; 
             return;
         }
 
-        images.forEach((image, index) => {
+        let firstMatchingElement = null;
+        let firstMatchingImageObject = null;
+        let firstMatchingIndex = -1;
+
+        imagesToRender.forEach((image, indexInFilteredArray) => {
             const imageItemContainer = document.createElement('div');
             imageItemContainer.classList.add('jet-image-item-container'); // For styling the grid item
             imageItemContainer.dataset.imagePath = image.path; // Store path for easy access
             imageItemContainer.dataset.sourceKey = image.source_key;
-            imageItemContainer.dataset.index = index;
+            imageItemContainer.dataset.index = indexInFilteredArray;
 
             const imgElement = document.createElement('img');
             imgElement.classList.add('jet-preview-image');
@@ -234,23 +336,42 @@ document.addEventListener('DOMContentLoaded', () => {
             // MODIFIED: Click listener now selects the image in the grid, and handles manual double-click
             imageItemContainer.addEventListener('click', () => {
                 const currentTime = new Date().getTime();
+                // Find the original index of this image in the master currentGridImages list
+                const originalIndex = currentGridImages.findIndex(img => img.path === image.path && img.source_key === image.source_key);
 
                 if (currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD && lastClickedItemPath === image.path) {
                     // Double click detected
-                    openImagePreview(image, index);
-                    // Reset last click info to prevent triple click issues
+                    if (originalIndex !== -1) {
+                        openImagePreview(image, originalIndex); // Use original index
+                    } else {
+                        console.warn("[Jet Grid DblClick] Could not find original index for (dblclick):", image);
+                        // Fallback or decide how to handle if originalIndex is -1 (should not happen if image is from currentGridImages)
+                        openImagePreview(image, indexInFilteredArray); // Fallback to filtered index if needed
+                    }
                     lastClickTime = 0;
                     lastClickedItemPath = null;
                 } else {
                     // Single click
-                    selectImageInGrid(image, imageItemContainer, index);
-                    // Store info for next click detection
+                    if (originalIndex !== -1) {
+                        selectImageInGrid(image, imageItemContainer, originalIndex); // Use original index
+                    } else {
+                        console.warn("[Jet Grid Click] Could not find original index for (click):", image);
+                        selectImageInGrid(image, imageItemContainer, indexInFilteredArray); // Fallback
+                    }
                     lastClickTime = currentTime;
                     lastClickedItemPath = image.path;
                 }
             });
 
             itemListContainer.appendChild(imageItemContainer);
+
+            // Keep track of the first element to potentially auto-select it
+            if (indexInFilteredArray === 0) {
+                firstMatchingElement = imageItemContainer;
+                firstMatchingImageObject = image;
+                // The index for selection should be its index in the *original* currentGridImages array
+                firstMatchingIndex = currentGridImages.findIndex(img => img.path === image.path && img.source_key === image.source_key);
+            }
         });
 
         // REMOVE Event delegation for double-click on the container
@@ -260,11 +381,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Automatically select the first image if available after rendering
-        if (images.length > 0) {
-            const firstImageElement = itemListContainer.querySelector('.jet-image-item-container');
-            if (firstImageElement) {
-                selectImageInGrid(images[0], firstImageElement, 0);
-            }
+        // if (images.length > 0) { // OLD Condition
+        if (imagesToRender.length > 0 && firstMatchingElement && firstMatchingImageObject && firstMatchingIndex !== -1) {
+            // const firstImageElement = itemListContainer.querySelector('.jet-image-item-container'); // This would get the first in DOM
+            // if (firstImageElement) {
+            //     selectImageInGrid(imagesToRender[0], firstImageElement, 0); // Index 0 of filtered array might not be correct for global state
+            // }
+            selectImageInGrid(firstMatchingImageObject, firstMatchingElement, firstMatchingIndex);
+        } else if (imagesToRender.length === 0) {
+             // If filter results in no images, explicitly clear currentGridSelection's details beyond source_key
+            currentGridSelection.image_path = null;
+            currentGridSelection.element = null;
+            currentGridSelection.index = -1;
+            currentGridSelection.imageObject = null;
         }
     }
 
@@ -720,7 +849,7 @@ document.addEventListener('DOMContentLoaded', () => {
                          if(colorIndicatorSpan) {
                             colorIndicatorSpan.textContent = 'NONE';
                             colorIndicatorSpan.style.backgroundColor = 'transparent';
-                            colorIndicatorSpan.style.color = '#ccc';
+                            colorIndicator.style.color = '#ccc';
                         }
                     }
                 }
