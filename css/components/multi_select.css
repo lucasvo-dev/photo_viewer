@@ -1,0 +1,66 @@
+/* === Multi-Select Styles === */
+/* Styles for Image Multi-Select Feature */
+.image-view-actions .select-mode-button,
+.image-view-actions .download-selected-button,
+.image-view-actions .clear-selection-button {
+    margin-right: 8px; /* Add some spacing between these buttons */
+}
+
+.image-item .selection-checkbox {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 20px;
+    height: 20px;
+    z-index: 10;
+    cursor: pointer;
+    /* Further styling for appearance - using a simple browser default for now */
+}
+
+.image-item.selected-item {
+    border: 3px solid var(--primary-accent-color, #007bff);
+    box-shadow: 0 0 10px var(--primary-accent-color, #007bff);
+    border-radius: 4px; /* Match thumbnail border-radius if any */
+}
+
+.image-item.selected-item img {
+    opacity: 0.8;
+}
+
+/* Adjust if image-grid uses display: flex or grid directly on gallery-item */
+/* This ensures the border doesn't cause layout shifts if items have margin/padding */
+.image-item.selected-item a {
+    display: block; /* Or inline-block if it makes more sense for your layout */
+}
+
+/* Hide checkboxes by default, shown when select mode is active */
+.image-item .selection-checkbox {
+    display: none;
+}
+
+body.select-mode-active .image-item .selection-checkbox {
+    display: block;
+}
+
+/* Styling for select mode active on the body tag */
+body.select-mode-active .image-item a:hover img {
+    /* Disable or alter hover effect when in select mode to avoid conflict with selection indication */
+    opacity: 1;
+}
+
+/* Responsive styles related to multi-select actions */
+@media (max-width: 600px) {
+    .image-view-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        align-items: stretch;
+    }
+    .image-view-actions button,
+    .image-view-actions .button { /* Ensure .button class is also targeted if used */
+        width: 100%;
+        margin-right: 0;
+        /* margin-bottom: 0; /* Removed, as gap handles spacing */
+        display: block;
+    }
+} 

@@ -1,0 +1,20 @@
+a { color: #58a6ff; text-decoration: none; }
+a:hover { text-decoration: underline; }
+img { max-width: 100%; height: auto; display: block; } /* Responsive images */
+
+h1 { 
+    font-size: clamp(1.8rem, 5vw, 2.4rem); 
+    color:#f0f6fc; 
+    margin-bottom: 20px; 
+    font-weight: 600; /* Reverted weight */
+}
+h2 {
+    font-size: clamp(1.3rem, 4vw, 1.6rem); 
+    border-bottom:1px solid #30363d; 
+    padding-bottom:10px;
+    margin-bottom:24px;
+    color:#c9d1d9;
+    font-weight: 500; /* Reverted weight */
+}
+ul { list-style:none; padding:0; margin:0; }
+p { margin-bottom: 1rem; }

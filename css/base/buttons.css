@@ -1,0 +1,70 @@
+/* --- Buttons --- */
+.button, button {
+    display: inline-block;
+    padding: 9px 18px; /* Đồng bộ padding */
+    font-size: 0.95em; /* Đồng bộ font-size */
+    line-height: 1.5; /* Thêm line-height để ổn định chiều cao */
+    font-weight: 500; /* Reverted weight */
+    color: #c9d1d9; 
+    background-color: #21262d; 
+    border: 1px solid #30363d; /* Đồng bộ border */
+    border-radius: 6px; /* Đồng bộ border-radius */
+    cursor: pointer;
+    text-align: center;
+    text-decoration: none;
+    transition: background-color 0.15s ease-in-out, border-color 0.15s ease-in-out, box-shadow 0.15s ease;
+    white-space: nowrap;
+    vertical-align: middle; /* Cải thiện căn chỉnh */
+}
+.button:hover, button:hover {
+    background-color: #30363d; /* Sáng hơn khi hover */
+    border-color: #8b949e; /* Viền sáng hơn khi hover */
+    color: #f0f6fc;
+    text-decoration: none;
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.1); /* Shadow nhẹ khi hover */
+}
+button:disabled, .button:disabled {
+    background-color: #21262d;
+    border-color: #30363d;
+    color: #8b949e; /* Mờ đi */
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+/* Nút hành động chính (Tải tất cả) - màu xanh lá nổi bật */
+.download-all { 
+    background-color: #238636; 
+    border-color: #2ea043; 
+    color: #fff;
+    /* Đảm bảo các thuộc tính kích thước giống hệt .button */
+    padding: 9px 18px; 
+    font-size: 0.95em; 
+    line-height: 1.5;
+    border: 1px solid #2ea043; /* Cập nhật border-color ở đây */
+    border-radius: 6px;
+} 
+.download-all:hover { 
+    background-color: #2ea043; 
+    border-color: #3fb950; 
+    color: #fff; 
+}
+
+/* Style for the new Download Selected Action Button */
+.download-selected-action-button {
+    background-color: #238636; 
+    border-color: #2ea043; 
+    color: #fff;
+}
+.download-selected-action-button:hover {
+    background-color: #2ea043; 
+    border-color: #3fb950; 
+    color: #fff; 
+}
+
+/* Push download button to the right */
+#download-all-link {
+    margin-left: auto;
+}
+
+/* Các nút hành động khác (như Sao chép link) nên sử dụng class "button" ở trên */
+/* Ví dụ: <button class="button" id="copy-link-button">Sao chép link</button> */
+/* Không cần thêm CSS riêng nếu dùng class "button". */

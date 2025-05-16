@@ -234,6 +234,7 @@ function showDirectoryView() {
         history.pushState("", document.title, window.location.pathname + window.location.search);
     }
     showDirectoryViewOnly(); 
+    document.body.classList.remove('gallery-view-active'); // << REMOVE class for homepage
 }
 
 function showImageView() { // This function now mainly toggles the main view containers
@@ -242,6 +243,7 @@ function showImageView() { // This function now mainly toggles the main view con
     document.getElementById('image-view').style.display = 'block';
     showImageViewUI(); // And calls the module to show its specific elements
     document.getElementById('backButton').style.display = 'inline-block';
+    document.body.classList.add('gallery-view-active'); // << ADD class for album/image view
 }
 
 // --- Prompt mật khẩu cho folder protected --- (MOVED to uiModal.js)

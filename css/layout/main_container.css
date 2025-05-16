@@ -1,0 +1,32 @@
+/* --- Main Content Area --- */
+main.container {
+    flex: 1 0 auto; /* Allow main content to grow and push footer down */
+    /* Remove fixed min-height if previously set */
+}
+
+/* Allow user-view (image gallery view) to be wider on desktop -- COMMENTED OUT */
+/*
+main.container.user-view {
+    width: auto; 
+    max-width: none;   
+    margin: 0;         
+    padding: 20px 24px;
+}
+*/
+
+/* Restore boxed-in style for #image-view */
+#image-view { /* Specific to gallery view, could also go into views/gallery_view.css */
+    max-width: 1600px; /* Or your preferred max width for the content block */
+    margin-left: auto;
+    margin-right: auto;
+    width: 100%; /* Takes full width of its calculated space (max-width centered) */
+}
+
+/* --- Directory View (Homepage Improvements) --- */
+#directory-view { /* Specific to gallery view, could also go into views/gallery_view.css */
+    display: flex;
+    flex-direction: column;
+    align-items: center; 
+    gap: 50px; /* Consistent large gap */
+    width: 100%; /* Ensure it takes width for centering */
+} 

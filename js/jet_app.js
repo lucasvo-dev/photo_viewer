@@ -27,6 +27,9 @@ document.addEventListener('DOMContentLoaded', () => {
     // NEW: State for Filtering
     let currentFilter = 'all'; // Initial filter state
 
+    // NEW: State for Sorting
+    let currentSortOrder = 'default'; // Initial sort state
+
     // NEW: State for Grid Selection
     let currentGridSelection = {
         source_key: null,
@@ -70,16 +73,28 @@ document.addEventListener('DOMContentLoaded', () => {
     function initializeAppLayout() {
         if (!appContainer) return;
         appContainer.innerHTML = `
-            <div id="jet-breadcrumb"></div>
-            <div id="jet-controls">
-                <div id="jet-filter-controls" style="display: none;">
-                    <button id="filter-all" class="button jet-filter-button active">Tất cả</button>
-                    <button id="filter-red" class="button jet-filter-button" data-color="red">Đỏ</button>
-                    <button id="filter-green" class="button jet-filter-button" data-color="green">Xanh lá</button>
-                    <button id="filter-blue" class="button jet-filter-button" data-color="blue">Xanh dương</button>
-                    <button id="filter-grey" class="button jet-filter-button" data-color="grey">Xám</button>
-                    <button id="filter-picked-any" class="button jet-filter-button">Đã chọn (Màu bất kỳ)</button>
-                    <button id="filter-not-picked" class="button jet-filter-button">Chưa chọn</button>
+            <div id="jet-header-area">
+                <div id="jet-breadcrumb"></div>
+                <div id="jet-controls">
+                    <div id="jet-filter-controls" style="display: none;">
+                        <button id="filter-all" class="button jet-filter-button active">Tất cả</button>
+                        <button id="filter-red" class="button jet-filter-button" data-color="red">Đỏ</button>
+                        <button id="filter-green" class="button jet-filter-button" data-color="green">Xanh lá</button>
+                        <button id="filter-blue" class="button jet-filter-button" data-color="blue">Xanh dương</button>
+                        <button id="filter-grey" class="button jet-filter-button" data-color="grey">Xám</button>
+                        <button id="filter-picked-any" class="button jet-filter-button">Đã chọn (Màu bất kỳ)</button>
+                        <button id="filter-not-picked" class="button jet-filter-button">Chưa chọn</button>
+                    </div>
+                    <div id="jet-sort-controls" style="display: none; margin-top: 10px;">
+                        <label for="sort-order" style="margin-right: 5px;">Sắp xếp theo:</label>
+                        <select id="sort-order" class="jet-sort-select button">
+                            <option value="default">Mặc định (Tên file A-Z)</option>
+                            <option value="name-asc">Tên file (A-Z)</option>
+                            <option value="name-desc">Tên file (Z-A)</option>
+                            <option value="date-desc">Ngày sửa đổi (Mới nhất)</option>
+                            <option value="date-asc">Ngày sửa đổi (Cũ nhất)</option>
+                        </select>
+                    </div>
                 </div>
             </div>
             <div id="jet-item-list-container">
@@ -91,6 +106,7 @@ document.addEventListener('DOMContentLoaded', () => {
         renderBreadcrumb(); 
         fetchAndRenderTopLevelFolders(); // New initial fetch function
         addFilterButtonListeners(); 
+        addSortControlListener(); // ADDED
     }
 
     // NEW: Function to add event listeners to filter buttons
@@ -119,35 +135,71 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentFilter = target.dataset.color; // e.g., 'red', 'green'
                 }
                 
-                applyCurrentFilterAndRender();
+                applySortAndFilterAndRender();
             }
         });
     }
 
-    // NEW: Function to apply the current filter and re-render the grid
-    function applyCurrentFilterAndRender() {
+    // NEW: Function to add event listener to sort dropdown
+    function addSortControlListener() {
+        const sortOrderSelect = document.getElementById('sort-order');
+        if (!sortOrderSelect) return;
+
+        sortOrderSelect.addEventListener('change', (event) => {
+            currentSortOrder = event.target.value;
+            applySortAndFilterAndRender();
+        });
+    }
+
+    // NEW: Combined function to apply sort, then filter, then render
+    function applySortAndFilterAndRender() {
         if (!currentGridImages || currentGridImages.length === 0) {
-            renderImageGrid([]); // Render empty if no images
+            renderImageGrid([]);
             return;
         }
 
+        let processedImages = [...currentGridImages]; // Start with a copy of the master list
+
+        // 1. Apply Sorting
+        switch (currentSortOrder) {
+            case 'name-asc':
+                processedImages.sort((a, b) => strnatcasecmp(a.name, b.name));
+                break;
+            case 'name-desc':
+                processedImages.sort((a, b) => strnatcasecmp(b.name, a.name));
+                break;
+            case 'date-desc': // Newest first
+                processedImages.sort((a, b) => (b.modified_timestamp || 0) - (a.modified_timestamp || 0));
+                break;
+            case 'date-asc': // Oldest first
+                processedImages.sort((a, b) => (a.modified_timestamp || 0) - (b.modified_timestamp || 0));
+                break;
+            case 'default': // Default is name-asc, often pre-sorted by API or matches name-asc
+            default:
+                processedImages.sort((a, b) => strnatcasecmp(a.name, b.name)); // Fallback to name-asc
+                break;
+        }
+
+        // 2. Apply Filtering (to the sorted list)
         let filteredImages = [];
         switch (currentFilter) {
             case 'all':
-                filteredImages = [...currentGridImages];
+                filteredImages = [...processedImages]; // Already sorted
                 break;
             case 'picked-any':
-                filteredImages = currentGridImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE);
+                filteredImages = processedImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE);
                 break;
             case 'not-picked':
-                filteredImages = currentGridImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE);
+                filteredImages = processedImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE);
                 break;
-            default: // This will handle specific color filters like 'red', 'green', etc.
+            default: // Specific color filters
                 if (Object.values(PICK_COLORS).includes(currentFilter) && currentFilter !== PICK_COLORS.NONE) {
-                    filteredImages = currentGridImages.filter(img => img.pick_color === currentFilter);
+                    filteredImages = processedImages.filter(img => img.pick_color === currentFilter);
                 } else {
-                    console.warn('[Jet Filter] Unknown filter type:', currentFilter, 'defaulting to all.');
-                    filteredImages = [...currentGridImages]; // Fallback to all if filter is unknown
+                    // This case should ideally not be hit if currentFilter is always valid
+                    // but if it's an unknown color filter, show all (sorted) images
+                    console.warn('[Jet Filter Sorter] Unknown filter type during sort:', currentFilter, 'defaulting to all sorted.');
+                    filteredImages = [...processedImages];
                 }
                 break;
         }
@@ -162,9 +214,11 @@ document.addEventListener('DOMContentLoaded', () => {
         if(itemListContainer) itemListContainer.innerHTML = ''; // Clear previous items
         renderBreadcrumb(); // Render breadcrumb for the top level
 
-        // Hide filter controls when showing top-level folders
+        // Hide filter and sort controls when showing top-level folders
         const filterControls = document.getElementById('jet-filter-controls');
         if (filterControls) filterControls.style.display = 'none';
+        const sortControls = document.getElementById('jet-sort-controls');
+        if (sortControls) sortControls.style.display = 'none';
 
         try {
             const response = await fetch('api.php?action=jet_list_raw_sources', { credentials: 'include' }); 
@@ -252,9 +306,12 @@ document.addEventListener('DOMContentLoaded', () => {
         currentGridSelection.source_key = sourceKey; // Keep selection context updated
         renderBreadcrumb(); // Update breadcrumb
 
-        // Show filter controls when showing images
+        // Show filter and sort controls when showing images
         const filterControls = document.getElementById('jet-filter-controls');
-        if (filterControls) filterControls.style.display = 'flex'; // Use 'flex' as it's styled with display:flex
+        if (filterControls) filterControls.style.display = 'flex'; 
+        const sortControls = document.getElementById('jet-sort-controls');
+        if (sortControls) sortControls.style.display = 'flex'; 
+        if (sortControls) sortControls.style.alignItems = 'center'; // Vertically align label and select
 
         const itemListContainer = document.getElementById('jet-item-list-container');
         if (!itemListContainer) return;
@@ -264,8 +321,7 @@ document.addEventListener('DOMContentLoaded', () => {
         try {
             const images = await listImagesAPI(sourceKey, relativePath);
             currentGridImages = images; // Store the full list
-            applyCurrentFilterAndRender(); // Apply current filter and render
-            // renderImageGrid(images); // OLD: Directly render all images
+            applySortAndFilterAndRender(); // NEW: Apply current sort and filter
         } catch (error) {
             console.error('Error fetching images for grid:', error);
             itemListContainer.innerHTML = `<div class="jet-feedback-message error">Lỗi khi tải ảnh: ${error.message}</div>`;
@@ -1108,6 +1164,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Add event listener for global key presses when app is active
     document.addEventListener('keydown', handleGlobalJetKeyPress);
+
+    // Helper for natural sort (already used in API, but good for client-side too if needed elsewhere, or ensure API always provides natural sort for default)
+    // For client-side sort consistency with PHP's strnatcasecmp, a JS equivalent might be needed if complex scenarios arise.
+    // A simple localeCompare with numeric option can often suffice for basic alphanumeric sort.
+    function strnatcasecmp(a, b) {
+        return String(a).localeCompare(String(b), undefined, {numeric: true, sensitivity: 'base'});
+    }
 
     initializeAppLayout();
 });

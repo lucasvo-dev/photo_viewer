@@ -1,0 +1,442 @@
+/* === JET APP SPECIFIC STYLES === */
+
+body.jet-app-active {
+    --jet-bg-primary: #222;
+    --jet-bg-secondary: #2a2a2a;
+    --jet-bg-tertiary: #333;
+    --jet-bg-filter-button: #4a4a4a;
+    --jet-bg-filter-button-active: #6c6c6c;
+    --jet-bg-overlay: rgba(0,0,0,0.7);
+    --jet-bg-image-placeholder: var(--jet-bg-secondary); /* Or #2c2c2c if slightly different needed */
+    --jet-bg-preview-overlay: rgba(0, 0, 0, 0.85);
+    --jet-bg-button-hover: #5a5a5a;
+    --jet-bg-button-close-hover: #c82333;
+
+
+    --jet-text-primary: #eee;
+    --jet-text-secondary: #ccc;
+    --jet-text-tertiary: #bbb;
+    --jet-text-filter-button: #ddd;
+    --jet-text-filter-button-active: #fff;
+    --jet-text-on-dark-accent: white;
+    --jet-text-warning-contrast: #333;
+    --jet-text-button: #f0f0f0;
+
+    --jet-border-primary: #444;
+    --jet-border-secondary: #555;
+    --jet-border-tertiary-accent: #777;
+    --jet-border-hover-accent: #888;
+    --jet-border-overlay-element: rgba(0,0,0,0.4);
+    --jet-border-filter-button-active: #888;
+    --jet-border-select-focus: var(--jet-accent-color1);
+    --jet-border-button: #666;
+    --jet-border-button-hover: #777;
+    --jet-border-button-close-hover: #bd2130;
+
+
+    --jet-accent-color1: #79bbff;
+
+    --jet-color-warning: #ffc107;
+    --jet-color-picked-red: #e53935;
+    --jet-color-picked-green: #43a047;
+    --jet-color-picked-blue: #1e88e5;
+    --jet-color-picked-grey-flag: #9e9e9e;
+    --jet-color-picked-grey-indicator: #757575;
+
+    --jet-color-picked-red-border: #ff7961;
+    --jet-color-picked-green-border: #76d275;
+    --jet-color-picked-blue-border: #6ab7ff;
+    --jet-color-picked-grey-border: #a4a4a4;
+
+    --jet-feedback-info-bg: #17a2b8;
+    --jet-feedback-success-bg: #28a745;
+    --jet-feedback-error-bg: #dc3545;
+
+    --jet-box-shadow-light: rgba(0,0,0,0.3);
+    --jet-box-shadow-medium: rgba(0,0,0,0.4);
+    --jet-box-shadow-dark: rgba(0,0,0,0.45);
+    --jet-box-shadow-feedback: rgba(0,0,0,0.2);
+    --jet-box-shadow-preview-image: 0 0 15px rgba(0,0,0,0.7);
+
+
+    /* Base styles for Jet App Body */
+    background-color: var(--jet-bg-primary);
+    color: var(--jet-text-primary);
+    font-family: sans-serif; /* Or your preferred font stack */
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden; /* Prevent body scroll when Jet app is active */
+    padding: 0;
+}
+
+.jet-app-active .header h1 { /* Assuming a general .header class might be on Jet's header */
+    color: var(--jet-text-primary);
+}
+
+.jet-app-active .logout-link { /* If a logout link is present in Jet view */
+    color: var(--jet-accent-color1);
+    border-color: var(--jet-accent-color1);
+}
+.jet-app-active .logout-link:hover {
+    color: var(--jet-text-on-dark-accent);
+    background-color: var(--jet-accent-color1);
+    border-color: var(--jet-accent-color1);
+}
+
+/* --- Jet Layout & Scrolling --- */
+.jet-app-active main.container.jet-view {
+    flex-grow: 1;
+    display: flex;
+    flex-direction: column;
+    /* padding: 10px; /* Padding is now on children or specific areas */
+    /* overflow: hidden; /* REMOVED - To allow child scroller to work */
+}
+
+.jet-app-active #jet-app-container {
+    display: flex;
+    flex-direction: column;
+    flex-grow: 1;
+    /* overflow: hidden; /* REMOVED - To allow child scroller to work */
+    min-height: 0;
+}
+
+.jet-app-active #jet-header-area {
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+    background-color: var(--jet-bg-primary);
+    z-index: 100;
+}
+
+.jet-app-active #jet-breadcrumb {
+    padding: 10px 15px;
+    background-color: var(--jet-bg-secondary);
+    border-bottom: 1px solid var(--jet-border-primary);
+    font-size: 0.9em;
+}
+.jet-app-active #jet-breadcrumb a {
+    color: var(--jet-accent-color1);
+}
+.jet-app-active #jet-breadcrumb span {
+    color: var(--jet-text-tertiary);
+}
+
+.jet-app-active #jet-controls {
+    padding: 10px 15px;
+    background-color: var(--jet-bg-secondary);
+}
+
+.jet-app-active #jet-item-list-container {
+    flex-grow: 1;
+    overflow-y: auto;
+    min-height: 0;
+    padding: 10px;
+    background-color: var(--jet-bg-primary);
+}
+
+/* --- Jet Image Grid --- */
+.jet-app-active .image-grid-container {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 10px;
+}
+
+.jet-app-active .jet-image-item-container {
+    background-color: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 4px;
+    padding: 5px;
+    text-align: center;
+    cursor: pointer;
+    transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out, border-color 0.1s ease-in-out;
+    transform: translateY(0);
+    position: relative;
+}
+
+.jet-app-active .jet-image-item-container:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px var(--jet-box-shadow-light);
+    border-color: var(--jet-border-secondary);
+}
+
+.jet-app-active .jet-image-item-container.grid-item-selected {
+    transform: translateY(-3px);
+    border-color: var(--jet-border-tertiary-accent);
+    box-shadow: 0 6px 12px var(--jet-box-shadow-medium);
+}
+
+.jet-app-active .jet-image-item-container.grid-item-selected:hover {
+    transform: translateY(-3px);
+    border-color: var(--jet-border-hover-accent);
+    box-shadow: 0 7px 14px var(--jet-box-shadow-dark);
+}
+
+.jet-app-active .jet-preview-image {
+    max-width: 100%;
+    height: auto;
+    max-height: 120px;
+    display: block;
+    margin: 0 auto 5px auto;
+    border-radius: 3px;
+    background-color: var(--jet-bg-image-placeholder);
+}
+
+.jet-app-active .image-item-name {
+    font-size: 0.8em;
+    color: var(--jet-text-secondary);
+    word-wrap: break-word;
+    padding: 0 2px;
+}
+
+/* Styles for the container when there is a preview error */
+.jet-app-active .jet-image-item-container.preview-error {
+    align-items: center;
+    justify-content: center;
+    min-height: 100px; /* Ensure it has some height */
+    border: 1px dashed var(--jet-border-tertiary-accent); /* Visually indicate error state on container */
+    /* You might want to adjust padding or other properties if needed */
+}
+
+.jet-app-active .jet-image-item-container.preview-error span:not(.image-item-name) { /* The '!' span */
+    font-size: 2em;
+    color: var(--jet-color-warning); /* Warning yellow */
+    margin-bottom: 5px;
+    display: block; /* Ensure it takes space */
+}
+
+/* --- Jet Color Pick Styles (Grid & Preview Button) --- */
+/* Grid item flags */
+.jet-app-active .jet-image-item-container::after {
+    content: '';
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+    border: 1px solid var(--jet-border-overlay-element);
+    box-sizing: border-box;
+    display: none;
+    z-index: 1;
+}
+.jet-app-active .jet-image-item-container.picked-red::after,
+.jet-app-active .jet-image-item-container.picked-green::after,
+.jet-app-active .jet-image-item-container.picked-blue::after,
+.jet-app-active .jet-image-item-container.picked-grey::after {
+    display: block;
+}
+.jet-app-active .jet-image-item-container.picked-red::after {
+    background-color: var(--jet-color-picked-red);
+}
+.jet-app-active .jet-image-item-container.picked-green::after {
+    background-color: var(--jet-color-picked-green);
+}
+.jet-app-active .jet-image-item-container.picked-blue::after {
+    background-color: var(--jet-color-picked-blue);
+}
+.jet-app-active .jet-image-item-container.picked-grey::after {
+    background-color: var(--jet-color-picked-grey-flag);
+}
+
+/* Preview pick button indicator */
+.jet-app-active .jet-preview-pick-button-base .jet-preview-pick-color-indicator {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: 5px;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 0.9em;
+    border: 1px solid var(--jet-border-secondary);
+    min-width: 40px;
+    text-align: center;
+    color: var(--jet-text-on-dark-accent);
+}
+.jet-app-active .jet-preview-pick-button-base.picked-red .jet-preview-pick-color-indicator {
+    background-color: var(--jet-color-picked-red); border-color: var(--jet-color-picked-red-border);
+}
+.jet-app-active .jet-preview-pick-button-base.picked-green .jet-preview-pick-color-indicator {
+    background-color: var(--jet-color-picked-green); border-color: var(--jet-color-picked-green-border);
+}
+.jet-app-active .jet-preview-pick-button-base.picked-blue .jet-preview-pick-color-indicator {
+    background-color: var(--jet-color-picked-blue); border-color: var(--jet-color-picked-blue-border);
+}
+.jet-app-active .jet-preview-pick-button-base.picked-grey .jet-preview-pick-color-indicator {
+    background-color: var(--jet-color-picked-grey-indicator); border-color: var(--jet-color-picked-grey-border);
+}
+
+/* --- Jet UI Elements (Feedback, Loading) --- */
+.jet-app-active #jet-feedback {
+    padding: 10px;
+    margin: 10px auto;
+    max-width: 600px;
+    border-radius: 4px;
+    display: none;
+    text-align: center;
+    box-shadow: 0 2px 5px var(--jet-box-shadow-feedback);
+    color: var(--jet-text-on-dark-accent);
+}
+.jet-app-active #jet-feedback.info { background-color: var(--jet-feedback-info-bg); }
+.jet-app-active #jet-feedback.success { background-color: var(--jet-feedback-success-bg); }
+.jet-app-active #jet-feedback.warning { background-color: var(--jet-color-warning); color: var(--jet-text-warning-contrast); }
+.jet-app-active #jet-feedback.error { background-color: var(--jet-feedback-error-bg); }
+
+.jet-app-active #jet-loading-indicator {
+    position: fixed;
+    top: 10px;
+    right: 10px;
+    background-color: var(--jet-bg-overlay);
+    color: var(--jet-text-on-dark-accent);
+    padding: 8px 15px;
+    border-radius: 4px;
+    z-index: 10000; /* Above preview overlay */
+    display: none;
+}
+
+/* --- Jet Filter & Sort Controls --- */
+.jet-app-active #jet-filter-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: flex-start;
+    margin-bottom: 10px;
+}
+.jet-app-active .jet-filter-button {
+    background-color: var(--jet-bg-filter-button);
+    color: var(--jet-text-filter-button);
+    border: 1px solid var(--jet-border-secondary);
+    padding: 6px 12px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+}
+.jet-app-active .jet-filter-button:hover {
+    background-color: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-tertiary-accent);
+}
+.jet-app-active .jet-filter-button.active {
+    background-color: var(--jet-bg-filter-button-active);
+    color: var(--jet-text-filter-button-active);
+    border-color: var(--jet-border-filter-button-active);
+    font-weight: bold;
+}
+
+.jet-app-active #jet-sort-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px; /* Space to grid */
+}
+.jet-app-active .jet-sort-select {
+    background-color: var(--jet-bg-tertiary);
+    color: var(--jet-text-primary);
+    border: 1px solid var(--jet-border-secondary);
+    padding: 6px 10px;
+    border-radius: 4px;
+}
+.jet-app-active .jet-sort-select:focus {
+    outline: none;
+    border-color: var(--jet-border-select-focus);
+    box-shadow: 0 0 0 2px rgba(121, 187, 255, 0.25); /* Using accent color with alpha for focus glow */
+}
+
+/* --- Jet Preview Overlay (Non-PhotoSwipe, custom for RAW previews) --- */
+/* This is for the #jet-preview-area */
+.jet-preview-overlay-container { /* This is the div made visible by JS inside #jet-preview-area */
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: var(--jet-bg-preview-overlay);
+    z-index: 1000; /* Below loading indicator, above other content */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 15px;
+    box-sizing: border-box;
+}
+.jet-preview-overlay-container .jet-preview-controls-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+    max-width: 1200px; /* Limit width of top controls */
+    padding: 0 10px 10px 10px; /* Padding for controls, not the overall overlay */
+    box-sizing: border-box;
+    color: var(--jet-text-secondary);
+    flex-shrink: 0;
+}
+.jet-preview-overlay-container #jet-preview-image-name {
+    font-size: 1.1em;
+    text-align: left;
+    flex-grow: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.jet-preview-overlay-container .jet-preview-image-container {
+    flex-grow: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    overflow: hidden; /* Handles large images gracefully */
+    position: relative; /* For nav buttons */
+}
+.jet-preview-overlay-container #jet-preview-main-image {
+    max-width: 100%;
+    max-height: 100%;
+    display: block; /* Removes bottom space under img */
+    object-fit: contain; /* Scale image down to fit, preserving aspect ratio */
+    border-radius: 3px;
+    box-shadow: var(--jet-box-shadow-preview-image);
+}
+.jet-preview-overlay-container .jet-preview-controls-nav {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    right: 0;
+    transform: translateY(-50%);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0 10px; /* Padding for nav buttons from edge */
+    box-sizing: border-box;
+    pointer-events: none; /* Allow clicks to pass through to image if not on a button */
+}
+.jet-preview-overlay-container .jet-preview-controls-nav button {
+    pointer-events: all; /* Make sure buttons are clickable */
+}
+
+.jet-preview-overlay-container .nav-group-left,
+.jet-preview-overlay-container .nav-group-right {
+    display: flex;
+    gap: 10px;
+}
+
+.jet-preview-overlay-container button { /* General button style in preview */
+    background-color: var(--jet-bg-tertiary);
+    color: var(--jet-text-button);
+    border: 1px solid var(--jet-border-button);
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background-color 0.2s, border-color 0.2s;
+    font-size: 1em;
+    min-width: 80px; /* Ensure decent tap target */
+}
+.jet-preview-overlay-container button:hover {
+    background-color: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-button-hover);
+}
+.jet-preview-overlay-container #jet-preview-close-button {
+    /* Uses general button styles */
+}
+.jet-preview-overlay-container #jet-preview-close-button:hover {
+    background-color: var(--jet-bg-button-close-hover);
+    border-color: var(--jet-border-button-close-hover);
+    color: var(--jet-text-on-dark-accent);
+}
+/* .jet-preview-overlay-container #jet-preview-pick-button.picked is handled by .picked-COLOR classes */

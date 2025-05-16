@@ -1,0 +1,13 @@
+/* --- Search Bar --- */
+.search-container { margin-bottom:24px; }
+#searchInput {
+    width:100%; padding:11px 14px;
+    background:#161b22; border:1px solid #30363d; border-radius:6px;
+    color:#e6edf3; font-size: 1em;
+    box-sizing: border-box;
+}
+#searchInput:focus {
+    outline:none; border-color:#58a6ff;
+    box-shadow:0 0 0 3px rgba(88,166,255,0.15);
+}
+#searchInput::placeholder { color: #8b949e; }

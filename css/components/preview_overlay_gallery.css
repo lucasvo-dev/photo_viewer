@@ -1,0 +1,85 @@
+/* --- Preview Overlay --- */
+.preview-overlay {
+    position:fixed; top:0; left:0; width:100%; height:100%;
+    background:rgba(0,0,0,0.9);
+    display:flex; justify-content:center; align-items:center;
+    z-index:1000; padding:10px; /* Ensure padding doesn't prevent full height/width usage */
+    box-sizing: border-box;
+    -webkit-tap-highlight-color: transparent; /* Tắt highlight khi chạm trên mobile */
+}
+.preview-wrapper {
+    position:relative;
+    /* Use viewport units for max dimensions, subtracting padding */
+    max-width: calc(100vw - 20px); 
+    max-height: calc(100vh - 20px);
+    display: flex; 
+    justify-content: center; 
+    align-items: center;
+}
+
+/* REMOVED custom styles for the preview image inside the wrapper. */
+/* Let PhotoSwipe handle its own image styling. */
+/* 
+.preview-wrapper img#previewImage {
+    max-width: 100%; 
+    max-height: 100%; 
+    width: auto;     
+    height: auto;    
+    object-fit: contain; 
+    display: block; 
+    will-change: transform, opacity;
+}
+*/
+
+.preview-wrapper img.sliding { transition:none; } /* Tắt transition khi đang kéo */
+
+.nav-btn {
+    position:absolute; top:50%; transform:translateY(-50%);
+    font-size:2.5rem; /* Tăng kích thước icon */
+    background:rgba(22, 27, 34, 0.6); /* Nền tối hơn */
+    color:#f0f6fc; border:none; padding:10px 16px;
+    cursor:pointer; z-index:1001; font-weight:bold;
+    border-radius:8px;
+    transition: background-color 0.2s ease, transform 0.1s ease;
+    opacity: 0.7; /* Mặc định hơi mờ */
+}
+.nav-btn:hover { background:rgba(33, 38, 45, 0.8); opacity: 1; transform: translateY(-50%) scale(1.05); }
+#prevBtn { left:5px; } /* Sát viền hơn */
+#nextBtn { right:5px; }
+
+.close-preview {
+    position:absolute; top:15px; right:20px; /* Gần góc hơn */
+    font-size:30px; color:#f0f6fc; cursor:pointer;
+    font-weight: lighter;
+    padding: 5px; line-height: 1;
+    background: rgba(22, 27, 34, 0.5);
+    border-radius: 50%;
+    transition: transform 0.2s ease, background-color 0.2s ease;
+}
+.close-preview:hover { transform: scale(1.1); background: rgba(33, 38, 45, 0.8); }
+
+/* Slide animation (keyframes giữ nguyên) */
+.slide-left  { animation:slideLeft 0.3s ease forwards; } /* Thêm forwards */
+.slide-right { animation:slideRight 0.3s ease forwards; }
+@keyframes slideLeft {
+    0% { transform: translateX(-50px); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+@keyframes slideRight {
+    0% { transform: translateX(50px); opacity: 0; }
+    100% { transform: translateX(0); opacity: 1; }
+}
+
+/* --- Download Preview Button --- */
+.download-preview-btn {
+    position:absolute; bottom:25px; left:50%; /* Nút tải ở dưới */
+    transform:translateX(-50%);
+    background:#1f6feb; color:#fff;
+    padding:10px 18px; font-size:1em; /* Tăng padding */
+    border-radius:6px; text-decoration:none;
+    box-shadow:0 4px 10px rgba(0,0,0,0.4);
+    z-index:1001;
+    opacity: 0.9;
+    transition: background-color 0.2s ease, opacity 0.2s ease;
+}
+.download-preview-btn:hover { background:#388bfd; opacity: 1; }

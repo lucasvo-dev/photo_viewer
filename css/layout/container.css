@@ -1,0 +1,22 @@
+.container {
+    max-width: 1200px;
+    margin-left: auto; /* Combined for centering */
+    margin-right: auto; /* Combined for centering */
+    padding: 20px 24px;
+    width: 100%; /* Ensure it tries to fill parent before max-width restricts */
+    box-sizing: border-box; /* Include padding in width/height */
+}
+
+@media (max-width: 1200px) {
+    .container {
+        padding: 15px;
+    }
+}
+
+/* Override for gallery views (album/image view) to be wider */
+body.gallery-view-active main.container.user-view {
+    max-width: none; 
+    margin-left: 0;  
+    margin-right: 0; 
+    /* Padding, width, box-sizing are inherited or fine */
+}

@@ -1,0 +1,17 @@
+/* --- Footer Styles --- */
+.app-footer {
+    background-color: #0d1117; /* Match body */
+    border-top: 1px solid #21262d; /* Softer border */
+    padding: 20px 0; 
+    margin-top: 50px; 
+    text-align: center;
+    font-size: 0.9em;
+    color: #8b949e;
+    flex-shrink: 0; /* Prevent footer from shrinking */
+}
+.footer-container p {
+    margin-bottom: 5px; /* Space between lines */
+}
+.footer-contact {
+    font-size: 0.9em;
+}

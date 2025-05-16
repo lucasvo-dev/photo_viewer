@@ -1,0 +1,35 @@
+/* --- Header Styles --- */
+.app-header {
+    background-color: #161b22;
+    border-bottom: 1px solid #21262d; /* Slightly softer border */
+    padding: 12px 0; 
+    position: sticky; /* Make header sticky */
+    top: 0;
+    z-index: 900; /* Below overlays */
+    flex-shrink: 0; /* Prevent header from shrinking */
+}
+.header-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 20px; /* Add gap between logo and actions */
+}
+.logo-link { 
+    text-decoration: none; 
+    display: inline-block; 
+}
+#site-logo {
+    max-height: 60px; /* Further increased default max height */
+    width: auto;
+    vertical-align: middle; 
+}
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.back-button {
+    /* Refine back button style */
+    padding: 6px 12px;
+    font-size: 0.9em;
+}

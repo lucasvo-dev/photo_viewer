@@ -1,0 +1,157 @@
+/* --- ZIP Jobs Panel --- */
+.zip-jobs-panel-container {
+    position: fixed;
+    bottom: 10px;
+    right: 10px;
+    width: 320px; 
+    max-height: 400px;
+    background-color: #2d333b;
+    border: 1px solid #444c56;
+    border-radius: 6px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    color: #c9d1d9;
+    padding: 10px;
+    z-index: 1001; 
+    display: none; 
+    font-size: 0.9em;
+}
+
+.zip-jobs-panel-container h4 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 1em; 
+    color: #c9d1d9;
+    border-bottom: 1px solid #444c56;
+    padding-bottom: 8px;
+}
+
+#zip-jobs-list {
+    max-height: 330px; 
+    overflow-y: auto;
+    scrollbar-width: thin; 
+    scrollbar-color: #444c56 #2d333b; 
+}
+
+#zip-jobs-list::-webkit-scrollbar {
+    width: 8px;
+}
+
+#zip-jobs-list::-webkit-scrollbar-track {
+    background: #2d333b;
+}
+
+#zip-jobs-list::-webkit-scrollbar-thumb {
+    background-color: #444c56;
+    border-radius: 4px;
+    border: 2px solid #2d333b;
+}
+
+.zip-job-entry {
+    background-color: #22272e;
+    padding: 8px;
+    margin-bottom: 8px;
+    border-radius: 4px;
+    border: 1px solid #373e47;
+}
+
+.zip-job-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 5px;
+}
+
+.zip-job-foldername {
+    font-weight: bold;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    flex-grow: 1; 
+    margin-right: 10px; 
+}
+
+.zip-job-status {
+    font-size: 0.85em;
+    color: #8b949e;
+    white-space: nowrap; 
+}
+
+.zip-job-progressbar {
+    width: 100%;
+    height: 8px;
+    margin-bottom: 8px;
+    border-radius: 4px; 
+    overflow: hidden; 
+}
+
+.zip-job-progressbar::-webkit-progress-bar {
+    background-color: #373e47;
+    border-radius: 4px;
+}
+.zip-job-progressbar::-webkit-progress-value {
+    background-color: #2f81f7;
+    border-radius: 4px;
+    transition: width 0.2s ease-in-out;
+}
+.zip-job-progressbar::-moz-progress-bar { 
+    background-color: #2f81f7;
+    border-radius: 4px;
+    transition: width 0.2s ease-in-out;
+}
+
+.zip-job-actions {
+    text-align: right; 
+}
+
+.zip-job-actions button {
+    font-size: 0.8em;
+    padding: 4px 8px; 
+    margin-left: 5px; 
+    background-color: #373e47;
+    color: #c9d1d9;
+    border: 1px solid #444c56;
+    border-radius: 4px;
+    cursor: pointer;
+}
+.zip-job-actions button:hover {
+    background-color: #444c56;
+    border-color: #58a6ff;
+}
+
+.zip-job-download-button { /* This is an <a> styled as a button */
+    font-size: 0.8em;
+    padding: 4px 8px; 
+    margin-left: 5px; 
+    background-color: #2f81f7 !important;
+    color: #ffffff !important;
+    border: 1px solid #2f81f7 !important; /* Ensure border matches for consistency */
+    border-radius: 4px;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block; /* Behaves like a button */
+    vertical-align: middle; /* Align with other buttons */
+}
+.zip-job-download-button:hover {
+     background-color: #58a6ff !important;
+     border-color: #58a6ff !important;
+     color: #ffffff !important; /* Keep text color consistent on hover */
+     text-decoration: none;
+}
+
+/* Responsive adjustments for ZIP job actions */
+@media (max-width: 600px) {
+    .zip-job-actions {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        align-items: stretch;
+        text-align: initial; /* Reset text-align */
+    }
+    .zip-job-actions button,
+    .zip-job-actions .zip-job-download-button { /* Target both button and styled anchor */
+        width: 100%;
+        margin-left: 0;
+        display: block; /* Make them block to take full width */
+        box-sizing: border-box; /* Ensure padding/border are included in width */
+    }
+}

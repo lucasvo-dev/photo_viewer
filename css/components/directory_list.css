@@ -1,0 +1,82 @@
+/* --- Folder List (Homepage & Inside Folder) --- */
+.directory-list-styling {
+    list-style:none; padding:0; margin:0 0 24px 0;
+    display: grid; /* Có thể dùng Grid để bố cục tốt hơn */
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* Responsive grid */
+    gap: 16px; /* Khoảng cách giữa các thư mục */
+}
+.directory-list-styling li {
+    /* Các style cũ của li không cần nữa vì thẻ a chiếm hết */
+}
+.directory-list-styling li a {
+    display: flex;
+    align-items: center; /* Keep vertical alignment */
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px; /* Default padding */
+    gap: 14px; /* Default gap */
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    color: #c9d1d9;
+    overflow: hidden; /* Keep overflow on the 'a' tag for overall card shape */
+    text-decoration: none;
+}
+.directory-list-styling li a:hover {
+    background:#21262d; transform:translateY(-2px);
+    border-color: #404854;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    text-decoration: none;
+    color: #f0f6fc; /* Chữ sáng hơn khi hover */
+}
+
+.folder-thumbnail {
+    width: 60px; /* Standardized base size */
+    height: 60px; /* Standardized base size */
+    object-fit: cover;
+    border-radius: 6px;
+    background:#0d1117;
+    border: 1px solid #21262d;
+    flex-shrink: 0;
+}
+/* CSS cho ảnh placeholder nếu cần */
+img[src=""] { background-color: #21262d; }
+img[src$=".svg"] { /* Nếu dùng SVG placeholder */
+    padding: 5px; /* Thêm padding cho SVG */
+}
+
+.directory-list-styling span { /* Tên thư mục */
+    font-size:0.95em; /* Adjusted to match gallery_view */
+    font-weight:500;
+    line-height: 1.4;
+    /* Tránh tràn text */
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* CSS cho thông báo không tìm thấy kết quả */
+#directory-list .no-results { /* This ID might be specific to a view, consider moving if not general */
+    grid-column: 1 / -1; /* Chiếm toàn bộ grid */
+    text-align: center; padding: 30px; color: #8b949e; font-style: italic;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+}
+
+/* Responsive adjustments from gallery_view.css */
+@media (min-width: 480px) and (max-width: 768px) { /* Matches gallery_view for 2 columns */
+    .directory-list-styling {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 399px) {
+    .directory-list-styling li a {
+        padding: 10px;
+        gap: 8px;
+    }
+    .directory-list-styling .folder-thumbnail { /* Ensure this targets within .directory-list-styling */
+        width: 40px;
+        height: 40px;
+    }
+    .directory-list-styling span {
+        font-size: 0.9em;
+    }
+}

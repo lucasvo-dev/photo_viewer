@@ -1,0 +1,46 @@
+/* --- Masonry Image Section --- */
+#image-grid { /* Container chung cho thư mục con và ảnh */
+    margin-top: 20px;
+}
+.image-group { /* Container riêng cho ảnh masonry */
+    margin-top: 24px; /* Khoảng cách với thư mục con nếu có */
+    /* column-count: 2; column-gap: 16px; */ /* REMOVE these for Masonry.js */
+    width: 100%; /* Ensure the group takes full available width */
+}
+/* Responsive columns - REMOVE these as Masonry.js will handle responsiveness via item selectors and width */
+/* @media(min-width: 600px) { .image-group{ column-count: 3; } } */
+/* @media(min-width: 900px) { .image-group{ column-count: 4; } } */
+/* @media(min-width: 1200px){ .image-group{ column-count: 5; } } */
+
+.image-item { /* Wrapper cho mỗi ảnh */
+    /* break-inside: avoid; */ /* REMOVE this - specific to column-count */
+    margin-bottom: 16px; 
+    /* Adjust width for Masonry columns. Gutter handled by Masonry.js option. */
+    width: 19%; /* Default for all screens: Aiming for ~5 columns. (100% / 5 = 20%. 19% + gutter) */
+    /* margin-right: 16px; */ /* REMOVE - Masonry's gutter option will handle horizontal spacing */
+    /* Ensure items don't have a fixed height if images vary, Masonry handles height. */
+    position: relative; 
+    overflow: hidden; /* Keep for border-radius */
+    border-radius: 6px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    /* Ensure item height is determined by content */
+    height: auto; 
+    line-height: 0; /* Prevent extra space issues */
+}
+
+.image-item:hover {
+    transform: scale(1.02); /* Phóng to nhẹ khi hover */
+    box-shadow: 0 6px 15px rgba(0,0,0,0.3);
+}
+
+.image-item img {
+    width: 100%;      /* Fit item width */
+    height: auto;     /* Height determined by aspect ratio */
+    /* object-fit: cover; /* Revert this, height:auto should handle aspect ratio */ 
+    object-fit: contain; /* Or use contain to ensure it fits if constrained */
+    object-position: center; 
+    border-radius: 6px; 
+    display: block;
+    background: #161b22; 
+    border: 1px solid #30363d;
+}

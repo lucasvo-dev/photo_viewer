@@ -1,0 +1,300 @@
+/* === ADMIN PAGE SPECIFIC STYLES === */
+
+/* --- Admin Search --- */
+.search-container.admin-search {
+    width: 100%;
+    max-width: 550px;
+    margin: 30px auto 20px auto;
+}
+#adminSearchInput {
+    width:100%; 
+    padding: 12px 16px;
+    background:#0d1117; 
+    border:1px solid #30363d; 
+    border-radius:6px;
+    color:#e6edf3; 
+    font-size: 1rem;
+    line-height: 1.5;
+    box-sizing: border-box;
+}
+#adminSearchInput:focus {
+    outline:none; 
+    border-color:#58a6ff;
+    box-shadow:0 0 0 3px rgba(88,166,255,0.15);
+}
+#adminSearchInput::placeholder { 
+    color: #8b949e; 
+}
+.search-prompt.admin-prompt {
+    text-align: center;
+    margin-top: 8px; 
+    font-size: 0.85em;
+}
+
+/* --- Admin View Layout --- */
+.container.admin-view { 
+    max-width: 1000px; 
+}
+.admin-view .header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 25px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid #30363d; 
+}
+.admin-view .header h1 { 
+    margin: 0; 
+    color: #f0f6fc; 
+}
+.admin-view .logout-link {
+    background-color: #b62324; 
+    border-color: #cb2a2a;
+    font-size: 0.9em;
+    padding: 8px 14px;
+}
+.admin-view .logout-link:hover { 
+    background-color: #da3633; 
+    border-color: #e9403c; 
+}
+
+/* --- Admin Messages --- */
+.admin-view .message, 
+.admin-view .feedback-message { 
+    padding: 12px 18px; 
+    margin-bottom: 20px;
+    border-radius: 6px;
+    border: 1px solid transparent; 
+    font-size: 0.95em;
+}
+.admin-view .message.success, 
+.admin-view .feedback-message.feedback-success { 
+    background-color: rgba(46, 160, 67, 0.15); 
+    color: #3fb950; 
+    border-color: rgba(46, 160, 67, 0.3); 
+}
+.admin-view .message.error, 
+.admin-view .feedback-message.feedback-error { 
+    background-color: rgba(218, 54, 51, 0.15); 
+    color: #f85149; 
+    border-color: rgba(218, 54, 51, 0.3); 
+}
+.admin-view .feedback-message.feedback-warning {
+    background-color: rgba(210, 153, 34, 0.15);
+    color: #d29922;
+    border-color: rgba(210, 153, 34, 0.3);
+}
+
+/* --- Admin Table Styles --- */
+.admin-view th,
+.admin-view td {
+    padding: 12px 15px;
+    border: 1px solid #30363d;
+    text-align: left;
+    vertical-align: middle;
+    color: #c9d1d9;
+}
+
+/* Specific cell styling for Cache Status */
+.admin-view td[data-label="Trạng thái Cache"] div { 
+    font-size: 0.85em;
+    line-height: 1.3;
+    padding: 4px 0;
+    display: block; 
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-status-wrapper {
+    line-height: 1.3;
+}
+.admin-view td[data-label="Trạng thái Cache"] .status-processing {
+    font-weight: bold; 
+    font-style: italic; /* Keep italic if desired */
+    color: #a8a8a8;    /* General status color */
+}
+.admin-view td[data-label="Trạng thái Cache"] .processing-file-path {
+    display: block; 
+    font-size: 0.85em;
+    color: #8b949e;
+    margin-top: 3px;
+    white-space: nowrap; 
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-progress-bar {
+    display: block; 
+    width: 100%;
+    height: 8px; 
+    margin-top: 5px;
+    border-radius: 4px;
+    border: 1px solid #30363d; 
+    background-color: #0d1117; 
+    appearance: none; 
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-progress-bar::-webkit-progress-value {
+    background-color: #238636; 
+    border-radius: 3px;
+    transition: width 0.2s ease-in-out;
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-progress-bar::-moz-progress-bar {
+    background-color: #238636;
+    border-radius: 3px;
+    transition: width 0.2s ease-in-out;
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-progress-bar::-webkit-progress-bar {
+    background-color: #0d1117;
+    border-radius: 4px;
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-info-icon {
+    display: inline-block; /* Allows margin and aligns with text/status */
+    margin-left: 8px;
+    cursor: pointer;
+    font-weight: bold;
+    font-style: normal;
+    color: #58a6ff;
+    border-radius: 3px;
+    padding: 0 3px;
+    vertical-align: middle;
+}
+.admin-view td[data-label="Trạng thái Cache"] .cache-info-icon:hover {
+    background-color: rgba(88, 166, 255, 0.1);
+    color: #79c0ff;
+}
+
+/* General Status Text Styles */
+.status-processing, /* General one if used outside cache column */
+.status-pending {
+    font-style: italic;
+    color: #a8a8a8;
+}
+.status-completed {
+    color: #3fb950; /* Green */
+}
+.status-failed {
+    color: #f85149; /* Red */
+}
+.status-warning { /* General one, also used in cache column */
+    color: #d29922; /* Yellow/Orange */
+    font-size: 0.9em; /* Ensure consistency if used outside cache context */
+    margin-top: 3px;
+    display: block;
+}
+.status-never {
+     color: #888;
+}
+
+/* --- Responsive Admin Table (@media max-width: 800px) --- */
+@media (max-width: 800px) { 
+    .admin-view table thead {
+        display: none;
+    }
+    .admin-view table,
+    .admin-view table tbody,
+    .admin-view table tr,
+    .admin-view table td {
+        display: block;
+        width: 100%;
+    }
+    .admin-view table tr {
+        margin-bottom: 15px;
+        border: 1px solid #30363d;
+        border-radius: 6px;
+        overflow: hidden;
+    }
+    .admin-view table td {
+        text-align: right;
+        padding-left: 50%;
+        padding-top: 8px;
+        padding-bottom: 8px;
+        position: relative;
+        border: none;
+        border-bottom: 1px dashed #21262d;
+    }
+    .admin-view table td:last-child {
+        border-bottom: none;
+    }
+    .admin-view table td::before {
+        content: attr(data-label);
+        position: absolute;
+        left: 10px;
+        width: calc(50% - 20px);
+        padding-right: 10px;
+        white-space: nowrap;
+        text-align: left;
+        font-weight: bold;
+        color: #8b949e;
+    }
+    .admin-view table td[data-label="Tên thư mục"] {
+        text-align: left;
+        padding-left: 10px;
+        word-break: break-word;
+    }
+    .admin-view table td[data-label="Tên thư mục"]::before { display: none; }
+    .admin-view table td[data-label="Link chia sẻ"],
+    .admin-view table td[data-label="Hành động Mật khẩu"],
+    .admin-view table td[data-label="Hành động Cache"] {
+         padding-top: 10px;
+         padding-bottom: 10px;
+    }
+    .admin-view table td[data-label="Link chia sẻ"] input {
+        width: 100%;
+        word-break: break-all;
+        text-align: left;
+        font-size: 0.9em;
+    }
+    .admin-view table td[data-label="Hành động Mật khẩu"] .action-form {
+        display: flex;
+        flex-direction: column;
+        align-items: stretch;
+        gap: 8px;
+    }
+    .admin-view table td[data-label="Hành động Mật khẩu"] .action-form input,
+    .admin-view table td[data-label="Hành động Mật khẩu"] .action-form button {
+        width: 100%;
+        margin: 0;
+        box-sizing: border-box;
+    }
+    .admin-view table td[data-label="Trạng thái Cache"] div { /* Mobile specific for cache status div */
+        text-align: right; 
+    }
+    .admin-view table td[data-label="Trạng thái Cache"] .status-warning { /* Mobile specific for status warning */
+         font-size: 0.85em;
+         line-height: 1.3;
+    }
+    .admin-view table td[data-label="Hành động Cache"] button { /* Mobile specific for cache action button */
+         width: 100%;
+         box-sizing: border-box;
+    }
+    .admin-view table td[data-label="Trạng thái Cache"] .processing-file-path {
+        white-space: normal; 
+        word-break: break-all;
+    }
+}
+
+/* --- Cache Info Modal (specific styles, general modal styles are in components/modals.css) --- */
+.cache-info-modal .modal-box { /* Extends .modal-box */
+    text-align: left; 
+    max-width: 450px; 
+}
+.cache-info-modal .modal-box h3 {
+     margin-bottom: 15px;
+     text-align: center;
+}
+.cache-info-modal .modal-box p {
+    margin-bottom: 8px; 
+    line-height: 1.4;
+}
+.cache-info-modal .modal-box p small {
+     color: #8b949e; 
+}
+.cache-info-modal .modal-box .job-result-message {
+    font-family: monospace;
+    font-size: 0.9em;
+    background-color: rgba(0,0,0,0.2);
+    padding: 5px 8px;
+    border-radius: 4px;
+    display: block;
+    margin-top: 4px;
+    max-height: 150px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+}

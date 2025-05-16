@@ -134,7 +134,8 @@ switch ($jet_action) {
                             'path' => $image_full_relative_path,
                             'source_key' => $source_key,
                             // Use pick_color, defaulting to null if not set in $user_picks
-                            'pick_color' => $user_picks[$image_full_relative_path] ?? null 
+                            'pick_color' => $user_picks[$image_full_relative_path] ?? null,
+                            'modified_timestamp' => $fileinfo->getMTime()
                         ];
                     }
                 }

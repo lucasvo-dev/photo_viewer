@@ -1,0 +1,151 @@
+/* ========================================= */
+/* === MODAL STYLES (Refactored)        === */
+/* ========================================= */
+
+/* --- Base Modal Overlay --- */
+.modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(13, 17, 23, 0.9); /* Consistent background dim */
+    display: none; /* Hidden by default */
+    justify-content: center;
+    align-items: center;
+    z-index: 1000; 
+    padding: 20px;
+    box-sizing: border-box;
+    opacity: 0; /* Start hidden for transition */
+    visibility: hidden; /* Start hidden */
+    transition: opacity 0.25s ease-out, visibility 0.25s ease-out; /* Add transition */
+}
+
+/* Make overlay visible when JS adds the class */
+.modal-overlay.modal-visible {
+     /* display: flex !important; /* REMOVED this line */
+     display: flex; /* Let flexbox handle alignment */
+     opacity: 1; /* Fade in */
+     visibility: visible; /* Make visible */
+}
+
+/* REMOVE the old attribute selector rule */
+/*
+.modal-overlay[style*="display: flex"] { 
+     display: flex !important; 
+}
+*/
+
+/* --- Base Modal Box --- */
+.modal-box {
+    background: #161b22;
+    padding: 30px 35px;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    text-align: center;
+    width: 100%;
+    max-width: 400px; /* Consistent max-width */
+    color: #c9d1d9;
+    /* Add any other common styles for all modal boxes */
+}
+
+/* --- Specific Modal Box Styles (Keep unique styles) --- */
+
+/* Password Prompt Box (inherits from .modal-box) */
+.password-prompt-box h3 { margin-top: 0; margin-bottom: 15px; font-size: 1.4em; color: #f0f6fc; }
+.password-prompt-box p { margin-bottom: 20px; font-size: 1em; line-height: 1.5; }
+.password-prompt-box p strong { color: #58a6ff; }
+.password-prompt-box input[type="password"] {
+    width: 100%; padding: 11px 14px; margin-bottom: 20px;
+    border: 1px solid #30363d; border-radius: 6px;
+    background-color: #0d1117; color: #e6edf3; font-size: 1em; box-sizing: border-box;
+}
+.password-prompt-box input:focus {
+     outline: none; border-color: #58a6ff; box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+.password-prompt-box .prompt-actions { display: flex; justify-content: center; gap: 15px; margin-top: 20px; }
+.password-prompt-box .prompt-actions button { padding: 10px 20px; min-width: 110px; }
+.password-prompt-box .error-message {
+    color: #f85149; font-size: 0.9em; margin-top: -10px; margin-bottom: 15px;
+    min-height: 1.2em; text-align: left;
+}
+
+/* Zip Progress Box (inherits from .modal-box) */
+.zip-progress-box p#zip-progress-message {
+    font-size: 1em;
+    line-height: 1.5;
+    margin-top: 15px;    /* Moved from inline style */
+    margin-bottom: 20px; /* Moved from inline style */
+}
+/* Spinner Styling */
+.zip-progress-box .spinner {
+    border: 4px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top-color: #fff;
+    width: 40px;
+    height: 40px;
+    animation: spin 1s ease-in-out infinite;
+    margin: 0 auto 15px auto;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+/* Cancel Button */
+.zip-progress-box #cancel-zip-button {
+    background-color: #6c757d; /* Moved from inline style & match existing */
+    border-color: #6c757d;
+    padding: 10px 20px; 
+    min-width: 110px;
+}
+.zip-progress-box #cancel-zip-button:hover {
+    background-color: #5a6268; border-color: #5a6268;
+}
+
+/* --- Background Blur Effect (Updated Selector) --- */
+body.body-blur > *:not(.modal-overlay) { /* Exclude elements with .modal-overlay class */
+    filter: blur(4px);
+    transition: filter 0.25s ease-out;
+    pointer-events: none;
+    user-select: none;
+}
+/* Transition for removing blur */
+body > *:not(.modal-overlay) {
+    transition: filter 0.25s ease-out;
+}
+
+/* --- REMOVE OLD Specific Overlay Styles (if they exist) --- */
+/* Example: Remove old password prompt overlay style if it exists */
+/*
+#passwordPromptOverlay {
+    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+    background-color: rgba(13, 17, 23, 0.9);
+    display: flex; justify-content: center; align-items: center;
+    z-index: 1001; padding: 20px; box-sizing: border-box;
+}
+*/
+
+/* --- REMOVE OLD Specific Box Styles (if they exist) --- */
+/* Example: Remove old password prompt box common styles */
+/*
+.password-prompt-box {
+    background: #161b22;
+    padding: 30px 35px; border-radius: 8px;
+    border: 1px solid #30363d;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    text-align: center; width: 100%; max-width: 400px;
+    color: #c9d1d9;
+}
+*/
+/* Example: Remove old zip progress box common styles */
+/*
+.zip-progress-box {
+    background: #161b22;
+    padding: 30px 35px;
+    border-radius: 8px;
+    border: 1px solid #30363d;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    text-align: center;
+    width: 100%;
+    max-width: 400px;
+    color: #c9d1d9;
+}
+*/
