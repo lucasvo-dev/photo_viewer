@@ -104,17 +104,15 @@ switch ($jet_action) {
         $user_picks = [];
         if ($current_user_for_picks && $pdo) {
             try {
-                $sql_picks = "SELECT image_relative_path, is_picked FROM jet_image_picks WHERE user_username = :user_username AND source_key = :source_key";
-                // We could further filter by paths starting with $clean_relative_path if it's a deep folder structure
-                // For now, fetching all for the source_key and user, then matching locally.
+                // Fetch pick_color instead of is_picked
+                $sql_picks = "SELECT image_relative_path, pick_color FROM jet_image_picks WHERE user_username = :user_username AND source_key = :source_key";
                 $stmt_picks = $pdo->prepare($sql_picks);
                 $stmt_picks->bindParam(':user_username', $current_user_for_picks, PDO::PARAM_STR);
                 $stmt_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
                 $stmt_picks->execute();
                 while ($row = $stmt_picks->fetch(PDO::FETCH_ASSOC)) {
-                    if ($row['is_picked']) { // Only store true picks to save space, or store all if needed for UI
-                        $user_picks[$row['image_relative_path']] = true;
-                    }
+                    // Store the actual color string, or null if no pick
+                    $user_picks[$row['image_relative_path']] = $row['pick_color']; 
                 }
             } catch (PDOException $e) {
                 error_log("[JET_LIST_IMAGES] Error fetching user picks: " . $e->getMessage());
@@ -135,7 +133,8 @@ switch ($jet_action) {
                             'name' => $entry,
                             'path' => $image_full_relative_path,
                             'source_key' => $source_key,
-                            'is_picked' => isset($user_picks[$image_full_relative_path]) // Check if this path is in our true picks map
+                            // Use pick_color, defaulting to null if not set in $user_picks
+                            'pick_color' => $user_picks[$image_full_relative_path] ?? null 
                         ];
                     }
                 }
@@ -338,9 +337,10 @@ switch ($jet_action) {
         */
         break; // End of jet_get_raw_preview
 
-    case 'jet_set_pick_status':
-        error_log("[JET_SET_PICK_STATUS] Entered case.");
-        global $pdo; // PDO connection from db_connect.php
+    // Renamed from jet_set_pick_status to jet_set_pick_color
+    case 'jet_set_pick_color': 
+        error_log("[JET_SET_PICK_COLOR] Entered case.");
+        global $pdo; 
 
         if (empty($_SESSION['admin_username'])) {
             json_error("Lỗi: Người dùng chưa đăng nhập hoặc phiên làm việc đã hết hạn.", 403);
@@ -350,7 +350,7 @@ switch ($jet_action) {
 
         $source_key = $_POST['source_key'] ?? null;
         $image_relative_path = $_POST['image_relative_path'] ?? null;
-        $is_picked_input = $_POST['is_picked'] ?? null;
+        $pick_color_input = $_POST['pick_color'] ?? null; // Expect 'red', 'green', 'blue', 'grey', or a value like 'none' or empty for unpick
 
         if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
             json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
@@ -360,62 +360,58 @@ switch ($jet_action) {
             json_error("Đường dẫn hình ảnh không được cung cấp.", 400);
             exit;
         }
-        if ($is_picked_input === null) {
-            json_error("Trạng thái 'pick' không được cung cấp.", 400);
+
+        // Validate pick_color_input
+        $allowed_colors = ['red', 'green', 'blue', 'grey'];
+        $color_to_store = null; // Default to NULL (unpicked)
+
+        if ($pick_color_input !== null && $pick_color_input !== '' && $pick_color_input !== 'none' && $pick_color_input !== 'null') {
+            if (in_array(strtolower($pick_color_input), $allowed_colors)) {
+                $color_to_store = strtolower($pick_color_input);
+            } else {
+                json_error("Màu chọn không hợp lệ: " . htmlspecialchars($pick_color_input), 400);
+                exit;
+            }
+        } // If 'none', empty, or 'null', $color_to_store remains null, effectively unpicking.
+        
+        // Path sanitization (simple check, ensure it doesn't contain '..')
+        if (strpos($image_relative_path, '..') !== false) {
+            json_error("Đường dẫn hình ảnh không hợp lệ.", 400);
             exit;
         }
-        $is_picked = filter_var($is_picked_input, FILTER_VALIDATE_BOOLEAN, FILTER_NULL_ON_FAILURE);
-        if ($is_picked === null) {
-             json_error("Trạng thái 'pick' không hợp lệ. Phải là true/false hoặc 1/0.", 400);
-             exit;
-        }
-
-        // Minimal path validation for storage (does not need to check file existence as rigorously as preview)
-        $path_parts = explode('/', str_replace('\\', '/', $image_relative_path));
-        $safe_parts = [];
-        foreach ($path_parts as $part) {
-            if ($part !== '' && $part !== '.' && $part !== '..') { // Basic sanity check
-                $safe_parts[] = $part;
-            }
-        }
-        $clean_image_relative_path = implode('/', $safe_parts);
-        if (empty($clean_image_relative_path)) {
-             json_error("Đường dẫn hình ảnh không hợp lệ sau khi làm sạch.", 400);
-             exit;
-        }
-        // Optionally, add a check to ensure the referred file *could* exist, similar to jet_get_raw_preview's initial checks
-        // For now, we trust the client provides a path that jet_list_images would have returned.
 
         try {
-            $sql = "INSERT INTO jet_image_picks (user_username, source_key, image_relative_path, is_picked, picked_at) 
-                    VALUES (:user_username, :source_key, :image_relative_path, :is_picked, NOW()) 
-                    ON DUPLICATE KEY UPDATE is_picked = :is_picked_update, picked_at = NOW()";
+            $sql = "INSERT INTO jet_image_picks (user_username, source_key, image_relative_path, pick_color, pick_status_updated_at) 
+                    VALUES (:user_username, :source_key, :image_relative_path, :pick_color_insert, NOW()) 
+                    ON DUPLICATE KEY UPDATE pick_color = :pick_color_update, pick_status_updated_at = NOW()";
             
             $stmt = $pdo->prepare($sql);
             $stmt->bindParam(':user_username', $user_username, PDO::PARAM_STR);
             $stmt->bindParam(':source_key', $source_key, PDO::PARAM_STR);
-            $stmt->bindParam(':image_relative_path', $clean_image_relative_path, PDO::PARAM_STR);
-            $stmt->bindParam(':is_picked', $is_picked, PDO::PARAM_BOOL);
-            $stmt->bindParam(':is_picked_update', $is_picked, PDO::PARAM_BOOL); // For the UPDATE part
+            $stmt->bindParam(':image_relative_path', $image_relative_path, PDO::PARAM_STR);
+            
+            // Bind $color_to_store to both placeholders.
+            // If it's null, PDO should handle it as NULL for the database for both.
+            $param_type = ($color_to_store === null ? PDO::PARAM_NULL : PDO::PARAM_STR);
+            $stmt->bindParam(':pick_color_insert', $color_to_store, $param_type);
+            $stmt->bindParam(':pick_color_update', $color_to_store, $param_type);
 
             $stmt->execute();
 
             if ($stmt->rowCount() > 0) {
-                json_response(['success' => true, 'message' => 'Trạng thái pick đã được cập nhật.', 'is_picked' => $is_picked]);
+                $message = $color_to_store ? "Ảnh đã được chọn màu '{$color_to_store}'." : "Lựa chọn màu của ảnh đã được xóa.";
+                json_response(['success' => true, 'message' => $message, 'pick_color' => $color_to_store]);
             } else {
-                // This can happen if the state was already the same, ON DUPLICATE KEY UPDATE might report 0 affected rows
-                // Or if the record didn't exist and INSERT happened, it's usually 1. If it existed and value changed, it's 1 or 2 (depending on MySQL version/config)
-                // For simplicity, we'll consider it a success if no exception was thrown.
-                json_response(['success' => true, 'message' => 'Trạng thái pick không thay đổi hoặc đã được cập nhật.', 'is_picked' => $is_picked, 'rows_affected' => $stmt->rowCount()]);
+                // This can happen if the color submitted is the same as already in DB, ON DUPLICATE KEY UPDATE affects 0 rows.
+                // Still, consider it a success as the state is achieved.
+                 $message = $color_to_store ? "Trạng thái màu '{$color_to_store}' của ảnh được giữ nguyên." : "Ảnh không có lựa chọn màu.";
+                json_response(['success' => true, 'message' => $message, 'pick_color' => $color_to_store, 'no_change' => true]);
             }
         } catch (PDOException $e) {
-            error_log("[JET_SET_PICK_STATUS] Database error: " . $e->getMessage());
-            json_error("Lỗi cơ sở dữ liệu khi cập nhật trạng thái pick: " . $e->getMessage(), 500);
+            error_log("[JET_SET_PICK_COLOR] Database error: " . $e->getMessage());
+            json_error("Lỗi cơ sở dữ liệu khi cập nhật lựa chọn pick: " . $e->getMessage(), 500);
         }
-        exit;
-
-    // Note: The 'jet_list_raw_sources' action was moved to actions_admin.php as it lists top-level source keys.
-    // If you need other jet-specific actions that are not about listing top-level sources, add them here.
+        break;
 
     default:
         // error_log("[JET_ACTION] Unknown jet action in actions_jet.php: " . $jet_action);

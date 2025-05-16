@@ -159,6 +159,20 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
             *   Chức năng "Chọn" (Pick) đơn giản (boolean: chọn/bỏ chọn) bằng phím tắt.
             *   Lưu các lựa chọn "Pick" này vào CSDL, liên kết với ảnh và người dùng (designer).
             *   Admin có thể xem lại những ảnh nào đã được designer "pick".
+        *   **Cập nhật Tiến độ (Jet Culling Workspace - Giao diện Người dùng):**
+            *   **Đã triển khai Chế độ Xem trước Ảnh (Image Preview Mode):**
+                *   Khi người dùng nhấp vào một ảnh trong lưới (`image grid`), một lớp phủ (overlay) hiển thị ảnh đó với kích thước lớn hơn.
+                *   **Điều hướng:**
+                    *   Nút "Trước" (Previous) và "Sau" (Next) trên màn hình cho phép duyệt qua các ảnh trong thư mục hiện tại.
+                    *   Phím mũi tên Trái (`ArrowLeft`) và Phải (`ArrowRight`) trên bàn phím cũng thực hiện chức năng điều hướng tương tự.
+                *   **Đóng Xem trước:**
+                    *   Nút "Đóng" (Close) trên màn hình.
+                    *   Phím `Escape` (Esc) trên bàn phím.
+                *   **Chọn/Bỏ chọn từ Xem trước:**
+                    *   Một nút "Chọn (P)" / "Bỏ chọn (P)" hiển thị trạng thái chọn hiện tại của ảnh.
+                    *   Nhấp vào nút này hoặc nhấn phím `P` sẽ thay đổi trạng thái chọn (pick/unpick) cho ảnh đang xem trước.
+                    *   Trạng thái chọn được cập nhật đồng bộ trên cả nút trong chế độ xem trước và mục ảnh tương ứng trong lưới nền.
+            *   **Cải thiện Giao diện:** Áp dụng chủ đề tối và bố cục lưới cải tiến cho không gian làm việc Jet, tương đồng với ứng dụng thư viện ảnh chính.
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.

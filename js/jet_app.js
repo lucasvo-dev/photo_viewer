@@ -14,6 +14,28 @@ document.addEventListener('DOMContentLoaded', () => {
                                  // For top-level folders, it will be just the folder name.
     let currentGridImages = []; // Store the currently displayed images array
 
+    // State for Preview Mode
+    let isPreviewOpen = false;
+    let currentPreviewImageObject = null; // Will store the image object with its pick_color
+    let currentPreviewIndex = -1;
+
+    // NEW: State for Grid Selection
+    let currentGridSelection = {
+        source_key: null,
+        image_path: null,
+        element: null,
+        index: -1,
+        imageObject: null // Store the full image object
+    };
+
+    const PICK_COLORS = {
+        NONE: null, // Or a specific string like 'none' if preferred for API communication then mapped to NULL server-side
+        GREY: 'grey',
+        RED: 'red',
+        GREEN: 'green',
+        BLUE: 'blue'
+    };
+
     function showLoading(message = 'Đang tải...') { // Changed default message to Vietnamese
         if (loadingIndicator) {
             loadingIndicator.textContent = message;
@@ -157,15 +179,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!itemListContainer) return;
         itemListContainer.innerHTML = ''; // Clear previous items
         itemListContainer.classList.add('image-grid-container'); // Add class for grid styling
+        currentGridSelection = { source_key: null, image_path: null, element: null, index: -1, imageObject: null }; // Reset grid selection
 
         if (images.length === 0) {
             itemListContainer.innerHTML = '<p class="empty-message">Không có hình ảnh nào để hiển thị trong thư mục này.</p>';
             return;
         }
 
-        images.forEach(image => {
+        images.forEach((image, index) => {
             const imageItemContainer = document.createElement('div');
             imageItemContainer.classList.add('jet-image-item-container'); // For styling the grid item
+            imageItemContainer.dataset.imagePath = image.path; // Store path for easy access
+            imageItemContainer.dataset.sourceKey = image.source_key;
+            imageItemContainer.dataset.index = index;
 
             const imgElement = document.createElement('img');
             imgElement.classList.add('jet-preview-image');
@@ -174,9 +200,11 @@ document.addEventListener('DOMContentLoaded', () => {
             imgElement.alt = image.name;
             imgElement.title = image.name;
 
-            // Add class if image is already picked
-            if (image.is_picked) { // Set initial state from server data
-                imageItemContainer.classList.add('picked');
+            // Add class if image is already picked - NOW BASED ON pick_color
+            // Remove old .picked class logic if any, and add specific color classes
+            imageItemContainer.classList.remove('picked', 'picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear old classes
+            if (image.pick_color) { 
+                imageItemContainer.classList.add(`picked-${image.pick_color}`);
             }
             
             // Handle loading errors for individual images (optional, but good UX)
@@ -198,26 +226,66 @@ document.addEventListener('DOMContentLoaded', () => {
             imageItemContainer.appendChild(imgElement);
             imageItemContainer.appendChild(imageNameElement);
             
-            // Add click listener for picking/unpicking
+            // MODIFIED: Click listener now selects the image in the grid
             imageItemContainer.addEventListener('click', () => {
-                const newPickState = !image.is_picked; // Determine new state based on current actual data state
-                // No optimistic UI update here. API call will handle UI and data update on success.
-                toggleImagePickAPI(image, newPickState, imageItemContainer);
+                selectImageInGrid(image, imageItemContainer, index);
+                // openImagePreview(image, currentGridImages); // OLD: Open preview mode
             });
 
             itemListContainer.appendChild(imageItemContainer);
         });
+        // Automatically select the first image if available after rendering
+        if (images.length > 0) {
+            const firstImageElement = itemListContainer.querySelector('.jet-image-item-container');
+            if (firstImageElement) {
+                selectImageInGrid(images[0], firstImageElement, 0);
+            }
+        }
     }
 
-    async function toggleImagePickAPI(imageObject, newPickState, itemContainerElement) {
+    // NEW: Function to handle selecting an image in the grid
+    function selectImageInGrid(imageObject, imageElement, index) {
+        // Iterate over ALL grid items. Remove .grid-item-selected from all of them.
+        const allItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        allItems.forEach(item => {
+            if (item.classList.contains('grid-item-selected')) {
+                 console.log('[Jet Grid Select] Removing .grid-item-selected from (during sweep):', item);
+                 item.classList.remove('grid-item-selected');
+            }
+        });
+
+        // Now, add .grid-item-selected ONLY to the target imageElement.
+        if (imageElement) {
+            console.log('[Jet Grid Select] Adding .grid-item-selected to:', imageElement, 'Classes before add:', imageElement.classList.toString());
+            imageElement.classList.add('grid-item-selected');
+            console.log('[Jet Grid Select] Classes after add:', imageElement.classList.toString());
+            imageElement.focus();
+            imageElement.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+        }
+
+        // Update current selection state
+        currentGridSelection.source_key = imageObject.source_key;
+        currentGridSelection.image_path = imageObject.path;
+        currentGridSelection.element = imageElement;
+        currentGridSelection.index = index;
+        currentGridSelection.imageObject = imageObject; // Store the full image object
+
+        console.log(`[Jet Grid] Selected: ${imageObject.name}, Index: ${index}`);
+    }
+
+    async function toggleImagePickAPI(imageObject, targetColor, itemContainerElement) { // Modified to accept targetColor
         showLoading('Đang cập nhật trạng thái...');
         try {
             const formData = new FormData();
             formData.append('source_key', imageObject.source_key);
             formData.append('image_relative_path', imageObject.path);
-            formData.append('is_picked', newPickState ? '1' : '0');
+            // This function is now DEPRECATED in favor of setPickColorFromPreview or direct API calls with color
+            // For now, let's assume it means toggling between GREY and NONE for simple grid clicks if we keep that behavior
+            // const targetColor = newPickState ? PICK_COLORS.GREY : PICK_COLORS.NONE; 
+            // Ensure targetColor is correctly formatted for the API ('none' for null)
+            formData.append('pick_color', targetColor === PICK_COLORS.NONE ? 'none' : targetColor); 
 
-            const response = await fetch('api.php?action=jet_set_pick_status', {
+            const response = await fetch('api.php?action=jet_set_pick_color', { // API endpoint updated
                 method: 'POST',
                 body: formData,
                 credentials: 'include' 
@@ -236,9 +304,22 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showFeedback(data.message || 'Trạng thái pick đã được cập nhật.', 'success');
-                // Update local data object and UI based on server's confirmed state
-                imageObject.is_picked = data.is_picked; 
-                itemContainerElement.classList.toggle('picked', imageObject.is_picked);
+                
+                imageObject.pick_color = data.pick_color; // Update with the color from API (could be null)
+                
+                if (itemContainerElement) { // If called from grid context
+                    itemContainerElement.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear specific color classes
+                    if (imageObject.pick_color) {
+                        itemContainerElement.classList.add(`picked-${imageObject.pick_color}`);
+                    } else {
+                         // Ensure all color classes are removed if pick_color is null (unpicked)
+                        // This is covered by the remove list above, but good to be explicit if old 'picked' class was also used
+                    }
+                }
+                // If the currently selected grid item is the one being updated, ensure its imageObject state is also fresh
+                if (currentGridSelection.imageObject && currentGridSelection.image_path === imageObject.path && currentGridSelection.source_key === imageObject.source_key) {
+                    currentGridSelection.imageObject.pick_color = data.pick_color;
+                }
             } else {
                 // API call was successful but reported an error (e.g. validation)
                 // imageObject.is_picked remains its original state. UI also remains.
@@ -365,5 +446,445 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    // --- Image Preview Mode Functions ---
+
+    function openImagePreview(imageObject, allImagesInGrid) {
+        if (isPreviewOpen) return; // Should not happen if UI is managed correctly
+
+        isPreviewOpen = true;
+        currentPreviewImageObject = imageObject;
+        currentPreviewIndex = allImagesInGrid.findIndex(img => img.path === imageObject.path && img.source_key === imageObject.source_key);
+        
+        console.log(`[Jet Preview] Opening preview for: ${imageObject.name}, Index: ${currentPreviewIndex}`);
+        renderPreviewOverlay(imageObject);
+        // Add keyboard listeners for preview navigation
+        document.addEventListener('keydown', handlePreviewKeyPress);
+    }
+
+    function closeImagePreview() {
+        if (!isPreviewOpen) return;
+
+        const overlay = document.getElementById('jet-image-preview-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+        isPreviewOpen = false;
+        currentPreviewImageObject = null;
+        currentPreviewIndex = -1;
+        console.log('[Jet Preview] Closed preview.');
+        // Remove keyboard listeners
+        document.removeEventListener('keydown', handlePreviewKeyPress);
+    }
+
+    function renderPreviewOverlay(imageObject) {
+        // Remove existing overlay if any (shouldn't be necessary if state is managed)
+        const existingOverlay = document.getElementById('jet-image-preview-overlay');
+        if (existingOverlay) existingOverlay.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'jet-image-preview-overlay';
+        overlay.classList.add('jet-preview-overlay-container'); // For styling
+
+        // Image element
+        const imgPreview = document.createElement('img');
+        imgPreview.id = 'jet-preview-main-image';
+        imgPreview.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}`;
+        imgPreview.alt = `Preview of ${imageObject.name}`;
+        imgPreview.onerror = () => {
+            imgPreview.alt = 'Lỗi tải ảnh xem trước.';
+            // Could add more detailed error display within the preview
+            // For safety, try to close preview if image fails to load, or show placeholder
+            const errorPlaceholder = document.createElement('div');
+            errorPlaceholder.className = 'preview-load-error-message';
+            errorPlaceholder.textContent = 'Không thể tải ảnh xem trước. Nhấn Esc để đóng.';
+            imgPreview.replaceWith(errorPlaceholder);
+
+        };
+
+        // Close button
+        const closeButton = document.createElement('button');
+        closeButton.id = 'jet-preview-close-button';
+        closeButton.textContent = 'Đóng (Esc)'; // Close (Esc)
+        closeButton.addEventListener('click', closeImagePreview);
+
+        // Navigation buttons (placeholders for now)
+        const prevButton = document.createElement('button');
+        prevButton.id = 'jet-preview-prev-button';
+        prevButton.textContent = 'Trước (←)'; // Previous
+        prevButton.addEventListener('click', navigatePreviewPrev);
+
+        const nextButton = document.createElement('button');
+        nextButton.id = 'jet-preview-next-button';
+        nextButton.textContent = 'Sau (→)'; // Next
+        nextButton.addEventListener('click', navigatePreviewNext);
+
+        // Pick button (placeholder for now)
+        const pickButton = document.createElement('button');
+        pickButton.id = 'jet-preview-pick-button';
+        // Update pick button based on pick_color
+        pickButton.className = 'jet-preview-pick-button-base'; // Base class
+        pickButton.textContent = 'Màu: '; // Base text
+        const colorIndicator = document.createElement('span');
+        colorIndicator.id = 'jet-preview-pick-color-indicator';
+        if (imageObject.pick_color) {
+            pickButton.classList.add(`picked-${imageObject.pick_color}`);
+            colorIndicator.textContent = imageObject.pick_color.toUpperCase();
+            colorIndicator.style.backgroundColor = imageObject.pick_color; // Simple visual cue
+             if (imageObject.pick_color === 'grey' || imageObject.pick_color === 'blue') colorIndicator.style.color = 'white'; else colorIndicator.style.color = 'black';
+        } else {
+            colorIndicator.textContent = 'NONE';
+            colorIndicator.style.backgroundColor = 'transparent';
+            colorIndicator.style.color = '#ccc';
+        }
+        pickButton.appendChild(colorIndicator);
+        // pickButton.addEventListener('click', togglePickFromPreview); // This will be replaced by hotkey logic primarily
+        
+        // Info/Metadata area (placeholder)
+        const imageNameDisplay = document.createElement('div');
+        imageNameDisplay.id = 'jet-preview-image-name';
+        imageNameDisplay.textContent = imageObject.name;
+
+        // Assemble the preview
+        const controlsTop = document.createElement('div');
+        controlsTop.className = 'jet-preview-controls-top';
+        controlsTop.appendChild(imageNameDisplay);
+        controlsTop.appendChild(pickButton); // Temporary placement
+        controlsTop.appendChild(closeButton);
+
+
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'jet-preview-image-container';
+        imageContainer.appendChild(imgPreview);
+
+        const controlsNav = document.createElement('div');
+        controlsNav.className = 'jet-preview-controls-nav';
+        controlsNav.appendChild(prevButton);
+        controlsNav.appendChild(nextButton);
+        
+        overlay.appendChild(controlsTop);
+        overlay.appendChild(imageContainer);
+        overlay.appendChild(controlsNav);
+
+        document.body.appendChild(overlay);
+    }
+
+    function handlePreviewKeyPress(event) {
+        if (!isPreviewOpen) return;
+
+        if (event.key === 'Escape') {
+            closeImagePreview();
+        }
+        if (event.key === 'ArrowLeft') {
+            navigatePreviewPrev();
+        }
+        if (event.key === 'ArrowRight') {
+            navigatePreviewNext();
+        }
+        // Color pick hotkeys
+        switch (event.key) {
+            case '0':
+                setPickColorViaAPI(PICK_COLORS.GREY);
+                break;
+            case '1':
+                setPickColorViaAPI(PICK_COLORS.RED);
+                break;
+            case '2':
+                setPickColorViaAPI(PICK_COLORS.GREEN);
+                break;
+            case '3':
+                setPickColorViaAPI(PICK_COLORS.BLUE);
+                break;
+            // Potentially a dedicated unpick key like Backspace or Delete
+            // case 'Backspace':
+            // case 'Delete':
+            //     setPickColorViaAPI(PICK_COLORS.NONE); 
+            //     break;
+        }
+    }
+
+    function navigatePreviewNext() {
+        if (!isPreviewOpen || currentGridImages.length === 0) return;
+        
+        let nextIndex = currentPreviewIndex + 1;
+        if (nextIndex >= currentGridImages.length) {
+            nextIndex = 0; // Loop to the beginning
+        }
+        // Update current preview state and re-render overlay content
+        currentPreviewIndex = nextIndex;
+        currentPreviewImageObject = currentGridImages[currentPreviewIndex];
+        console.log(`[Jet Preview] Navigating Next to: ${currentPreviewImageObject.name}, Index: ${currentPreviewIndex}`);
+        renderPreviewOverlay(currentPreviewImageObject); // Re-render with new image
+    }
+
+    function navigatePreviewPrev() {
+        if (!isPreviewOpen || currentGridImages.length === 0) return;
+
+        let prevIndex = currentPreviewIndex - 1;
+        if (prevIndex < 0) {
+            prevIndex = currentGridImages.length - 1; // Loop to the end
+        }
+        currentPreviewImageObject = currentGridImages[prevIndex];
+        currentPreviewIndex = prevIndex; // Update index after setting object
+        console.log(`[Jet Preview] Navigating Previous to: ${currentPreviewImageObject.name}, Index: ${currentPreviewIndex}`);
+        renderPreviewOverlay(currentPreviewImageObject);
+    }
+
+    // Renamed from togglePickFromPreview and adapted for specific color setting
+    async function setPickColorViaAPI(targetColor) { 
+        if (!isPreviewOpen || !currentPreviewImageObject) return;
+
+        const imageToUpdate = currentPreviewImageObject;
+        
+        // Logic for toggling off if the same color key is pressed again
+        if (imageToUpdate.pick_color === targetColor) {
+            targetColor = PICK_COLORS.NONE; // Unpick if current color is same as target
+        }
+
+        showLoading('Đang cập nhật màu pick...');
+
+        try {
+            const formData = new FormData();
+            formData.append('source_key', imageToUpdate.source_key);
+            formData.append('image_relative_path', imageToUpdate.path);
+            // Send the targetColor. If targetColor is PICK_COLORS.NONE (null), it should be sent appropriately.
+            // The API side (jet_set_pick_color) is already set up to interpret null/empty/'none' as unpick (store NULL).
+            formData.append('pick_color', targetColor === PICK_COLORS.NONE ? 'none' : targetColor);
+
+            const response = await fetch('api.php?action=jet_set_pick_color', {
+                method: 'POST',
+                body: formData,
+                credentials: 'include' 
+            });
+            hideLoading();
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                const errorMessage = errorData?.error || `Lỗi HTTP: ${response.status}`;
+                showFeedback(`Lỗi cập nhật màu pick: ${errorMessage}`, 'error');
+                return;
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                showFeedback(data.message || 'Màu pick đã được cập nhật.', 'success');
+                
+                imageToUpdate.pick_color = data.pick_color; // Update local object state
+
+                // Update the Pick button/indicator in the preview overlay
+                const pickButtonInPreview = document.getElementById('jet-preview-pick-button');
+                if (pickButtonInPreview) {
+                    const colorIndicatorSpan = pickButtonInPreview.querySelector('#jet-preview-pick-color-indicator');
+                    pickButtonInPreview.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
+                    if (imageToUpdate.pick_color) {
+                        pickButtonInPreview.classList.add(`picked-${imageToUpdate.pick_color}`);
+                        if(colorIndicatorSpan) {
+                             colorIndicatorSpan.textContent = imageToUpdate.pick_color.toUpperCase();
+                             colorIndicatorSpan.style.backgroundColor = imageToUpdate.pick_color;
+                             if (imageToUpdate.pick_color === PICK_COLORS.GREY || imageToUpdate.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
+                        }
+                    } else { // No color picked (null)
+                         if(colorIndicatorSpan) {
+                            colorIndicatorSpan.textContent = 'NONE';
+                            colorIndicatorSpan.style.backgroundColor = 'transparent';
+                            colorIndicatorSpan.style.color = '#ccc';
+                        }
+                    }
+                }
+
+                // Update the corresponding item in the main grid display
+                const gridItems = document.querySelectorAll('.jet-image-item-container');
+                gridItems.forEach(gridItem => {
+                    const imgElement = gridItem.querySelector('.jet-preview-image');
+                    const nameElement = gridItem.querySelector('.image-item-name');
+                    let isMatch = false;
+                    if (nameElement && nameElement.textContent === imageToUpdate.name) {
+                        if (imgElement && imgElement.src.includes(encodeURIComponent(imageToUpdate.path)) && imgElement.src.includes(encodeURIComponent(imageToUpdate.source_key))) {
+                            isMatch = true;
+                        }
+                    }
+                    if (isMatch) {
+                        gridItem.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                        if (imageToUpdate.pick_color) {
+                            gridItem.classList.add(`picked-${imageToUpdate.pick_color}`);
+                        }
+                    }
+                });
+            } else {
+                showFeedback(`Lỗi cập nhật màu pick: ${data.error || 'Lỗi không xác định.'}`, 'error');
+            }
+        } catch (error) {
+            hideLoading();
+            console.error('[Jet Preview] Failed to set pick color:', error);
+            showFeedback(`Không thể cập nhật màu pick: ${error.message}`, 'error');
+        }
+    }
+
+    // --- Global Keydown Handler for Jet App ---
+    // This will handle grid navigation and color picking when preview is NOT open.
+    // Preview mode has its own handler (handlePreviewKeyPress)
+    function handleGlobalJetKeyPress(event) {
+        if (isPreviewOpen) return; // Let preview handler take over if preview is open
+
+        const { key } = event;
+        const gridContainer = document.getElementById('jet-item-list-container');
+
+        // Ensure focus is somewhat within the app or grid for these global keys to make sense
+        // For simplicity now, we assume if jet-app-container is visible, these keys apply.
+        // A more robust check might involve document.activeElement to see if focus is outside input fields.
+
+        if (!gridContainer || !currentGridImages || currentGridImages.length === 0) return;
+
+        let newIndex = currentGridSelection.index;
+
+        if (key === 'ArrowRight') {
+            event.preventDefault();
+            if (currentGridSelection.index < currentGridImages.length - 1) {
+                newIndex = currentGridSelection.index + 1;
+            } else {
+                newIndex = 0; // Wrap around to the beginning
+            }
+        } else if (key === 'ArrowLeft') {
+            event.preventDefault();
+            if (currentGridSelection.index > 0) {
+                newIndex = currentGridSelection.index - 1;
+            } else {
+                newIndex = currentGridImages.length - 1; // Wrap around to the end
+            }
+        }
+
+        if (newIndex !== currentGridSelection.index) {
+            const newImageObject = currentGridImages[newIndex];
+            const newImageElement = gridContainer.querySelector(`.jet-image-item-container[data-index='${newIndex}']`);
+            if (newImageObject && newImageElement) {
+                selectImageInGrid(newImageObject, newImageElement, newIndex);
+            }
+            return; // Navigation handled
+        }
+
+        // Color picking for the currently selected grid item
+        if (currentGridSelection.imageObject && currentGridSelection.element) {
+            let targetColor = null;
+            let colorKeyPressed = false;
+
+            switch (key) {
+                case '0': targetColor = PICK_COLORS.GREY; colorKeyPressed = true; break;
+                case '1': targetColor = PICK_COLORS.RED; colorKeyPressed = true; break;
+                case '2': targetColor = PICK_COLORS.GREEN; colorKeyPressed = true; break;
+                case '3': targetColor = PICK_COLORS.BLUE; colorKeyPressed = true; break;
+            }
+
+            if (colorKeyPressed) {
+                event.preventDefault();
+                const currentSelectedImageActual = currentGridImages.find(img => img.path === currentGridSelection.image_path && img.source_key === currentGridSelection.source_key);
+                
+                if (!currentSelectedImageActual) {
+                    console.error("Could not find the actual image data for current grid selection.");
+                    return;
+                }
+
+                // If the pressed key's color is already active, unpick it (set to NONE)
+                if (currentSelectedImageActual.pick_color === targetColor) {
+                    targetColor = PICK_COLORS.NONE;
+                }
+                // Call the modified API function
+                // toggleImagePickAPI(currentSelectedImageActual, targetColor, currentGridSelection.element);
+                // Let's use a more direct approach similar to setPickColorViaAPI, but for grid context
+                setGridItemPickColorAPI(currentSelectedImageActual, targetColor, currentGridSelection.element);
+
+            }
+        }
+    }
+    
+    // NEW: API call specifically for grid item color setting
+    async function setGridItemPickColorAPI(imageObject, targetColor, itemContainerElement) {
+        if (!imageObject) {
+            console.error("[Jet Grid Pick] No image object provided for picking.");
+            return;
+        }
+        showLoading('Đang cập nhật màu...');
+        try {
+            const formData = new FormData();
+            formData.append('source_key', imageObject.source_key);
+            formData.append('image_relative_path', imageObject.path);
+            formData.append('pick_color', targetColor === PICK_COLORS.NONE ? 'none' : targetColor); // API expects 'none' for NULL
+
+            const response = await fetch('api.php?action=jet_set_pick_color', {
+                method: 'POST',
+                body: formData,
+                credentials: 'include'
+            });
+            hideLoading();
+
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => null);
+                const errorMessage = errorData?.error || `Lỗi HTTP: ${response.status}`;
+                showFeedback(`Lỗi cập nhật màu: ${errorMessage}`, 'error');
+                throw new Error(errorMessage);
+            }
+
+            const data = await response.json();
+            if (data.success) {
+                showFeedback(data.message || 'Màu đã được cập nhật.', 'success');
+                
+                // Update local data object (currentGridImages)
+                const originalImageInGrid = currentGridImages.find(img => img.path === imageObject.path && img.source_key === imageObject.source_key);
+                if (originalImageInGrid) {
+                    originalImageInGrid.pick_color = data.pick_color;
+                }
+                // Update currentGridSelection's imageObject if it's the one modified
+                 if (currentGridSelection.imageObject && currentGridSelection.imageObject.path === imageObject.path && currentGridSelection.imageObject.source_key === imageObject.source_key) {
+                    currentGridSelection.imageObject.pick_color = data.pick_color;
+                }
+
+                // Update UI for the specific grid item
+                if (itemContainerElement) {
+                    itemContainerElement.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                    if (data.pick_color) {
+                        itemContainerElement.classList.add(`picked-${data.pick_color}`);
+                    }
+                }
+                 // If preview is open AND showing this image, update preview pick button too
+                if (isPreviewOpen && currentPreviewImageObject && currentPreviewImageObject.path === imageObject.path && currentPreviewImageObject.source_key === imageObject.source_key) {
+                    currentPreviewImageObject.pick_color = data.pick_color; // Update preview's copy
+                    const pickButton = document.getElementById('jet-preview-pick-button');
+                    const colorIndicator = document.getElementById('jet-preview-pick-color-indicator');
+                    if (pickButton && colorIndicator) {
+                        pickButton.className = 'jet-preview-pick-button-base'; // Reset classes
+                        if (data.pick_color) {
+                            pickButton.classList.add(`picked-${data.pick_color}`);
+                            colorIndicator.textContent = data.pick_color.toUpperCase();
+                            colorIndicator.style.backgroundColor = data.pick_color;
+                             if (data.pick_color === 'grey' || data.pick_color === 'blue') colorIndicator.style.color = 'white'; else colorIndicator.style.color = 'black';
+                        } else {
+                            colorIndicator.textContent = 'NONE';
+                            colorIndicator.style.backgroundColor = 'transparent';
+                            colorIndicator.style.color = '#ccc';
+                        }
+                    }
+                }
+
+
+            } else {
+                showFeedback(`Lỗi cập nhật màu: ${data.error || 'Lỗi không xác định từ máy chủ.'}`, 'error');
+            }
+        } catch (error) {
+            hideLoading();
+            console.error('[Jet] Failed to set pick color for grid item:', error);
+            showFeedback(`Không thể cập nhật màu: ${error.message}`, 'error');
+        }
+    }
+
+    // Add event listener for global key presses when app is active
+    document.addEventListener('keydown', handleGlobalJetKeyPress);
+
     initializeAppLayout();
-}); 
+});
+
+// TODO:
+// - Spacebar to open/close preview for the currentGridSelection.
+// - Ensure focus management is robust for keyboard navigation.
+// - Refine UI for selected grid item (e.g. border style).
+// - Review toggleImagePickAPI and setPickColorViaAPI for redundancy or merge. (setPickColorViaAPI is for preview, setGridItemPickColorAPI is for grid).
+// - CSS for .grid-item-selected
+
+// Initialize the app 

@@ -1929,12 +1929,27 @@ body.jet-app-active {
     text-align: center;
     cursor: pointer;
     transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out, border-color 0.1s ease-in-out;
+    transform: translateY(0); /* Ensure a base state for the transform */
 }
 
 .jet-app-active .jet-image-item-container:hover {
     transform: translateY(-2px);
     box-shadow: 0 4px 8px rgba(0,0,0,0.3);
     border-color: #555;
+}
+
+/* NEW: Style for the actively selected grid item */
+.jet-app-active .jet-image-item-container.grid-item-selected {
+    transform: translateY(-3px); /* Make it jump slightly more than hover, or same if preferred */
+    border-color: #777; /* Brighter border for selection */
+    box-shadow: 0 6px 12px rgba(0,0,0,0.4); /* More prominent shadow for selection */
+}
+
+/* Ensure hover on a selected item doesn't change it much, or refines it */
+.jet-app-active .jet-image-item-container.grid-item-selected:hover {
+    transform: translateY(-3px); /* Keep it selected, or slightly more if desired e.g. -4px */
+    border-color: #888; /* Slightly brighter on hover-selected */
+    box-shadow: 0 7px 14px rgba(0,0,0,0.45);
 }
 
 .jet-app-active .jet-preview-image {
@@ -2038,4 +2053,167 @@ body.jet-app-active {
     font-size: 2em;
     color: #ffc107;
     margin-bottom: 5px;
+}
+
+/* --- Jet App Image Preview Overlay Styles --- */
+.jet-preview-overlay-container {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.85); /* Darker overlay */
+    z-index: 2000; /* Ensure it's above other content */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center; /* Center the content vertically first, then arrange with flex for image and controls */
+    padding: 10px;
+    box-sizing: border-box;
+}
+
+.jet-preview-overlay-container .jet-preview-controls-top {
+    width: 100%;
+    max-width: 90vw; /* Limit width of top controls */
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 5px 10px;
+    background-color: rgba(20, 20, 20, 0.7);
+    color: #fff;
+    box-sizing: border-box;
+    border-bottom: 1px solid #444;
+}
+
+.jet-preview-overlay-container #jet-preview-image-name {
+    font-size: 1em;
+    font-weight: bold;
+}
+
+.jet-preview-overlay-container .jet-preview-image-container {
+    flex-grow: 1; /* Allow image container to take up available space */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-height: calc(100vh - 100px); /* Max height considering controls */
+    overflow: hidden; /* In case image is too large, though object-fit should handle */
+    margin: 10px 0;
+}
+
+.jet-preview-overlay-container #jet-preview-main-image {
+    max-width: 95%; /* Max width within its container */
+    max-height: 100%; /* Max height within its container */
+    object-fit: contain; /* Ensure whole image is visible */
+    display: block;
+    border: 2px solid #555;
+    background-color: #111;
+}
+
+.jet-preview-overlay-container .jet-preview-controls-nav {
+    width: 100%;
+    max-width: 90vw; /* Limit width of nav controls */
+    display: flex;
+    justify-content: space-between;
+    padding: 5px 10px;
+    background-color: rgba(20, 20, 20, 0.7);
+    box-sizing: border-box;
+    border-top: 1px solid #444;
+}
+
+/* Basic button styling for preview controls */
+.jet-preview-overlay-container button {
+    background-color: #444;
+    color: #fff;
+    border: 1px solid #666;
+    padding: 8px 15px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.9em;
+    margin: 0 5px; /* Spacing for buttons in the same group */
+}
+
+.jet-preview-overlay-container button:hover {
+    background-color: #555;
+    border-color: #777;
+}
+
+.jet-preview-overlay-container #jet-preview-close-button {
+    background-color: #633;
+}
+.jet-preview-overlay-container #jet-preview-close-button:hover {
+    background-color: #833;
+}
+
+.jet-preview-overlay-container #jet-preview-pick-button.picked {
+    background-color: #007bff;
+    border-color: #0056b3;
+}
+.jet-preview-overlay-container #jet-preview-pick-button.picked:hover {
+    background-color: #0056b3;
+}
+
+/* --- Jet App Image Preview Overlay Styles --- */
+/* ... existing code ... */
+.jet-app-active .jet-preview-pick-button-base .jet-preview-pick-color-indicator {
+    display: inline-block;
+    padding: 2px 8px;
+    margin-left: 5px;
+    border-radius: 3px;
+    font-weight: bold;
+    font-size: 0.9em;
+    border: 1px solid #555;
+    min-width: 40px; /* Ensure a minimum width for NONE */
+    text-align: center;
+}
+
+/* --- Jet App Color Pick Specific Styles --- */
+
+/* Grid item borders for picked colors */
+.jet-app-active .jet-image-item-container.picked-red {
+    border-color: #e53935; /* Red */
+    box-shadow: 0 0 8px #e53935;
+}
+.jet-app-active .jet-image-item-container.picked-green {
+    border-color: #43a047; /* Green */
+    box-shadow: 0 0 8px #43a047;
+}
+.jet-app-active .jet-image-item-container.picked-blue {
+    border-color: #1e88e5; /* Blue */
+    box-shadow: 0 0 8px #1e88e5;
+}
+.jet-app-active .jet-image-item-container.picked-grey {
+    border-color: #757575; /* Grey */
+    box-shadow: 0 0 8px #757575;
+}
+
+/* Preview pick button/indicator color styles */
+.jet-app-active .jet-preview-pick-button-base.picked-red .jet-preview-pick-color-indicator {
+    background-color: #e53935 !important; /* Red */
+    color: white !important;
+    border-color: #ff7961;
+}
+.jet-app-active .jet-preview-pick-button-base.picked-green .jet-preview-pick-color-indicator {
+    background-color: #43a047 !important; /* Green */
+    color: white !important;
+    border-color: #76d275;
+}
+.jet-app-active .jet-preview-pick-button-base.picked-blue .jet-preview-pick-color-indicator {
+    background-color: #1e88e5 !important; /* Blue */
+    color: white !important;
+    border-color: #6ab7ff;
+}
+.jet-app-active .jet-preview-pick-button-base.picked-grey .jet-preview-pick-color-indicator {
+    background-color: #757575 !important; /* Grey */
+    color: white !important;
+    border-color: #a4a4a4;
+}
+
+/* Ensure high contrast for text on colored backgrounds if not already handled by JS */
+/* The JS already attempts to set black/white text, these are fallbacks or enhancements */
+.jet-app-active .jet-preview-pick-button-base.picked-red .jet-preview-pick-color-indicator,
+.jet-app-active .jet-preview-pick-button-base.picked-green .jet-preview-pick-color-indicator,
+.jet-app-active .jet-preview-pick-button-base.picked-blue .jet-preview-pick-color-indicator,
+.jet-app-active .jet-preview-pick-button-base.picked-grey .jet-preview-pick-color-indicator {
+    /* color: white; /* Default to white, JS might override for lighter greens etc. */
 }

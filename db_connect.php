@@ -262,8 +262,7 @@ try {
             total_files INT DEFAULT 0,
             processed_files INT DEFAULT 0,
             current_file_processing TEXT DEFAULT NULL,
-            KEY idx_cache_jobs_status (status),
-            KEY idx_cache_jobs_folder_path (folder_path(255))
+            tags TEXT DEFAULT NULL -- Comma-separated list of tags, searchable with FIND_IN_SET or LIKE
         )");
 
         // Create zip_jobs table
@@ -283,15 +282,64 @@ try {
         )");
 
         // Create jet_image_picks table for Jet Culling App
+        // This table stores which images a user has "picked"
         $pdo->exec("CREATE TABLE IF NOT EXISTS jet_image_picks (
-            id INT AUTO_INCREMENT PRIMARY KEY,
             user_username VARCHAR(255) NOT NULL,
             source_key VARCHAR(255) NOT NULL,
             image_relative_path TEXT NOT NULL,
-            is_picked BOOLEAN NOT NULL DEFAULT FALSE,
-            picked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            UNIQUE KEY user_image_pick (user_username, source_key, image_relative_path(767))
+            pick_color VARCHAR(20) DEFAULT NULL, -- Stores 'red', 'green', 'blue', 'grey', or NULL for no pick
+            pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (user_username, source_key, image_relative_path(255)) -- Path part of PK needs length
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
+        // Add helper function to check if a column exists (if not already present from other parts of the file)
+        if (!function_exists('column_exists')) {
+            function column_exists($pdo, $table, $column) {
+                try {
+                    $result = $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '{$table}' AND column_name = '{$column}' LIMIT 1");
+                    return $result && $result->fetchColumn() !== false;
+                } catch (PDOException $e) {
+                    error_log("Error checking column existence for {$table}.{$column}: " . $e->getMessage());
+                    return false; // Assume not exists on error to be safe or handle error appropriately
+                }
+            }
+        }
+        
+        // Alter jet_image_picks table if it has the old structure
+        if (column_exists($pdo, 'jet_image_picks', 'is_picked')) {
+            if (!column_exists($pdo, 'jet_image_picks', 'pick_color')) {
+                error_log("Altering jet_image_picks table: adding pick_color column.");
+                $pdo->exec("ALTER TABLE jet_image_picks ADD COLUMN pick_color VARCHAR(20) DEFAULT NULL AFTER image_relative_path");
+            }
+            // Ensure pick_status_updated_at column exists if we are altering from the old structure
+            if (!column_exists($pdo, 'jet_image_picks', 'pick_status_updated_at')) {
+                error_log("Altering jet_image_picks table: adding pick_status_updated_at column.");
+                // Add it after pick_color, or as the last sensible column
+                $pdo->exec("ALTER TABLE jet_image_picks ADD COLUMN pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER pick_color");
+            }
+            error_log("Altering jet_image_picks table: dropping old is_picked column.");
+            $pdo->exec("ALTER TABLE jet_image_picks DROP COLUMN is_picked");
+            
+            // Also, the old table had a `picked_at` column, which is now `pick_status_updated_at`.
+            // If `picked_at` exists and `pick_status_updated_at` was just added, we might want to drop `picked_at`.
+            // However, the CREATE TABLE uses the correct new name. This logic focuses on `is_picked` presence.
+            // For safety, explicitly drop `picked_at` if it exists from a very old schema.
+            if (column_exists($pdo, 'jet_image_picks', 'picked_at')) {
+                 error_log("Altering jet_image_picks table: dropping old picked_at column.");
+                 $pdo->exec("ALTER TABLE jet_image_picks DROP COLUMN picked_at");
+            }
+        } else {
+            // If 'is_picked' does not exist, ensure the new columns are there if the table somehow exists partially.
+            // This is more of a sanity check for developing, the CREATE TABLE should handle it.
+            if (!column_exists($pdo, 'jet_image_picks', 'pick_color')) {
+                 error_log("Ensuring jet_image_picks table: adding pick_color column as is_picked was not found either.");
+                 $pdo->exec("ALTER TABLE jet_image_picks ADD COLUMN pick_color VARCHAR(20) DEFAULT NULL AFTER image_relative_path");
+            }
+            if (!column_exists($pdo, 'jet_image_picks', 'pick_status_updated_at')) {
+                 error_log("Ensuring jet_image_picks table: adding pick_status_updated_at column as is_picked was not found either.");
+                 $pdo->exec("ALTER TABLE jet_image_picks ADD COLUMN pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER pick_color");
+            }
+        }
 
         // --- AUTO-MIGRATION: Ensure new columns exist ---
         function add_column_if_not_exists($pdo, $table, $column, $definition) {
