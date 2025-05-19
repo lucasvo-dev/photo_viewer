@@ -831,7 +831,7 @@ function initializeAppEventListeners() {
             totalImages > 0) {
             
             // Make the threshold larger to trigger sooner, e.g., 1.5 times viewport height
-            const threshold = window.innerHeight * 2; 
+            const threshold = window.innerHeight * 2.5; 
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
                 console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
                 loadMoreImages();

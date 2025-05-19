@@ -26,6 +26,10 @@
     height: auto; 
     line-height: 0; /* Prevent extra space issues */
 
+    /* Add a min-height to stabilize the item before image loads */
+    min-height: auto; /* Adjust based on typical image height */
+    background-color: #222; /* Optional: placeholder color for the item box */
+
     /* Initial state for fade-in animation */
     opacity: 0;
     transform: translateY(20px);
