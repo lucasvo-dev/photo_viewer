@@ -75,6 +75,7 @@ import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActive
 // === STATE VARIABLES                 ===
 // ========================================
 // All state variables moved to js/state.js
+let isProcessingNavigation = false; // New flag for preventing concurrent folder loads
 
 // ========================================
 // === GLOBAL HELPER FUNCTIONS        ===
@@ -261,10 +262,17 @@ const escapePasswordPromptListener = (overlayId) => { ... }; // Adjusted
 // --- Load Sub Items (Folders/Images) ---
 async function loadSubItems(folderPath) {
     console.log(`[app.js] loadSubItems called for path: ${folderPath}`);
+
+    if (isProcessingNavigation) {
+        console.log('[app.js] loadSubItems: isProcessingNavigation is true, returning to prevent concurrent execution.');
+        return;
+    }
     if (isLoadingMore) {
         console.log('[app.js] loadSubItems: isLoadingMore is true, returning.');
         return;
     }
+
+    isProcessingNavigation = true; // Set the flag
     showLoadingIndicator(); 
     setCurrentFolder(folderPath);
     setCurrentPage(1); // Initial page is 1
@@ -365,6 +373,7 @@ async function loadSubItems(folderPath) {
         // The finally block will handle hiding the loading indicator
     } finally {
         hideLoadingIndicator(); // Ensure it's hidden after all processing (success or caught error)
+        isProcessingNavigation = false; // Clear the flag in finally
     }
 }
 
