@@ -830,10 +830,10 @@ function initializeAppEventListeners() {
             currentImageList.length < totalImages && 
             totalImages > 0) {
             
-            // Check if near bottom of page - using a larger threshold (e.g., one viewport height)
-            const threshold = window.innerHeight; // Or a fixed larger value like 600 or 800
+            // Make the threshold larger to trigger sooner, e.g., 1.5 times viewport height
+            const threshold = window.innerHeight * 2; 
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
-                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px`);
+                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
                 loadMoreImages();
             }
         }
