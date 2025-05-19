@@ -79,6 +79,13 @@ switch ($action) {
 
                             // Client-side filtering is usually done in JS (loadTopLevelDirectories)
                             // If server-side search for root is needed, implement here using $search_term
+                            // MODIFICATION: Added server-side search filtering
+                            if ($search_term !== null && $search_term !== '') {
+                                if (mb_stripos($subdir_name, $search_term, 0, 'UTF-8') === false) {
+                                    continue; // Skip this directory if it doesn't match the search term
+                                }
+                            }
+                            // END MODIFICATION
 
                             $all_subdirs[] = [
                                 'name' => $subdir_name,
@@ -91,6 +98,11 @@ switch ($action) {
                         }
                     } catch (Exception $e) { /* Log error */ error_log("[list_files Root] Error scanning source '{$source_key}': " . $e->getMessage()); }
                 }
+
+                // MODIFICATION: Apply filtering if search_term is present
+                // This was moved up to be done per directory to avoid iterating twice.
+                // The original usort is fine here.
+                // END MODIFICATION
 
                 usort($all_subdirs, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
 
@@ -133,7 +145,9 @@ switch ($action) {
                         'total_pages' => $total_pages,
                         'total_items' => $total_items
                     ],
-                    'is_root' => true
+                    'is_root' => true,
+                    'is_search' => ($search_term !== null && $search_term !== ''),
+                    'current_search_term' => $search_term ?? ''
                 ]);
                 // No need to break here, as try block ends after this
             } else { // --- Handle Specific Directory Request ---
