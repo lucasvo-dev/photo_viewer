@@ -188,10 +188,20 @@ while ($running) {
                             if ($original_dims) {
                                 $sql_update_dims = "UPDATE cache_jobs SET original_width = ?, original_height = ? WHERE id = ?";
                                 $stmt_update_dims = $pdo->prepare($sql_update_dims);
-                                $stmt_update_dims->execute([$original_dims[0], $original_dims[1], $job_id]);
-                                error_log("[{$timestamp}] [Job {$job_id}] Stored original dimensions ({$original_dims[0]}x{$original_dims[1]}) for {$item_source_prefixed_path}.");
+                                if ($stmt_update_dims->execute([$original_dims[0], $original_dims[1], $job_id])) {
+                                    error_log("[{$timestamp}] [Job {$job_id}] Stored original dimensions ({$original_dims[0]}x{$original_dims[1]}) for {$item_source_prefixed_path}.");
+                                } else {
+                                    error_log("[{$timestamp}] [Job {$job_id}] FAILED to store original dimensions for {$item_source_prefixed_path}. Execute failed.");
+                                }
                             } else {
-                                error_log("[{$timestamp}] [Job {$job_id}] WARNING: Could not get original dimensions for {$item_absolute_path}.");
+                                error_log("[{$timestamp}] [Job {$job_id}] WARNING: Could not get original dimensions for {$item_absolute_path}. Storing 0x0.");
+                                $sql_update_dims_to_zero = "UPDATE cache_jobs SET original_width = 0, original_height = 0 WHERE id = ?";
+                                $stmt_update_dims_to_zero = $pdo->prepare($sql_update_dims_to_zero);
+                                if ($stmt_update_dims_to_zero->execute([$job_id])) {
+                                    error_log("[{$timestamp}] [Job {$job_id}] Stored 0x0 for original dimensions for {$item_source_prefixed_path} after getimagesize failed.");
+                                } else {
+                                    error_log("[{$timestamp}] [Job {$job_id}] FAILED to store 0x0 for original dimensions for {$item_source_prefixed_path} after getimagesize failed. Execute failed.");
+                                }
                             }
                         } else {
                             // DIAGNOSTIC LOG

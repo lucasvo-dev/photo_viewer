@@ -1,9 +1,9 @@
 export let currentFolder = '';
-export let currentImageList = []; 
+export let currentImageList = [];
 export let allTopLevelDirs = [];
-export let searchAbortController = null; 
-export let photoswipeLightbox = null; 
-export let isLoadingMore = false; 
+export let searchAbortController = null;
+export let photoswipeLightbox = null;
+export let isLoadingMore = false;
 export let currentPage = 1;
 export let totalImages = 0;
 
@@ -12,7 +12,7 @@ export let zipProgressBarContainerEl = null;
 export let zipFolderNameEl = null;
 export let zipOverallProgressEl = null;
 export let zipProgressStatsTextEl = null;
-export let generalModalOverlay = null; 
+export let generalModalOverlay = null;
 
 // --- NEW: ZIP Jobs Panel State ---
 export let zipJobsPanelContainerEl = null;
@@ -41,7 +41,7 @@ export function setZipProgressBarContainerEl(value) { zipProgressBarContainerEl 
 export function setZipFolderNameEl(value) { zipFolderNameEl = value; }
 export function setZipOverallProgressEl(value) { zipOverallProgressEl = value; }
 export function setZipProgressStatsTextEl(value) { zipProgressStatsTextEl = value; }
-export function setGeneralModalOverlay(value) { generalModalOverlay = value; } 
+export function setGeneralModalOverlay(value) { generalModalOverlay = value; }
 
 export function setZipUIDOMElements(container, folderName, progress, statsText) {
     // ... existing code ...
@@ -54,4 +54,35 @@ export function setZipJobPanelDOMElements(panelContainer, listContainer) {
 }
 
 // --- Search State ---
-// ... existing code ... 
+// ... existing code ...
+
+export let currentAlbumPath = null;
+export let masonryInstance = null;
+
+export function setCurrentAlbumPath(path) {
+    currentAlbumPath = path;
+    console.log('[State] currentAlbumPath updated:', currentAlbumPath);
+}
+
+export function setMasonryInstance(instance) {
+    masonryInstance = instance;
+}
+
+export function setPhotoSwipeLightbox(instance) {
+    photoswipeLightbox = instance;
+}
+
+/**
+ * Updates a specific item in the currentImageList.
+ * @param {string} imagePath - The path of the image to update.
+ * @param {object} updatedProps - An object containing properties to update (e.g., width, height).
+ */
+export function updateImageListItem(imagePath, updatedProps) {
+    const imageIndex = currentImageList.findIndex(item => item.path === imagePath);
+    if (imageIndex > -1) {
+        currentImageList[imageIndex] = { ...currentImageList[imageIndex], ...updatedProps };
+        console.log(`[State] Updated item ${imagePath} in currentImageList:`, currentImageList[imageIndex]);
+    } else {
+        console.warn(`[State] Item ${imagePath} not found in currentImageList for update.`);
+    }
+} 

@@ -1,5 +1,5 @@
-import { currentImageList } from './state.js';
-import { API_BASE_URL } from './config.js';
+import { currentImageList, updateImageListItem } from './state.js';
+import { API_BASE_URL, fetchDataApi } from './config.js';
 import { refreshCurrentPhotoSwipeSlideIfNeeded } from './photoswipeHandler.js';
 
 // DOM Elements
@@ -346,21 +346,42 @@ async function pollForFinalThumbnail(imagePath, targetSize, imgElement, updateCa
         }
 
         try {
-            const response = await fetch(targetThumbnailUrl, { method: 'HEAD', cache: 'no-cache' });
-            const thumbnailStatusHeader = response.headers.get('x-thumbnail-status');
-            
-            if (response.ok && (!thumbnailStatusHeader || !thumbnailStatusHeader.includes('placeholder'))) {
-                clearInterval(intervalId);
-                console.log(`[uiImageView] Final ${targetSize}px thumbnail ready for ${imagePath}. Updating src.`);
-                updateCallback(targetThumbnailUrl); // Update the img src in the grid and relayout Masonry
-                refreshCurrentPhotoSwipeSlideIfNeeded(imagePath);
-            } else if (response.ok && thumbnailStatusHeader && thumbnailStatusHeader.includes('placeholder')) {
-                console.log(`[uiImageView] Polling for ${imagePath} (size ${targetSize}): Still placeholder.`);
-            } else if (!response.ok) {
-                console.warn(`[uiImageView] Error polling for ${imagePath} (size ${targetSize}): Status ${response.status}`);
+            const response = await fetch(targetThumbnailUrl);
+            if (response.ok) {
+                const thumbnailStatus = response.headers.get('X-Thumbnail-Status');
+                if (thumbnailStatus && thumbnailStatus.startsWith('placeholder')) {
+                    console.log(`[uiImageView] Polling for ${imagePath} size ${targetSize}: Still a placeholder. Attempt ${attempts}`);
+                } else {
+                    clearInterval(intervalId);
+                    console.log(`[uiImageView] Successfully loaded final thumbnail for ${imagePath} size ${targetSize}. Not a placeholder.`);
+                    updateCallback(targetThumbnailUrl); // Update grid <img> src
+
+                    // Fetch updated metadata (especially dimensions) and update state
+                    try {
+                        const metaApiResponse = await fetchDataApi('get_image_metadata', { path: imagePath });
+                        if (metaApiResponse && metaApiResponse.status === 'success' && metaApiResponse.data) {
+                            updateImageListItem(imagePath, metaApiResponse.data); // Update item in currentImageList
+                            console.log(`[uiImageView] Updated metadata in currentImageList for ${imagePath}:`, metaApiResponse.data);
+
+                            if (typeof refreshCurrentPhotoSwipeSlideIfNeeded === 'function') {
+                                refreshCurrentPhotoSwipeSlideIfNeeded(imagePath);
+                            }
+                        } else {
+                            console.warn(`[uiImageView] Could not fetch updated metadata for ${imagePath}. API response:`, metaApiResponse);
+                        }
+                    } catch (metaError) {
+                        console.error(`[uiImageView] Error fetching metadata for ${imagePath}:`, metaError);
+                    }
+                }
+            } else {
+                console.warn(`[uiImageView] Poll request failed for ${imagePath} size ${targetSize}. Status: ${response.status}. Attempt ${attempts}`);
+                // Optional: Stop polling on certain errors, e.g., 404 not found
+                if (response.status === 404) clearInterval(intervalId);
             }
         } catch (error) {
-            console.error(`[uiImageView] Error during polling for ${imagePath} size ${targetSize}:`, error);
+            console.error(`[uiImageView] Polling error for ${imagePath} size ${targetSize}:`, error);
+            // Optional: Stop polling on network errors
+            // clearInterval(intervalId);
         }
     }, THUMBNAIL_POLL_INTERVAL);
 

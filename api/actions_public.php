@@ -217,24 +217,42 @@ switch ($action) {
 
                                 if (in_array($extension, $image_extensions, true)) {
                                     $item_data['type'] = 'image';
+                                    $item_data['width'] = 0; // Default to 0
+                                    $item_data['height'] = 0; // Default to 0
                                     // Try to get original dimensions from the latest completed cache job for this item
                                     $stmt_dims = $pdo->prepare("SELECT original_width, original_height FROM cache_jobs WHERE folder_path = ? AND status = 'completed' AND original_width IS NOT NULL AND original_height IS NOT NULL ORDER BY completed_at DESC LIMIT 1");
                                     $stmt_dims->execute([$item_path]);
                                     $dims_row = $stmt_dims->fetch(PDO::FETCH_ASSOC);
-                                    if ($dims_row) {
+                                    if ($dims_row && $dims_row['original_width'] > 0 && $dims_row['original_height'] > 0) {
                                         $item_data['width'] = (int)$dims_row['original_width'];
                                         $item_data['height'] = (int)$dims_row['original_height'];
                                     } else {
-                                        // Fallback or leave unset if not found - PhotoSwipe might try to determine itself
-                                        // For now, let's log and not set them if unavailable, to see PhotoSwipe's behavior
-                                        error_log("[list_files] Original dimensions not found in cache_jobs for {$item_path}");
-                                        // $item_data['width'] = 0; // Avoid setting to 0 if unknown
-                                        // $item_data['height'] = 0;
+                                        error_log("[list_files] Original dimensions not found or invalid in cache_jobs for {$item_path}. Attempting live getimagesize.");
+                                        // DIAGNOSTIC: Try to get live dimensions if not in cache or invalid
+                                        $live_dims = @getimagesize($fileinfo->getPathname()); // $fileinfo is from the DirectoryIterator
+                                        if ($live_dims) {
+                                            $item_data['width'] = (int)$live_dims[0];
+                                            $item_data['height'] = (int)$live_dims[1];
+                                            error_log("[list_files] Fetched LIVE dimensions for {$item_path}: {$item_data['width']}x{$item_data['height']}");
+                                        } else {
+                                            error_log("[list_files] Failed to fetch live dimensions for {$item_path}. Will default to 0x0.");
+                                            // Width and height remain 0,0 if live also fails
+                                        }
                                     }
                                 } elseif (in_array($extension, $video_extensions, true)) {
                                     $item_data['type'] = 'video';
-                                    // $item_data['width'] = 0; // REMOVED - These were placeholders anyway
-                                    // $item_data['height'] = 0; // REMOVED
+                                    $item_data['width'] = 0; // Default to 0 for videos as well if not found
+                                    $item_data['height'] = 0; // Default to 0 for videos as well if not found
+                                    // Optionally, try to get video dimensions from cache_jobs too if worker stores them
+                                    $stmt_dims_vid = $pdo->prepare("SELECT original_width, original_height FROM cache_jobs WHERE folder_path = ? AND type = 'video' AND status = 'completed' AND original_width IS NOT NULL AND original_height IS NOT NULL ORDER BY completed_at DESC LIMIT 1");
+                                    $stmt_dims_vid->execute([$item_path]);
+                                    $dims_row_vid = $stmt_dims_vid->fetch(PDO::FETCH_ASSOC);
+                                    if ($dims_row_vid) {
+                                        $item_data['width'] = (int)$dims_row_vid['original_width'];
+                                        $item_data['height'] = (int)$dims_row_vid['original_height'];
+                                    } else {
+                                        error_log("[list_files] Video dimensions not found in cache_jobs for {$item_path}. Will default to 0x0.");
+                                    }
                                 }
                                 $all_file_items[] = $item_data;
                             }
@@ -932,6 +950,71 @@ switch ($action) {
         } catch (PDOException $e) {
             error_log("[Authenticate] DB Error for '{$source_prefixed_path}': " . $e->getMessage());
             json_error('Lỗi server khi xác thực.', 500);
+        }
+        break;
+
+    case 'get_image_metadata':
+        try {
+            $image_path_param = $_GET['path'] ?? null;
+            if (!$image_path_param) {
+                json_error('Đường dẫn ảnh không được cung cấp.', 400);
+            }
+
+            $file_details = validate_source_and_file_path($image_path_param);
+            if (!$file_details) {
+                json_error('Ảnh không hợp lệ hoặc không tồn tại để lấy metadata.', 404);
+            }
+
+            $source_prefixed_path = $file_details['source_prefixed_path'];
+            $filename = basename($source_prefixed_path);
+            $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            
+            $image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
+            $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
+            $type = 'file';
+            if (in_array($extension, $image_extensions, true)) {
+                $type = 'image';
+            } elseif (in_array($extension, $video_extensions, true)) {
+                $type = 'video';
+            }
+
+            $metadata = [
+                'path' => $source_prefixed_path,
+                'name' => $filename,
+                'type' => $type,
+                'width' => 0, // Default if not found
+                'height' => 0 // Default if not found
+            ];
+
+            // Try to get original dimensions from the latest completed cache job for this item
+            $stmt_dims = $pdo->prepare("SELECT original_width, original_height FROM cache_jobs WHERE folder_path = ? AND status = 'completed' AND original_width IS NOT NULL AND original_height IS NOT NULL ORDER BY completed_at DESC LIMIT 1");
+            $stmt_dims->execute([$source_prefixed_path]);
+            $dims_row = $stmt_dims->fetch(PDO::FETCH_ASSOC);
+
+            if ($dims_row) {
+                $metadata['width'] = (int)$dims_row['original_width'];
+                $metadata['height'] = (int)$dims_row['original_height'];
+                error_log("[get_image_metadata] Found dimensions in cache_jobs for {$source_prefixed_path}: {$metadata['width']}x{$metadata['height']}");
+            } else {
+                error_log("[get_image_metadata] Original dimensions NOT found in cache_jobs for {$source_prefixed_path}. Client might need to infer.");
+                // If not found in cache_jobs, attempt to get live dimensions as a final fallback.
+                // This adds a small overhead if the cache isn't populated yet but ensures PhotoSwipe gets best possible info.
+                // However, be cautious if the source_absolute_path points to very large files.
+                // $live_dims = @getimagesize($file_details['absolute_path']);
+                // if ($live_dims) {
+                //     $metadata['width'] = (int)$live_dims[0];
+                //     $metadata['height'] = (int)$live_dims[1];
+                //    error_log("[get_image_metadata] Fetched LIVE dimensions for {$source_prefixed_path}: {$metadata['width']}x{$metadata['height']}");
+                // } else {
+                //    error_log("[get_image_metadata] Failed to fetch live dimensions for {$source_prefixed_path}.");
+                // }
+            }
+            
+            json_response(['status' => 'success', 'data' => $metadata]);
+
+        } catch (Exception $e) {
+            error_log("Error in get_image_metadata for path '{$_GET['path']}': " . $e->getMessage());
+            json_error('Lỗi server khi lấy metadata ảnh.', 500);
         }
         break;
 
