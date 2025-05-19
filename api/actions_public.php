@@ -216,14 +216,14 @@ switch ($action) {
                                 $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 
                                 if (in_array($extension, $image_extensions, true)) {
-                                    $dims = @getimagesize($fileinfo->getPathname());
+                                    // $dims = @getimagesize($fileinfo->getPathname()); // PERFORMANCE BOTTLENECK REMOVED
                                     $item_data['type'] = 'image';
-                                    $item_data['width'] = $dims[0] ?? 0;
-                                    $item_data['height'] = $dims[1] ?? 0;
+                                    // $item_data['width'] = $dims[0] ?? 0; // REMOVED
+                                    // $item_data['height'] = $dims[1] ?? 0; // REMOVED
                                 } elseif (in_array($extension, $video_extensions, true)) {
                                     $item_data['type'] = 'video';
-                                    $item_data['width'] = 0; // Placeholder
-                                    $item_data['height'] = 0; // Placeholder
+                                    // $item_data['width'] = 0; // REMOVED - These were placeholders anyway
+                                    // $item_data['height'] = 0; // REMOVED
                                 }
                                 $all_file_items[] = $item_data;
                             }
