@@ -500,7 +500,7 @@ function create_thumbnail($source_path, $cache_path, $thumb_size = 150)
  * @param string $video_source_path Absolute path to the source video file.
  * @param string $cache_path Absolute path where the thumbnail (JPEG) should be saved.
  * @param int $thumb_size Target width for the thumbnail. Height will be scaled proportionally.
- * @param string $ffmpeg_path Path to the FFmpeg executable (optional, defaults to \'ffmpeg\').
+ * @param string $ffmpeg_path Path to the FFmpeg executable (optional, defaults to 'ffmpeg').
  * @return bool True on success, false on failure.
  */
 function create_video_thumbnail($video_source_path, $cache_path, $thumb_size = 150, $ffmpeg_path = 'ffmpeg') {
@@ -564,7 +564,137 @@ function create_video_thumbnail($video_source_path, $cache_path, $thumb_size = 1
 
 
 // --- Cache Management ---
-// ... existing code ...
 
-// Add any other helper functions from api.php here...
-// Note: sanitize_subdir was marked as DEPRECATED, so it's omitted unless needed. 
+/**
+ * Generates the standardized absolute cache path for a thumbnail.
+ *
+ * @param string $source_prefixed_path The source-prefixed path of the original item (e.g., "main/album/image.jpg").
+ * @param int $size The target thumbnail size (e.g., 150, 750).
+ * @param bool $is_video (Currently unused, as worker saves all as .jpg, but kept for potential future use)
+ * @return string The absolute path to where the thumbnail should be cached.
+ */
+function get_thumbnail_cache_path(string $source_prefixed_path, int $size, bool $is_video = false): string
+{
+    // Use source-prefixed path for hashing to ensure uniqueness across different sources
+    // This matches the hashing logic used in the worker (worker_cache.php)
+    $cache_hash = sha1($source_prefixed_path);
+    
+    // Filename convention: hash_size.jpg (worker always saves as .jpg)
+    $thumb_filename = $cache_hash . '_' . $size . '.jpg';
+    
+    // Directory structure: CACHE_THUMB_ROOT / size_value / filename
+    $cache_dir_for_size = CACHE_THUMB_ROOT . DIRECTORY_SEPARATOR . $size;
+    
+    // Full absolute path
+    return $cache_dir_for_size . DIRECTORY_SEPARATOR . $thumb_filename;
+}
+
+/**
+ * Adds a thumbnail generation job to the cache_jobs queue.
+ * Checks for existing pending/recent jobs to avoid duplicates.
+ *
+ * @param PDO $pdo The PDO database connection object.
+ * @param string $image_source_prefixed_path The source-prefixed path of the original image.
+ * @param int $size The target thumbnail size.
+ * @param string $type 'image' or 'video'.
+ * @return bool True if a job was added or already effectively exists/was recently handled, false on DB error or if job creation was skipped due to recent failure.
+ */
+function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path, int $size, string $type = 'image'): bool
+{
+    // Check for existing pending or processing job for this exact image and size
+    try {
+        // Use 'folder_path' instead of 'source_path'
+        $stmt_check = $pdo->prepare("SELECT status FROM cache_jobs WHERE folder_path = ? AND size = ? AND type = ? AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1");
+        $stmt_check->execute([$image_source_prefixed_path, $size, $type]);
+        if ($stmt_check->fetch()) {
+            error_log("[Cache Job Queue] Job for '{$image_source_prefixed_path}' size {$size} type '{$type}' already pending/processing.");
+            return true; // Job already exists or is being processed
+        }
+
+        // Check for recently completed or failed job for this exact image and size to avoid re-queueing too quickly
+        $stmt_recent = $pdo->prepare("SELECT status, created_at FROM cache_jobs WHERE folder_path = ? AND size = ? AND type = ? AND created_at > (NOW() - INTERVAL 5 MINUTE) ORDER BY created_at DESC LIMIT 1");
+        $stmt_recent->execute([$image_source_prefixed_path, $size, $type]);
+        $recent_job = $stmt_recent->fetch(PDO::FETCH_ASSOC);
+        if ($recent_job) {
+            if ($recent_job['status'] === 'completed') {
+                error_log("[Cache Job Queue] Job for '{$image_source_prefixed_path}' size {$size} type '{$type}' was completed recently. Skipping duplicate queue.");
+                return true; 
+            }
+            // If recently failed, maybe don't re-queue immediately to avoid hammering a problematic file,
+            // but for now, we'll allow re-queueing after a short interval (implied by not returning false here if failed).
+            // A more sophisticated retry mechanism could be added later (e.g., exponential backoff, max retries).
+        }
+
+    } catch (PDOException $e) {
+        error_log("[Cache Job Queue] DB Error checking existing jobs for '{$image_source_prefixed_path}' size {$size} type '{$type}': " . $e->getMessage());
+        return false; // DB error
+    }
+
+    // If no existing/recent relevant job, add a new one
+    try {
+        // Use 'folder_path' instead of 'source_path'
+        $sql = "INSERT INTO cache_jobs (folder_path, size, type, status, created_at) VALUES (?, ?, ?, 'pending', NOW())";
+        $stmt = $pdo->prepare($sql);
+        $success = $stmt->execute([$image_source_prefixed_path, $size, $type]);
+        if ($success) {
+            error_log("[Cache Job Queue] Successfully added job for: {$image_source_prefixed_path}, Size: {$size}, Type: {$type}");
+            return true;
+        } else {
+            error_log("[Cache Job Queue] Failed to add job for: {$image_source_prefixed_path}, Size: {$size}, Type: {$type} (execute returned false)");
+            return false;
+        }
+    } catch (PDOException $e) {
+        // Log specific MySQL errors if available
+        $error_code = $e->getCode();
+        $error_info = $e->errorInfo;
+        error_log("[Cache Job Queue] DB Error for '{$image_source_prefixed_path}' size {$size} type '{$type}': " . $e->getMessage() . " (SQLSTATE: {$error_code} / Driver Code: " . ($error_info[1] ?? 'N/A') . " - " . ($error_info[2] ?? 'N/A') .")");
+        return false; // DB error
+    }
+}
+
+/**
+ * Serves a file with appropriate headers.
+ *
+ * @param string $file_path Absolute path to the file.
+ * @param string $content_type The MIME type of the file.
+ * @param bool $enable_client_cache Whether to send client-side caching headers.
+ * @param int $cache_duration Duration for client-side cache in seconds (default 30 days).
+ */
+function serve_file_from_path(string $file_path, string $content_type = 'application/octet-stream', bool $enable_client_cache = true, int $cache_duration = 2592000)
+{
+    if (!file_exists($file_path) || !is_readable($file_path)) {
+        // This function assumes the file exists and is readable; calling code should check.
+        // However, as a safeguard:
+        error_log("[Serve File] Attempted to serve non-existent or unreadable file: {$file_path}");
+        // Cannot use json_error as headers might be partially sent or it's not a JSON context.
+        http_response_code(404);
+        echo "File not found or not readable.";
+        exit;
+    }
+
+    if (ob_get_level() > 0) {
+        ob_end_clean(); // Clean any existing output buffer
+    }
+
+    header('Content-Type: ' . $content_type);
+    header('Content-Length: ' . filesize($file_path));
+
+    if ($enable_client_cache) {
+        header('Cache-Control: public, max-age=' . $cache_duration);
+        header('Expires: ' . gmdate('D, d M Y H:i:s', time() + $cache_duration) . ' GMT');
+    } else {
+        header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+        header('Pragma: no-cache');
+    }
+    
+    // Release session lock before sending file, if session was active
+    if (session_status() === PHP_SESSION_ACTIVE) {
+        session_write_close();
+    }
+
+    readfile($file_path);
+    exit;
+}
+
+// Ensure this is at the very end of the file or before a closing PHP tag if any.
+// If there are other functions after this, make sure there's no accidental output. 

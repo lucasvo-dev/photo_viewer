@@ -216,10 +216,21 @@ switch ($action) {
                                 $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 
                                 if (in_array($extension, $image_extensions, true)) {
-                                    // $dims = @getimagesize($fileinfo->getPathname()); // PERFORMANCE BOTTLENECK REMOVED
                                     $item_data['type'] = 'image';
-                                    // $item_data['width'] = $dims[0] ?? 0; // REMOVED
-                                    // $item_data['height'] = $dims[1] ?? 0; // REMOVED
+                                    // Try to get original dimensions from the latest completed cache job for this item
+                                    $stmt_dims = $pdo->prepare("SELECT original_width, original_height FROM cache_jobs WHERE folder_path = ? AND status = 'completed' AND original_width IS NOT NULL AND original_height IS NOT NULL ORDER BY completed_at DESC LIMIT 1");
+                                    $stmt_dims->execute([$item_path]);
+                                    $dims_row = $stmt_dims->fetch(PDO::FETCH_ASSOC);
+                                    if ($dims_row) {
+                                        $item_data['width'] = (int)$dims_row['original_width'];
+                                        $item_data['height'] = (int)$dims_row['original_height'];
+                                    } else {
+                                        // Fallback or leave unset if not found - PhotoSwipe might try to determine itself
+                                        // For now, let's log and not set them if unavailable, to see PhotoSwipe's behavior
+                                        error_log("[list_files] Original dimensions not found in cache_jobs for {$item_path}");
+                                        // $item_data['width'] = 0; // Avoid setting to 0 if unknown
+                                        // $item_data['height'] = 0;
+                                    }
                                 } elseif (in_array($extension, $video_extensions, true)) {
                                     $item_data['type'] = 'video';
                                     // $item_data['width'] = 0; // REMOVED - These were placeholders anyway
@@ -628,6 +639,9 @@ switch ($action) {
             $image_path_param = $_GET['path'] ?? null;
             $size_param = isset($_GET['size']) ? (int)$_GET['size'] : 150;
 
+            define('THUMBNAIL_JOB_SIZE_LARGE', 750);
+            define('THUMBNAIL_JOB_SIZE_STANDARD', 150);
+
             if (!$image_path_param) {
                 json_error('Đường dẫn ảnh không được cung cấp.', 400);
             }
@@ -640,10 +654,9 @@ switch ($action) {
             $source_absolute_path = $file_details['absolute_path'];
             $source_prefixed_path_for_hash = $file_details['source_prefixed_path']; // Use this for consistent hash
 
-            // Determine if it's a video or image based on extension
             $extension = strtolower(pathinfo($source_absolute_path, PATHINFO_EXTENSION));
             $image_extensions = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp']; 
-            $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm']; // Keep in sync with config.php & list_files
+            $video_extensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
 
             $is_video = in_array($extension, $video_extensions, true);
             $is_image = in_array($extension, $image_extensions, true);
@@ -652,17 +665,19 @@ switch ($action) {
                 json_error('Loại file không được hỗ trợ cho thumbnail.', 400);
             }
 
-            // Validate size against configured sizes
             if (!in_array($size_param, THUMBNAIL_SIZES_API, true)) {
                 json_error('Kích thước thumbnail không hợp lệ.', 400);
             }
 
-            // Generate cache path (Consistent with worker)
-            $thumb_filename_safe = sha1($source_prefixed_path_for_hash) . '_' . $size_param . '.jpg'; // Videos will also have .jpg thumbs
+            $thumb_filename_safe = sha1($source_prefixed_path_for_hash) . '_' . $size_param . '.jpg';
             $cache_dir_for_size = CACHE_THUMB_ROOT . DIRECTORY_SEPARATOR . $size_param;
             $cache_absolute_path = $cache_dir_for_size . DIRECTORY_SEPARATOR . $thumb_filename_safe;
 
-            if (!file_exists($cache_absolute_path) || filesize($cache_absolute_path) === 0) {
+            if (file_exists($cache_absolute_path) && filesize($cache_absolute_path) > 0) {
+                serve_file_from_path($cache_absolute_path, 'image/jpeg');
+                exit;
+            } else {
+                // Cache miss, ensure cache subdirectory exists
                 if (!is_dir($cache_dir_for_size)) {
                     if (!@mkdir($cache_dir_for_size, 0775, true)) {
                         error_log("GetThumbnail: Failed to create cache subdir: {$cache_dir_for_size}");
@@ -670,41 +685,53 @@ switch ($action) {
                     }
                 }
 
-                $created = false;
                 if ($is_image) {
-                    $created = create_thumbnail($source_absolute_path, $cache_absolute_path, $size_param);
+                    if ($size_param == THUMBNAIL_JOB_SIZE_LARGE) {
+                        // ADD DIAGNOSTIC LOGGING
+                        error_log("[GetThumbnail DEBUG] Attempting to queue 750px job. Image: {$source_prefixed_path_for_hash}, Size Param: {$size_param}, Is PDO null? " . (is_null($pdo) ? 'YES' : 'NO'));
+                        // END DIAGNOSTIC LOGGING
+
+                        // Requested 750px image thumbnail is not cached, queue job and serve 150px.
+                        add_thumbnail_job_to_queue($pdo, $source_prefixed_path_for_hash, THUMBNAIL_JOB_SIZE_LARGE, 'image');
+                        
+                        // Attempt to serve/create 150px thumbnail as fallback
+                        error_log("[GetThumbnail INFO] Serving 150px as fallback for 750px: {$source_prefixed_path_for_hash}");
+                        $thumbnail_cache_path_150 = get_thumbnail_cache_path($source_prefixed_path_for_hash, THUMBNAIL_JOB_SIZE_STANDARD, $is_video);
+                        if (!file_exists($thumbnail_cache_path_150)) {
+                            $created_150 = $is_video ? 
+                                create_video_thumbnail($source_absolute_path, $thumbnail_cache_path_150, THUMBNAIL_JOB_SIZE_STANDARD, $config['ffmpeg_path'] ?? 'ffmpeg') :
+                                create_thumbnail($source_absolute_path, $thumbnail_cache_path_150, THUMBNAIL_JOB_SIZE_STANDARD);
+                            if (!$created_150) {
+                                json_error("Không thể tạo ảnh thumbnail 150px dự phòng.", 500);
+                            }
+                        }
+                        // Add a header indicating this is a placeholder
+                        header("X-Thumbnail-Status: placeholder; target-size=" . THUMBNAIL_JOB_SIZE_LARGE . "; actual-size=" . THUMBNAIL_JOB_SIZE_STANDARD);
+                        serve_file_from_path($thumbnail_cache_path_150, 'image/jpeg');
+                        exit;
+                    } else {
+                        // For other image sizes (e.g., 150px), create on-the-fly
+                        $created = create_thumbnail($source_absolute_path, $cache_absolute_path, $size_param);
+                        if ($created) {
+                            serve_file_from_path($cache_absolute_path, 'image/jpeg');
+                            exit;
+                        } else {
+                            json_error('Không thể tạo image thumbnail (size: ' . $size_param . ').', 500);
+                        }
+                    }
                 } elseif ($is_video) {
-                    // Assuming ffmpeg is in PATH or $ffmpeg_path is configured elsewhere if needed
+                    // Existing video thumbnail logic (can be refactored similarly if needed for large video thumbs)
+                    // For now, assume it might already queue large ones or creates small ones on-the-fly.
+                    // This part remains unchanged as per user request focus on 750px *image* thumbs.
                     $created = create_video_thumbnail($source_absolute_path, $cache_absolute_path, $size_param);
+                    if ($created) {
+                        serve_file_from_path($cache_absolute_path, 'image/jpeg');
+                        exit;
+                    } else {
+                        json_error('Không thể tạo video thumbnail.', 500);
+                    }
                 }
-
-                if (!$created) {
-                    // Output a placeholder if creation failed, to prevent repeated attempts on broken files
-                    // Consider if a more specific error image is needed or if 404 is better
-                    // For now, let's send a 500 as it's a server-side creation failure.
-                    json_error('Không thể tạo thumbnail.', 500);
-                }
             }
-
-            // Serve the thumbnail
-            // Set appropriate content type header
-            header('Content-Type: image/jpeg');
-            header('Content-Length: ' . filesize($cache_absolute_path));
-            header('Cache-Control: public, max-age=2592000'); // Cache for 30 days
-            header('Expires: ' . gmdate('D, d M Y H:i:s', time() + 2592000) . ' GMT');
-            
-            // Release session lock before sending file
-            if (session_status() === PHP_SESSION_ACTIVE) {
-                session_write_close();
-            }
-
-            // Clear output buffer before reading file
-            if (ob_get_level()) {
-                ob_end_clean();
-            }
-            readfile($cache_absolute_path);
-            exit;
-
         } catch (Exception $e) {
             error_log("Error in get_thumbnail: " . $e->getMessage());
             json_error('Lỗi server khi lấy thumbnail.', 500);

@@ -26,7 +26,8 @@ export function setupPhotoSwipeIfNeeded() {
                     height: itemData.height || 0,
                     type: 'video',
                     videoSrc: videoSrc, // Store for download button
-                    filename: itemData.name // Store filename for download
+                    filename: itemData.name, // Store filename for download
+                    originalPath: itemData.path // <-- ADDED ORIGINAL PATH
                 };
             } else { // Image
                 return {
@@ -35,7 +36,8 @@ export function setupPhotoSwipeIfNeeded() {
                     height: itemData.height,
                     alt: itemData.name,
                     type: 'image',
-                    filename: itemData.name // Store for consistency, might be useful
+                    filename: itemData.name, // Store for consistency, might be useful
+                    originalPath: itemData.path // <-- ADDED ORIGINAL PATH
                 };
             }
         }),
@@ -137,7 +139,8 @@ export function openPhotoSwipeAtIndex(index) {
                 height: itemData.height || 0,
                 type: 'video',
                 videoSrc: videoSrc, // Ensure videoSrc is added
-                filename: itemData.name // Ensure filename is added
+                filename: itemData.name, // Ensure filename is added
+                originalPath: itemData.path // <-- ADDED ORIGINAL PATH
             };
         } else { // Image
             return {
@@ -146,7 +149,8 @@ export function openPhotoSwipeAtIndex(index) {
                 height: itemData.height,
                 alt: itemData.name,
                 type: 'image',
-                filename: itemData.name // Ensure filename is added
+                filename: itemData.name, // Ensure filename is added
+                originalPath: itemData.path // <-- ADDED ORIGINAL PATH
             };
         }
     });
@@ -169,4 +173,46 @@ export function closePhotoSwipeIfActive() {
         return true;
     }
     return false;
+}
+
+export function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
+    if (isPhotoSwipeActive()) {
+        const pswp = photoswipeLightbox.pswp;
+        const currentSlide = pswp.currSlide;
+        const slideData = currentSlide.data;
+
+        // Check if the current slide's imagePath matches the one that was updated
+        // Assuming slideData.src or a similar property holds the unique identifier or path
+        // For images, slideData.src is the full image URL.
+        // We need to compare against the original item path used to generate that src.
+        // The `currentImageList` is the source of truth for PhotoSwipe's dataSource mapping.
+
+        const originalItem = currentImageList.find(item => item.path === imagePath);
+        if (originalItem) {
+            const expectedSrc = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(originalItem.path)}`;
+            const expectedVideoContainer = `<div class="pswp-video-container"><video src="${expectedSrc}"`; // Check start for videos
+
+            let slideMatches = false;
+            if (slideData.type === 'image' && slideData.src === expectedSrc) {
+                slideMatches = true;
+            }
+            // For videos, comparing the `html` content might be fragile.
+            // Better if we had a direct `path` property on `slideData` from the mapping.
+            // Let's refine the dataSource mapping to include the original path.
+            // For now, we'll assume the current slide is the one if PhotoSwipe is open.
+            // This is a simplification; a more robust check would involve matching slideData.path.
+            
+            // If the currently displayed slide in PhotoSwipe corresponds to the image path that just got its 750px thumb:
+            // We need to update the item in currentImageList first, then tell PhotoSwipe to refresh.
+            const itemInState = currentImageList[pswp.currIndex];
+            if (itemInState && itemInState.path === imagePath) {
+                // The dataSource for PhotoSwipe is re-mapped in openPhotoSwipeAtIndex on each open.
+                // For live updates, we'd ideally update PhotoSwipe's internal slides array.
+                // A simpler way is to tell it to reload the content for the current slide.
+                // This assumes the underlying `src` it fetches will now be the 750px version.
+                console.log(`[photoswipeHandler] Refreshing content for current slide due to update for: ${imagePath}`);
+                pswp.refreshSlideContent(pswp.currIndex);
+            }
+        }
+    }
 } 

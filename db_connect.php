@@ -9,6 +9,39 @@ if (!$config) {
     die("Server Configuration Error: Could not load configuration file.");
 }
 
+// --- Helper Functions for DB Schema Modification ---
+// Moved these function definitions to the top to ensure they are available when called.
+
+if (!function_exists('column_exists')) {
+    function column_exists($pdo, $table, $column) {
+        try {
+            // Use DATABASE() to refer to the current database; ensure table and column names are escaped if they can contain special chars (though less likely for table/column names)
+            // Quote table name for safety, column name used in LIKE can be quoted by PDO manually for `quote()` if complex.
+            $stmt = $pdo->query("SHOW COLUMNS FROM `" . $table . "` LIKE " . $pdo->quote($column));
+            return $stmt && $stmt->rowCount() > 0;
+        } catch (PDOException $e) {
+            error_log("Error checking column existence for {$table}.{$column}: " . $e->getMessage());
+            return false; 
+        }
+    }
+}
+
+if (!function_exists('add_column_if_not_exists')) {
+    function add_column_if_not_exists($pdo, $table, $column, $definition) {
+        if (!column_exists($pdo, $table, $column)) {
+            try {
+                $pdo->exec("ALTER TABLE `" . $table . "` ADD COLUMN `" . $column . "` " . $definition);
+                error_log("[DB Schema] Added column '{$column}' to table '{$table}'.");
+            } catch (PDOException $e) {
+                error_log("[DB Schema] FAILED to add column '{$column}' to table '{$table}': " . $e->getMessage());
+            }
+        } else {
+            // error_log("[DB Schema] Column '{$column}' already exists in table '{$table}'. Skipping add."); // Optional: log if already exists
+        }
+    }
+}
+// --- END Helper Functions ---
+
 // Use settings from config
 $db_type = $config['type'] ?? 'mysql'; // Use type from config, fallback to MySQL if not specified
 $db_host = $config['host'] ?? 'localhost';
@@ -251,19 +284,39 @@ try {
 
         // Create cache_jobs table
         $pdo->exec("CREATE TABLE IF NOT EXISTS cache_jobs (
-            id INT PRIMARY KEY AUTO_INCREMENT,
-            folder_path TEXT NOT NULL,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending',
-            created_at BIGINT NOT NULL,
-            processed_at BIGINT DEFAULT NULL,
-            completed_at BIGINT DEFAULT NULL,
-            result_message TEXT DEFAULT NULL,
-            image_count INT DEFAULT NULL,
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            folder_path VARCHAR(1024) NOT NULL, -- Stores the source-prefixed path to the item or folder
+            status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            processed_at BIGINT NULL,
+            completed_at BIGINT NULL,
             total_files INT DEFAULT 0,
             processed_files INT DEFAULT 0,
-            current_file_processing TEXT DEFAULT NULL,
-            tags TEXT DEFAULT NULL -- Comma-separated list of tags, searchable with FIND_IN_SET or LIKE
-        )");
+            image_count INT DEFAULT 0,
+            current_file_processing VARCHAR(1024) NULL,
+            result_message TEXT NULL,
+            worker_id VARCHAR(255) NULL DEFAULT NULL,
+            original_width INT DEFAULT NULL,
+            original_height INT DEFAULT NULL,
+            INDEX idx_cache_jobs_status (status),
+            INDEX idx_cache_jobs_folder_path (folder_path(255)),
+            INDEX idx_cache_jobs_created_at (created_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+        error_log("[db_connect.php] Ensuring cache_jobs table exists with all columns (including original_width, original_height)...");
+
+        // Add 'size' and 'type' columns to cache_jobs if they don't exist
+        add_column_if_not_exists($pdo, 'cache_jobs', 'size', 'INT DEFAULT NULL AFTER folder_path');
+        error_log("[db_connect.php] Checking/adding size column to cache_jobs...");
+        add_column_if_not_exists($pdo, 'cache_jobs', 'type', "VARCHAR(10) DEFAULT 'image' AFTER size");
+        error_log("[db_connect.php] Checking/adding type column to cache_jobs...");
+        add_column_if_not_exists($pdo, 'cache_jobs', 'worker_id', "VARCHAR(255) NULL DEFAULT NULL AFTER result_message");
+        error_log("[db_connect.php] Checking/adding worker_id column to cache_jobs...");
+        add_column_if_not_exists($pdo, 'cache_jobs', 'image_count', "INT DEFAULT 0 AFTER processed_files");
+        error_log("[db_connect.php] Checking/adding image_count column to cache_jobs...");
+        add_column_if_not_exists($pdo, 'cache_jobs', 'original_width', "INT DEFAULT NULL AFTER worker_id");
+        error_log("[db_connect.php] Checking/adding original_width column to cache_jobs...");
+        add_column_if_not_exists($pdo, 'cache_jobs', 'original_height', "INT DEFAULT NULL AFTER original_width");
+        error_log("[db_connect.php] Checking/adding original_height column to cache_jobs...");
 
         // Create zip_jobs table
         $pdo->exec("CREATE TABLE IF NOT EXISTS zip_jobs (
@@ -292,19 +345,6 @@ try {
             PRIMARY KEY (user_username, source_key, image_relative_path(255)) -- Path part of PK needs length
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
-        // Add helper function to check if a column exists (if not already present from other parts of the file)
-        if (!function_exists('column_exists')) {
-            function column_exists($pdo, $table, $column) {
-                try {
-                    $result = $pdo->query("SELECT 1 FROM information_schema.columns WHERE table_schema = DATABASE() AND table_name = '{$table}' AND column_name = '{$column}' LIMIT 1");
-                    return $result && $result->fetchColumn() !== false;
-                } catch (PDOException $e) {
-                    error_log("Error checking column existence for {$table}.{$column}: " . $e->getMessage());
-                    return false; // Assume not exists on error to be safe or handle error appropriately
-                }
-            }
-        }
-        
         // Alter jet_image_picks table if it has the old structure
         if (column_exists($pdo, 'jet_image_picks', 'is_picked')) {
             if (!column_exists($pdo, 'jet_image_picks', 'pick_color')) {
@@ -342,17 +382,11 @@ try {
         }
 
         // --- AUTO-MIGRATION: Ensure new columns exist ---
-        function add_column_if_not_exists($pdo, $table, $column, $definition) {
-            // Use direct query, not prepared statement, for SHOW COLUMNS
-            $stmt = $pdo->query("SHOW COLUMNS FROM `$table` LIKE " . $pdo->quote($column));
-            if ($stmt->rowCount() === 0) {
-                $pdo->exec("ALTER TABLE `$table` ADD COLUMN $column $definition");
-            }
-        }
         error_log('[db_connect.php] Checking/adding items_json column to zip_jobs...');
         add_column_if_not_exists($pdo, 'zip_jobs', 'items_json', 'TEXT DEFAULT NULL');
         error_log('[db_connect.php] Checking/adding result_message column to zip_jobs...');
-        add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT DEFAULT NULL');
+        add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT NULL DEFAULT NULL');
+        error_log("[db_connect.php] Checking/adding result_message column to zip_jobs...");
 
     }
 } catch (PDOException $e) {
