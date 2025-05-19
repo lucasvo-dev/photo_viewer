@@ -62,3 +62,41 @@
 @keyframes spin {
     to { transform: rotate(360deg); }
 }
+
+/* === Added for Fade-in Animation and UI Smoothness === */
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+        transform: translateY(10px); /* Optional: slight upward movement */
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+.list-item-fade-in {
+    animation: fadeIn 0.5s ease-out forwards;
+}
+
+#directory-list {
+    min-height: 150px; /* Adjust as needed */
+}
+
+#search-prompt {
+    min-height: 1.5em; /* Adjust based on your font size */
+    /* Ensure this is set if you are using visibility:hidden in JS */
+    /* visibility: visible; */ /* Default state, JS will toggle to hidden */
+}
+
+.loading-placeholder, .error-placeholder {
+    padding: 20px;
+    text-align: center;
+    color: #777;
+    opacity: 0.7;
+    min-height: 50px; /* Ensure placeholder also contributes to min-height */
+    display: flex; /* For centering text vertically if needed */
+    align-items: center;
+    justify-content: center;
+}

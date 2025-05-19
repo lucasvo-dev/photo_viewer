@@ -73,6 +73,8 @@ export function showDirectoryViewOnly() {
 
 export function createDirectoryListItem(dirData, itemClickHandler) {
     const li = document.createElement('li');
+    li.classList.add('list-item-fade-in');
+
     const a  = document.createElement('a');
     a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
     a.dataset.dir = dirData.path;
@@ -125,7 +127,7 @@ export function renderTopLevelDirectories(dirs, isSearchResult = false) {
         } else {
             searchPromptEl.textContent = 'Không có album nào để hiển thị.';
         }
-        searchPromptEl.style.display = 'block';
+        searchPromptEl.style.visibility = 'visible';
         return;
     }
 
@@ -134,7 +136,7 @@ export function renderTopLevelDirectories(dirs, isSearchResult = false) {
     } else {
         searchPromptEl.textContent = `Tìm thấy ${dirs.length} thư mục gốc.`;
     }
-    searchPromptEl.style.display = 'block';
+    searchPromptEl.style.visibility = 'visible';
     
 
     dirs.forEach(dir => {
@@ -151,7 +153,7 @@ export async function loadTopLevelDirectories(searchTerm = null) {
     }
 
     appShowLoadingIndicator(); // Show main loading indicator
-    searchPromptEl.style.display = 'none'; // Hide specific search prompt text while loading
+    searchPromptEl.style.visibility = 'hidden'; // Hide specific search prompt text while loading
     // Display a placeholder message within the list area itself
     directoryListEl.innerHTML = '<div class="loading-placeholder">Đang tải danh sách album...</div>';
 
@@ -180,9 +182,9 @@ export async function loadTopLevelDirectories(searchTerm = null) {
         directoryListEl.innerHTML = ''; 
 
         if (responseData.status === 'error' && responseData.isAbortError) {
-            console.log('[uiDirectoryView] Search aborted by user.');
-            searchPromptEl.textContent = 'Tìm kiếm đã được hủy.';
-            searchPromptEl.style.display = 'block';
+            console.log('[uiDirectoryView] Search aborted by user (request was cancelled by a new one).');
+            // searchPromptEl.textContent = 'Tìm kiếm đã được hủy.'; // REMOVED
+            // searchPromptEl.style.display = 'block'; // REMOVED
             // The finally block will hide the main loading indicator.
             return; 
         }
@@ -202,14 +204,14 @@ export async function loadTopLevelDirectories(searchTerm = null) {
             console.error("[uiDirectoryView] Error loading albums:", responseData.message);
             directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi tải danh sách album: ${responseData.message || 'Unknown error'}</div>`;
             searchPromptEl.textContent = 'Đã xảy ra lỗi khi tải album. Vui lòng thử lại.';
-            searchPromptEl.style.display = 'block';
+            searchPromptEl.style.visibility = 'visible';
         }
     } catch (error) {
         // This catches critical errors (e.g., network failure in fetchDataApi, or errors in processing logic)
         console.error("[uiDirectoryView] Critical error in loadTopLevelDirectories:", error);
         directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi nghiêm trọng: ${error.message || 'Không rõ lỗi'}</div>`;
         searchPromptEl.textContent = 'Đã xảy ra lỗi nghiêm trọng. Vui lòng làm mới trang.';
-        searchPromptEl.style.display = 'block';
+        searchPromptEl.style.visibility = 'visible';
     } finally {
         appHideLoadingIndicator(); // Ensure main loading indicator is hidden regardless of outcome
     }
