@@ -688,7 +688,7 @@ switch ($action) {
                 if ($is_image) {
                     if ($size_param == THUMBNAIL_JOB_SIZE_LARGE) {
                         // ADD DIAGNOSTIC LOGGING
-                        error_log("[GetThumbnail DEBUG] Attempting to queue 750px job. Image: {$source_prefixed_path_for_hash}, Size Param: {$size_param}, Is PDO null? " . (is_null($pdo) ? 'YES' : 'NO'));
+                        // error_log("[GetThumbnail DEBUG] Attempting to queue 750px job. Image: {$source_prefixed_path_for_hash}, Size Param: {$size_param}, Is PDO null? " . (is_null($pdo) ? 'YES' : 'NO'));
                         // END DIAGNOSTIC LOGGING
 
                         // Requested 750px image thumbnail is not cached, queue job and serve 150px.

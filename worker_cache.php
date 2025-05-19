@@ -119,16 +119,16 @@ while ($running) {
             $single_file_details = null;
             if ($job_specific_size !== null) { // If a size is specified, assume it's a single item job
                 // DIAGNOSTIC LOG
-                error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Attempting to process single item job. Path: {$item_source_prefixed_path}, Size: {$job_specific_size}, Type: {$job_specific_type}");
+                // error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Attempting to process single item job. Path: {$item_source_prefixed_path}, Size: {$job_specific_size}, Type: {$job_specific_type}");
                 
                 $single_file_details = validate_source_and_file_path($item_source_prefixed_path);
                 if (!$single_file_details) {
                     // DIAGNOSTIC LOG
-                    error_log("[WORKER SINGLE ITEM ERROR - {$job_id}] validate_source_and_file_path FAILED for path: {$item_source_prefixed_path}");
+                    // error_log("[WORKER SINGLE ITEM ERROR - {$job_id}] validate_source_and_file_path FAILED for path: {$item_source_prefixed_path}");
                     throw new Exception("Single item job validation failed for path: {$item_source_prefixed_path}");
                 }
                 // DIAGNOSTIC LOG
-                error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Validated path. Absolute: {$single_file_details['absolute_path']}");
+                // error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Validated path. Absolute: {$single_file_details['absolute_path']}");
                  error_log("[{$timestamp}] [Job {$job_id}] Identified as SINGLE ITEM job for: {$single_file_details['absolute_path']}");
             }
 
@@ -140,7 +140,7 @@ while ($running) {
                 $current_item_type = $job_specific_type; // Use type from job
                 
                 // DIAGNOSTIC LOG
-                error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Starting processing. Item absolute path: {$item_absolute_path}, Extension: {$item_ext}, Type from Job: {$current_item_type}");
+                // error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Starting processing. Item absolute path: {$item_absolute_path}, Extension: {$item_ext}, Type from Job: {$current_item_type}");
 
                 // Ensure total_files and processed_files are set correctly for single item
                  $pdo->prepare("UPDATE cache_jobs SET total_files = 1, processed_files = 0 WHERE id = ?")->execute([$job_id]);
@@ -165,7 +165,7 @@ while ($running) {
                     try {
                         $creation_success = false;
                         // DIAGNOSTIC LOG
-                        error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Attempting thumbnail creation. Type: {$current_item_type}, Is Video Ext? " . (in_array($item_ext, $allowed_video_ext, true) ? 'YES' : 'NO'));
+                        // error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Attempting thumbnail creation. Type: {$current_item_type}, Is Video Ext? " . (in_array($item_ext, $allowed_video_ext, true) ? 'YES' : 'NO'));
 
                         if ($current_item_type === 'video' || ($current_item_type === 'image' && in_array($item_ext, $allowed_video_ext, true))) {
                             error_log("[{$timestamp}] [Job {$job_id}] Creating VIDEO thumbnail for: {$item_absolute_path} size {$size_to_generate}");
@@ -173,13 +173,13 @@ while ($running) {
                         } else { // Default to image
                             error_log("[{$timestamp}] [Job {$job_id}] Creating IMAGE thumbnail for: {$item_absolute_path} size {$size_to_generate}");
                             // DIAGNOSTIC LOG
-                            error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Calling create_thumbnail for IMAGE. Source: {$item_absolute_path}, Cache Target: {$cache_absolute_path}, Size: {$size_to_generate}");
+                            // error_log("[WORKER SINGLE ITEM DEBUG - {$job_id}] Calling create_thumbnail for IMAGE. Source: {$item_absolute_path}, Cache Target: {$cache_absolute_path}, Size: {$size_to_generate}");
                             $creation_success = create_thumbnail($item_absolute_path, $cache_absolute_path, $size_to_generate);
                         }
 
                         if ($creation_success) {
                             // DIAGNOSTIC LOG
-                            error_log("[WORKER SINGLE ITEM SUCCESS - {$job_id}] Thumbnail creation successful for {$item_absolute_path}.");
+                            // error_log("[WORKER SINGLE ITEM SUCCESS - {$job_id}] Thumbnail creation successful for {$item_absolute_path}.");
                             $created_count++;
                             $job_result_message = "Thumbnail created successfully.";
 
@@ -195,14 +195,14 @@ while ($running) {
                             }
                         } else {
                             // DIAGNOSTIC LOG
-                            error_log("[WORKER SINGLE ITEM ERROR - {$job_id}] Thumbnail creation FAILED for {$item_absolute_path}.");
+                            // error_log("[WORKER SINGLE ITEM ERROR - {$job_id}] Thumbnail creation FAILED for {$item_absolute_path}.");
                             $error_count++;
                             $job_result_message = "Failed to create thumbnail.";
                             $job_success = false;
                         }
                     } catch (Throwable $thumb_e) {
                         // DIAGNOSTIC LOG
-                        error_log("[WORKER SINGLE ITEM EXCEPTION - {$job_id}] Exception during thumbnail creation for {$item_absolute_path}: " . $thumb_e->getMessage() . "\nStack:" . $thumb_e->getTraceAsString());
+                        // error_log("[WORKER SINGLE ITEM EXCEPTION - {$job_id}] Exception during thumbnail creation for {$item_absolute_path}: " . $thumb_e->getMessage() . "\nStack:" . $thumb_e->getTraceAsString());
                         error_log("[{$timestamp}] [Job {$job_id}] EXCEPTION creating thumbnail for {$item_absolute_path}: " . $thumb_e->getMessage());
                         $error_count++;
                         $job_result_message = "Exception during thumbnail creation: " . $thumb_e->getMessage();
