@@ -7,7 +7,6 @@ let masonryInstance = null; // Variable to store the Masonry instance
 
 // Callbacks
 let appOpenPhotoSwipe = (index) => console.error('openPhotoSwipe not initialized in uiImageView');
-let appLoadMoreImages = () => console.error('loadMoreImages not initialized in uiImageView');
 
 // NEW INTERNAL HELPER FUNCTION
 function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
@@ -74,20 +73,24 @@ export function initializeImageView(callbacks) {
     imageViewEl = document.getElementById('image-view');
     currentDirectoryNameEl = document.getElementById('current-directory-name');
     imageGridEl = document.getElementById('image-grid');
-    loadMoreContainerEl = document.getElementById('load-more-container');
-    loadMoreBtnEl = document.getElementById('loadMoreBtn');
+    loadMoreContainerEl = document.getElementById('load-more-container'); // This will be our spinner container
 
-    if (!imageViewEl || !currentDirectoryNameEl || !imageGridEl || !loadMoreContainerEl || !loadMoreBtnEl) {
-        console.error("One or more image view elements are missing!");
+    if (!imageViewEl || !currentDirectoryNameEl || !imageGridEl || !loadMoreContainerEl) { // Removed loadMoreBtnEl from check
+        console.error("One or more image view elements are missing! Check for image-view, current-directory-name, image-grid, load-more-container.");
         return;
     }
 
     if (callbacks) {
         if (callbacks.openPhotoSwipe) appOpenPhotoSwipe = callbacks.openPhotoSwipe;
-        if (callbacks.loadMoreImages) appLoadMoreImages = callbacks.loadMoreImages;
     }
 
-    loadMoreBtnEl.addEventListener('click', () => appLoadMoreImages());
+    // Style the container for a spinner - this is a placeholder, actual styling via CSS
+    if (loadMoreContainerEl) {
+        loadMoreContainerEl.innerHTML = '<div class="loading-spinner">Loading...</div>'; // Add a spinner div with text
+        loadMoreContainerEl.style.textAlign = 'center';
+        loadMoreContainerEl.style.padding = '20px';
+        loadMoreContainerEl.style.display = 'none'; // Initially hidden
+    }
 }
 
 export function showImageViewOnly() {
@@ -215,7 +218,7 @@ export function createImageGroupIfNeeded(){
     }
 }
 
-export function toggleLoadMoreButton(show) {
+export function toggleInfiniteScrollSpinner(show) {
     if (loadMoreContainerEl) {
         loadMoreContainerEl.style.display = show ? 'block' : 'none';
     }

@@ -18,6 +18,13 @@ export let generalModalOverlay = null;
 export let zipJobsPanelContainerEl = null;
 export let zipJobsListEl = null;
 
+// NEW STATE for preloaded images
+export let preloadedImages = [];
+export function setPreloadedImages(images) {
+    preloadedImages = Array.isArray(images) ? images : [];
+    console.log('[state.js] Preloaded images set:', preloadedImages.length);
+}
+
 // Functions to update state if direct export of 'let' becomes problematic
 // For now, direct export and modification is assumed to work with ES6 modules live bindings
 

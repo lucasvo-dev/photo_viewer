@@ -21,7 +21,9 @@
 
 *   **Giao diện Người dùng (Frontend):**
     *   `index.php`: Trang chính, hiển thị danh sách thư mục hoặc ảnh/video.
+    *   `jet.php`: Giao diện cho không gian làm việc Jet Culling.
     *   `js/app.js`: Xử lý logic phía client (tải dữ liệu, điều hướng, hiển thị modal, PhotoSwipe, tìm kiếm, tải trực tiếp video, v.v.).
+    *   `js/jet_app.js`: Logic phía client cho không gian làm việc Jet Culling.
     *   `css/style.css`: Định dạng giao diện, bao gồm các class chung cho modal (`.modal-overlay`, `.modal-box`) và các style cho video (`.video-item`, `.play-icon-overlay`, `.pswp-video-container`).
 *   **Quản trị (Admin):**
     *   `login.php`: Trang đăng nhập admin.
@@ -31,8 +33,9 @@
     *   `api.php`: **Điểm vào chính (Entry Point)** cho tất cả các yêu cầu API. Chỉ chứa logic `require` các file xử lý khác.
     *   `api/init.php`: Khởi tạo cấu hình lỗi, session, gọi `db_connect.php`, định nghĩa hằng số và biến API toàn cục.
     *   `api/helpers.php`: Chứa các hàm hỗ trợ chung (ví dụ: `json_response()`, `validate_source_and_path()`, `check_folder_access()`, `create_thumbnail()`, `create_video_thumbnail()`, `find_first_image_in_source()`).
-    *   `api/actions_public.php`: Xử lý các action công khai (ví dụ: `list_files` - nhận diện ảnh/video, `get_thumbnail` - cho ảnh/video, `get_image` - stream ảnh/video hỗ trợ range requests, `download_zip`, `authenticate`).
+    *   `api/actions_public.php`: Xử lý các action công khai (ví dụ: `list_files` - nhận diện ảnh/video, `get_thumbnail` - cho ảnh/video, `get_image` - stream ảnh/video hỗ trợ range requests, `request_zip`, `get_zip_status`, `download_final_zip`, `authenticate`).
     *   `api/actions_admin.php`: Xử lý các action yêu cầu quyền admin (ví dụ: `admin_login`, `admin_logout`, `admin_list_folders`, `admin_set_password`, `admin_remove_password`).
+    *   `api/actions_jet.php`: Xử lý các action cho Jet Culling Workspace (ví dụ: `jet_list_images`, `jet_update_pick_status`).
 *   **Cấu hình & Dữ liệu:**
     *   `config.php`: **File cấu hình trung tâm** (thông tin DB, admin, nguồn ảnh, cài đặt cache, giới hạn API, log, tiêu đề). **QUAN TRỌNG:** Không đưa file này lên repo công khai nếu chứa thông tin nhạy cảm.
     *   `db_connect.php`: **File thiết lập cốt lõi.** `require` file `config.php`, kết nối DB, xác thực và định nghĩa nguồn ảnh (`IMAGE_SOURCES`), định nghĩa hằng số cache/extensions, tự động tạo bảng DB.
@@ -55,12 +58,12 @@
 *   **Bảo vệ thư mục:** Mật khẩu hash lưu trong DB. `check_folder_access` kiểm tra quyền dựa trên session/DB. Frontend hiển thị prompt khi cần.
 *   **Thumbnail:** Tạo "on-the-fly" cho ảnh và video (kích thước nhỏ), cache lại. Worker `worker_cache.php` xử lý tạo cache cho kích thước lớn (ảnh và video).
 *   **Quản trị:** Truy cập trang admin sau khi đăng nhập để quản lý mật khẩu và xem thống kê cơ bản.
-*   **(Dự kiến) Xử lý File RAW:**
-    *   Hệ thống sẽ nhận diện các file ảnh RAW (ví dụ: .ARW, .NEF, .CR2).
-    *   Worker nền sẽ tự động tạo các bản preview JPEG (thumbnail nhỏ và ảnh xem kích thước lớn) từ file RAW gốc.
+*   **Xử lý File RAW (trong Jet Culling Workspace):**
+    *   Hệ thống nhận diện các file ảnh RAW (định nghĩa trong `config.php` qua `raw_file_extensions`).
+    *   Bản xem trước JPEG (preview) từ file RAW được tạo tự động **on-the-fly bởi `api/actions_jet.php` (sử dụng `dcraw` và ImageMagick)** khi người dùng truy cập trong Jet Culling Workspace. Các preview này được cache trong thư mục `JET_PREVIEW_CACHE_ROOT`.
     *   Người dùng (client, designer, admin) sẽ tương tác (xem, chọn) với các bản preview JPEG này. File RAW gốc được giữ nguyên cho các mục đích xử lý chuyên sâu hoặc tải về (nếu có cấu hình).
-*   **(Dự kiến) Luồng làm việc Lọc ảnh (Culling):**
-    *   **Designer:** Đăng nhập vào khu vực làm việc, duyệt các album chứa file RAW (hiển thị dưới dạng preview JPEG). Designer có thể "chọn" (pick) các ảnh mong muốn. Lựa chọn này được lưu lại, gắn với thông tin của designer.
+*   **Luồng làm việc Lọc ảnh (Culling) với Jet Culling Workspace (Đã triển khai cơ bản):**
+    *   **Designer:** Đăng nhập vào khu vực làm việc, duyệt các album chứa file RAW (hiển thị dưới dạng preview JPEG). Designer có thể "chọn" (pick) các ảnh mong muốn bằng các màu đánh dấu. Lựa chọn này được lưu lại (`jet_image_picks` table), gắn với thông tin của designer.
     *   **Admin:** Đăng nhập, có thể xem lại các lựa chọn của designer trong từng album. Ảnh được designer chọn sẽ có đánh dấu trực quan. Admin có thể xem thống kê (ví dụ: designer nào chọn bao nhiêu ảnh, tổng số ảnh được chọn). Nhiều designer có thể cùng lọc một bộ ảnh.
 *   **(Dự kiến) Quản lý File & Thư mục cho Admin:**
     *   Admin có quyền upload ảnh/video mới lên các thư mục nguồn đã định nghĩa.
@@ -75,6 +78,7 @@
 ## 5. Tình trạng Hiện tại
 
 *   Các chức năng cốt lõi (duyệt, xem ảnh, tìm kiếm, tải ZIP, bảo vệ mật khẩu) đã hoạt động.
+*   **Đã phân định rõ ràng không gian làm việc:** Khu vực khách hàng (`index.php`), quản trị (`admin.php`), và lọc ảnh (`jet.php`, Jet Culling Workspace) được tách biệt về giao diện và luồng API.
 *   **Đã triển khai hỗ trợ video cơ bản:** Nhận diện, tạo thumbnail, phát lại trong lightbox và tải trực tiếp.
 *   **Đã chuyển đổi cơ sở dữ liệu từ SQLite sang MySQL.**
 *   **API backend (`api.php`) đã được refactor thành cấu trúc module rõ ràng hơn trong thư mục `api/` để dễ bảo trì.**
@@ -137,93 +141,34 @@
 
 Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự kiến phát triển bao gồm:
 
-*   **Hỗ trợ File RAW và Tạo Preview JPEG:**
-    *   Tích hợp công cụ xử lý RAW (ví dụ: `dcraw`, ImageMagick) để tự động tạo thumbnail và ảnh preview JPEG từ các định dạng file RAW phổ biến (ARW, NEF, CR2, v.v.).
-    *   Cập nhật `worker_cache.php` để xử lý các tác vụ này.
-    *   Hiển thị preview JPEG trong lưới ảnh và lightbox, trong khi vẫn quản lý file RAW gốc.
+*   **(Tiếp theo) Mở rộng hỗ trợ định dạng RAW:** Liên tục cập nhật danh sách `raw_file_extensions` và kiểm tra khả năng tương thích của `dcraw` với các định dạng RAW mới nếu cần.
 
-*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin (Lấy cảm hứng từ Photo Mechanic):**
+*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin (Jet Culling Workspace - Phát triển Tiếp theo):**
     *   **Mục tiêu:** Cung cấp một công cụ mạnh mẽ và hiệu quả cho designer để duyệt và chọn lựa (cull) ảnh từ các bộ ảnh lớn, đặc biệt là ảnh RAW. Admin có thể xem lại và quản lý các lựa chọn này.
-    *   **Các Tính năng Cốt lõi & Luồng làm việc:**
-        *   **Nạp ảnh nhanh & Tạo Xem trước (Fast Image Ingestion & Preview Generation):**
-            *   Cho phép trỏ tới thư mục nguồn (đã được hỗ trợ qua `IMAGE_SOURCES`).
-            *   **Hiển thị nhanh các bản xem trước JPEG** từ file RAW (thông qua `worker_cache.php` với `dcraw` hoặc ImageMagick). Tốc độ là yếu tố then chốt.
-            *   Tạo thumbnail nhỏ nhanh chóng.
-            *   Hiển thị siêu dữ liệu cơ bản kèm theo ảnh xem trước (tên file, ngày chụp, có thể cả thông số máy ảnh nếu dễ truy cập).
-        *   **Duyệt & Xem ảnh Hiệu quả (Efficient Image Browsing & Viewing):**
-            *   Trình xem ảnh toàn màn hình hoặc gần toàn màn hình (có thểปรับ PhotoSwipe hiện tại hoặc xây dựng mới cho nhu cầu culling).
-            *   **Điều hướng bằng bàn phím** để di chuyển nhanh giữa các ảnh (ví dụ: phím mũi tên trái/phải).
-            *   Khả năng **zoom và pan (kéo)** để kiểm tra chi tiết độ nét và các yếu tố quan trọng.
-        *   **Hệ thống Gắn thẻ/Chọn lựa (Picking) & Đánh giá (Rating System):**
-            *   Cơ chế **"Chọn" (Pick/Tag)** đơn giản: Cách nhanh chóng (ví dụ: phím tắt như 'T' hoặc nút bấm) để đánh dấu ảnh là đã chọn/giữ lại.
-            *   **(Tùy chọn) Nhãn màu (Color Labels):** Gán nhãn màu (ví dụ: đỏ, vàng, xanh lá, xanh dương) cho các giai đoạn hoặc hạng mục lựa chọn khác nhau.
-            *   **(Tùy chọn) Đánh giá sao (Star Ratings):** Hệ thống đánh giá từ 0-5 sao.
-        *   **Lọc & Sắp xếp (Filtering & Sorting):**
-            *   Lọc ảnh theo trạng thái "đã chọn" (picked).
-            *   Lọc theo nhãn màu hoặc đánh giá sao (nếu có).
-            *   Sắp xếp ảnh theo tên file, ngày chụp, hoặc các siêu dữ liệu khác.
-            *   (Tiếp theo) Xem xét các tùy chọn lọc/sắp xếp nâng cao hơn dựa trên siêu dữ liệu EXIF.
-        *   **Lưu Lựa chọn (Saving Selections):**
-            *   Các lựa chọn (picks, tags, ratings, colors) cần được lưu trữ bền vững.
-            *   Dữ liệu này phải được liên kết với ảnh cụ thể (ví dụ: đường dẫn có tiền tố nguồn) và người dùng (designer) đã thực hiện lựa chọn.
-            *   **Hợp tác Đa người dùng (Multi-User Collaboration):**
-                *   Cho phép các designer khác nhau đăng nhập và thực hiện các lựa chọn riêng của họ trên cùng một bộ ảnh.
-                *   Admin có thể xem lại các lựa chọn từ các designer khác nhau, có thể kèm theo dấu hiệu trực quan hoặc thống kê.
-        *   **Giao diện & Trải nghiệm Người dùng (UI/UX):**
-            *   **Mật độ thông tin (Information Density):** Hiển thị thông tin liên quan một cách hợp lý, không làm rối giao diện.
-            *   **Tốc độ và Độ phản hồi (Speed and Responsiveness):** Giao diện phải cực kỳ nhanh, đặc biệt khi duyệt và gắn thẻ ảnh.
-            *   **(Tiềm năng) Bố cục Tùy chỉnh (Customizable Layout):** Xem xét khả năng cho phép người dùng tùy chỉnh siêu dữ liệu hiển thị, kích thước thumbnail, v.v. trong tương lai.
-            *   **Chỉ báo Trực quan Rõ ràng (Clear Visual Indicators):** Dấu hiệu trực quan rõ ràng cho các ảnh đã pick, ảnh đang được chọn, nhãn màu, đánh giá.
-        *   **Cân nhắc Kỹ thuật Triển khai:**
-            *   **Cơ sở dữ liệu:** Bảng `image_selections` sẽ là trung tâm. Cần lưu ít nhất `image_path` (đường dẫn đầy đủ có tiền tố nguồn), `user_id` (của designer), `pick_status` (boolean), và tùy chọn các trường cho `rating`, `color_label`. Cân nhắc thêm `timestamp` cho mỗi lựa chọn.
-            *   **API (ví dụ: `api/actions_designer.php` hoặc mở rộng `actions_admin.php`):**
-                *   Endpoints để thiết lập/cập nhật trạng thái pick, rating, color label cho một ảnh.
-                *   Endpoints để lấy danh sách ảnh kèm dữ liệu lựa chọn cho một thư mục/album cụ thể, có thể lọc theo designer.
-            *   **Frontend (JavaScript):**
-                *   Xây dựng một view (khu vực giao diện) riêng cho quy trình culling.
-                *   Logic xử lý việc tải ảnh nhanh, các phím tắt, cập nhật UI dựa trên lựa chọn.
-                *   Giao tiếp với các API endpoints mới.
-            *   **Xử lý RAW:** Tận dụng `worker_cache.php` hiện có để tạo preview JPEG từ file RAW. App culling sẽ chủ yếu tương tác với các file JPEG này.
-        *   **Tập trung cho phiên bản MVP (Minimum Viable Product):**
-            *   Hiển thị nhanh các bản xem trước JPEG từ file RAW trong một thư mục được chọn.
-            *   Điều hướng bằng bàn phím qua các ảnh xem trước.
-            *   Chức năng "Chọn" (Pick) đơn giản (boolean: chọn/bỏ chọn) bằng phím tắt.
-            *   Lưu các lựa chọn "Pick" này vào CSDL, liên kết với ảnh và người dùng (designer).
-            *   Admin có thể xem lại những ảnh nào đã được designer "pick".
-        *   **Cập nhật Tiến độ (Jet Culling Workspace - Giao diện Người dùng):**
-            *   **Đã triển khai Chế độ Xem trước Ảnh (Image Preview Mode):**
-                *   Khi người dùng nhấp vào một ảnh trong lưới (`image grid`), một lớp phủ (overlay) hiển thị ảnh đó với kích thước lớn hơn.
-                *   **Điều hướng:**
-                    *   Nút "Trước" (Previous) và "Sau" (Next) trên màn hình cho phép duyệt qua các ảnh trong thư mục hiện tại.
-                    *   Phím mũi tên Trái (`ArrowLeft`) và Phải (`ArrowRight`) trên bàn phím cũng thực hiện chức năng điều hướng tương tự.
-                *   **Đóng Xem trước:**
-                    *   Nút "Đóng" (Close) trên màn hình.
-                    *   Phím `Escape` (Esc) trên bàn phím.
-                *   **Chọn/Bỏ chọn từ Xem trước:**
-                    *   Một nút "Chọn (P)" / "Bỏ chọn (P)" hiển thị trạng thái chọn hiện tại của ảnh.
-                    *   Nhấp vào nút này hoặc nhấn phím `P` sẽ thay đổi trạng thái chọn (pick/unpick) cho ảnh đang xem trước.
-                    *   Trạng thái chọn được cập nhật đồng bộ trên cả nút trong chế độ xem trước và mục ảnh tương ứng trong lưới nền.
-            *   **Cải thiện Giao diện:** Áp dụng chủ đề tối và bố cục lưới cải tiến cho không gian làm việc Jet, tương đồng với ứng dụng thư viện ảnh chính.
-            *   **Hiển thị Trạng thái Chọn Màu (Color Pick Status Display):**
-                *   Các mục ảnh trong lưới (`image grid`) được chọn màu sẽ hiển thị một cờ màu nhỏ ở góc dưới bên phải của thumbnail, thay vì sử dụng viền hoặc bóng đổ màu.
-                *   Trong chế độ xem trước ảnh (`preview overlay`), nút chọn màu sẽ hiển thị một chỉ báo màu tương ứng.
-            *   **Mở/Đóng Xem trước Ảnh (Open/Close Image Preview):**
-                *   Người dùng có thể mở chế độ xem trước cho một ảnh bằng cách nhấp đúp chuột vào ảnh đó trong lưới, hoặc chọn ảnh đó (bằng một cú nhấp chuột hoặc phím mũi tên) rồi nhấn phím `Space`.
-                *   Khi chế độ xem trước đang mở, nhấn phím `Space` hoặc phím `Escape`, hoặc nhấp vào nút "Đóng (Esc)" chuyên dụng sẽ đóng lại chế độ xem trước.
-            *   **(Tiếp theo)** Hoàn thiện các tương tác nâng cao trong chế độ xem trước (ví dụ: zoom chi tiết hơn nếu cần cho việc culling).
-            *   **(Tiếp theo)** Tích hợp sâu hơn với hệ thống đánh giá sao (star ratings) nếu được triển khai.
+    *   **Các Tính năng Tiếp theo và Nâng cao (Beyond Current MVP):**
+        *   **Hiển thị Siêu dữ liệu Nâng cao:** Cho phép hiển thị thêm siêu dữ liệu EXIF quan trọng (ví dụ: thông số máy ảnh, ống kính, ISO, tốc độ màn trập) kèm theo ảnh xem trước trong lưới và chế độ xem chi tiết.
+        *   **Cải thiện Zoom/Pan:** Hoàn thiện các tương tác nâng cao trong chế độ xem trước (ví dụ: zoom chi tiết hơn, pan mượt mà hơn) để kiểm tra độ nét hiệu quả.
+        *   **Đánh giá Sao (Star Ratings):** Triển khai hệ thống đánh giá từ 0-5 sao cho ảnh, lưu vào CSDL (`jet_image_picks` hoặc bảng mới) và tích hợp vào chức năng lọc/sắp xếp.
+        *   **Lọc/Sắp xếp Nâng cao:** Bổ sung các tùy chọn lọc và sắp xếp dựa trên siêu dữ liệu EXIF (ngày chụp chi tiết, thông số camera, v.v.) và đánh giá sao (nếu được triển khai).
+        *   **Hợp tác Đa người dùng Chi tiết hơn:**
+            *   Giao diện cho Admin để dễ dàng xem, so sánh và quản lý các lựa chọn (picks, ratings, colors) từ nhiều designer khác nhau trên cùng một bộ ảnh.
+            *   Cung cấp thống kê chi tiết hơn về lựa chọn của từng designer.
+        *   **Tùy chỉnh Giao diện (Tiềm năng):** Nghiên cứu khả năng cho phép người dùng tùy chỉnh siêu dữ liệu hiển thị, kích thước thumbnail trong Jet Culling Workspace.
+        *   **(Lưu ý về Tạo Xem trước):** Hiện tại, các bản xem trước JPEG từ file RAW được tạo on-the-fly bởi `api/actions_jet.php` (sử dụng `dcraw` và ImageMagick). Việc tối ưu hóa (ví dụ: chuyển sang worker để pre-cache) được đề cập ở mục "Hoàn thiện Hỗ trợ File RAW...".
+    *   **(Tham khảo) Các thành phần MVP đã triển khai (chi tiết trong Mục 5):**
+        *   Hiển thị lưới ảnh preview từ RAW, điều hướng bàn phím/chuột trong preview.
+        *   Chức năng chọn màu (Color Labels/Pick status) và lưu vào CSDL.
+        *   Lọc ảnh cơ bản (theo màu đã chọn, trạng thái chọn).
+        *   Sắp xếp ảnh cơ bản (tên file, ngày sửa đổi).
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.
     *   **Delete File:** Cho phép admin xóa file ảnh/video (bao gồm cả thumbnail và các dữ liệu liên quan).
     *   **Create/Delete Folder:** Cho phép admin tạo thư mục mới và xóa thư mục (bao gồm cả nội dung bên trong một cách cẩn trọng).
 
-*   **Tính năng Chọn nhiều ảnh để tải về cho Khách hàng:**
-    *   Cho phép khách hàng chọn nhiều ảnh trong một album.
-    *   Cung cấp nút "Tải về các ảnh đã chọn" để tạo file ZIP chứa các ảnh đó.
-
-*   **Tách biệt Không gian làm việc:**
-    *   Phân định rõ ràng khu vực dành cho khách hàng (xem/tải) và khu vực làm việc của admin/designer (quản lý nội dung, lọc ảnh).
+*   **Tính năng Chọn nhiều ảnh/video để tải về cho Khách hàng (Đã triển khai):**
+    *   (Hoàn thành) Cho phép khách hàng chọn nhiều ảnh/video trong một album thông qua `js/selectionManager.js`.
+    *   (Hoàn thành) Cung cấp nút "Tải về các mục đã chọn" để tạo file ZIP bất đồng bộ (`request_zip`, theo dõi qua `get_zip_status`) chứa các mục đó. Người dùng tải về qua `download_final_zip`.
 
 *   **Tối ưu Hiệu suất (Tiếp tục):**
     *   Đánh giá và tối ưu hiệu suất cho việc tạo preview RAW, thumbnail video.

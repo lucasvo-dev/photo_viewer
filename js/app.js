@@ -1,43 +1,3 @@
-(function() {
-    console.log('[DIAGNOSTIC] Applying addEventListener wrapper for wheel/mousewheel events.');
-    const originalAddEventListener = EventTarget.prototype.addEventListener;
-    EventTarget.prototype.addEventListener = function(type, listener, optionsOrCapture) {
-        if (type === 'wheel' || type === 'mousewheel') {
-            console.log('[DIAGNOSTIC] addEventListener CALLED for:', type, 'on:', this, 'Listener fn:', listener ? listener.toString().substring(0, 100) + '...' : 'undefined');
-            const originalListener = listener;
-            const newListener = function(event) {
-                console.log('[DIAGNOSTIC] Event FIRED:', type, 'Default prevented BEFORE listener execution:', event.defaultPrevented, 'Target:', event.target, 'CurrentTarget:', event.currentTarget);
-                
-                // Temporarily block preventDefault to see if scrolling works
-                const originalPreventDefault = event.preventDefault;
-                let preventDefaultCalledDuringListener = false;
-                event.preventDefault = function() {
-                    console.warn('[DIAGNOSTIC] event.preventDefault() CALLED by listener for WHEEL/MOUSEWHEEL event! Blocking for test. Listener:', originalListener ? originalListener.toString().substring(0,100) + '...' : 'undefined' );
-                    preventDefaultCalledDuringListener = true;
-                    // Not calling originalPreventDefault();
-                };
-
-                try {
-                    originalListener.call(this, event);
-                } catch (e) {
-                    console.error('[DIAGNOSTIC] Error in wrapped listener:', e);
-                    // Restore original preventDefault if an error occurs in the listener
-                    event.preventDefault = originalPreventDefault; 
-                    throw e; 
-                }
-                
-                // Restore original preventDefault after listener execution
-                event.preventDefault = originalPreventDefault; 
-                console.log('[DIAGNOSTIC] Event FINISHED:', type, 'Default prevented AFTER listener (reflects if original would have called it):', event.defaultPrevented, 'Was preventDefault attempted by listener during this call:', preventDefaultCalledDuringListener);
-            };
-            originalAddEventListener.call(this, type, newListener, optionsOrCapture);
-        } else {
-            originalAddEventListener.call(this, type, listener, optionsOrCapture);
-        }
-    };
-    console.log('[DIAGNOSTIC] addEventListener wrapper APPLIED.');
-})();
-
 console.log('[app.js] Script start'); // VERY FIRST LINE
 
 // js/app.js
@@ -64,7 +24,8 @@ import {
     zipOverallProgressEl, setZipOverallProgressEl,
     zipProgressStatsTextEl, setZipProgressStatsTextEl,
     generalModalOverlay, setGeneralModalOverlay,
-    zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements
+    zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements,
+    preloadedImages, setPreloadedImages
 } from './state.js';
 
 // Import utils
@@ -95,7 +56,7 @@ import {
     clearImageGrid,
     renderImageItems as renderImageItemsToGrid,
     createImageGroupIfNeeded,
-    toggleLoadMoreButton
+    toggleInfiniteScrollSpinner
 } from './uiImageView.js';
 import {
     initializePhotoSwipeHandler,
@@ -118,6 +79,9 @@ import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActive
 // ========================================
 // === GLOBAL HELPER FUNCTIONS        ===
 // ========================================
+
+// Add a new module-level variable for preloading state
+let isCurrentlyPreloading = false;
 
 export function getCurrentFolderInfo() {
     const path = currentFolder; // READ from state
@@ -301,10 +265,13 @@ async function loadSubItems(folderPath) {
         console.log('[app.js] loadSubItems: isLoadingMore is true, returning.');
         return;
     }
-    showLoadingIndicator(); // Show at the very beginning
+    showLoadingIndicator(); 
     setCurrentFolder(folderPath);
-    setCurrentPage(1);
+    setCurrentPage(1); // Initial page is 1
     setCurrentImageList([]);
+    setPreloadedImages([]); 
+    isCurrentlyPreloading = false; 
+
     // Clear existing content
     clearImageGrid(); // This now clears #image-grid and destroys Masonry
     const subfolderDisplayArea = document.getElementById('subfolder-display-area');
@@ -357,7 +324,7 @@ async function loadSubItems(folderPath) {
         createImageGroupIfNeeded(); // This creates .image-group inside #image-grid
         if (initialImagesMetadata && initialImagesMetadata.length) {
             console.log('[app.js] loadSubItems: initialImagesMetadata IS valid and has length. About to call renderImageItemsToGrid.');
-            setCurrentImageList(initialImagesMetadata); 
+            setCurrentImageList(initialImagesMetadata); // Page 1 images
             renderImageItemsToGrid(initialImagesMetadata);
             contentRendered = true;
             setupPhotoSwipeIfNeeded();
@@ -377,7 +344,11 @@ async function loadSubItems(folderPath) {
 
         console.log('[app.js] loadSubItems: About to call showImageView().');
         showImageView();
-        toggleLoadMoreButton(currentImageList.length < totalImages);
+
+        // After initial load and render, attempt to preload the next batch
+        if (currentImageList.length < totalImages) {
+            preloadNextBatch();
+        }
 
         if (currentImageList.length >= totalImages && !contentRendered) {
             const targetEmptyMessageContainer = subfolderDisplayArea && subfolderDisplayArea.hasChildNodes() ? subfolderDisplayArea : document.getElementById('image-grid');
@@ -399,36 +370,133 @@ async function loadSubItems(folderPath) {
 
 // --- Load More Images ---
 async function loadMoreImages() {
-    if (isLoadingMore || (currentPage * IMAGES_PER_PAGE >= totalImages && totalImages > 0)) {
+    if (isLoadingMore) {
+        return; // Already processing a load more action
+    }
+    // If all images are loaded according to totalImages AND no preloaded images are waiting to be displayed
+    if (currentImageList.length >= totalImages && totalImages > 0 && preloadedImages.length === 0) {
         return;
     }
-    setIsLoadingMore(true);
-    setCurrentPage(currentPage + 1);
-    showLoadingIndicator('Đang tải thêm ảnh...'); // Specific message for loading more
+
+    setIsLoadingMore(true); // Indicate that we are starting to add more images
+    let imagesWereAdded = false;
+
+    if (preloadedImages.length > 0) {
+        console.log('[app.js] Using preloaded images for loadMoreImages.');
+        const imagesToRender = [...preloadedImages];
+        setPreloadedImages([]); // Consume preloaded images
+
+        setCurrentPage(currentPage + 1); // Advance page number for the batch just displayed
+        setCurrentImageList(currentImageList.concat(imagesToRender));
+        renderImageItemsToGrid(imagesToRender, true);
+        setupPhotoSwipeIfNeeded();
+        imagesWereAdded = true;
+
+    } else if (currentImageList.length < totalImages || totalImages === 0) { 
+        // Only fetch if more images are expected, or if totalImages is 0 (e.g. initial state before first load completed)
+        console.log('[app.js] No preloaded images, fetching from API for loadMoreImages.');
+        const pageToFetch = currentPage + 1; // Determine the page number to fetch
+        toggleInfiniteScrollSpinner(true);
+
+        try {
+            const responseData = await fetchDataApi('list_files', 
+                { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
+            );
+
+            if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+                setCurrentPage(pageToFetch); // Commit the page update only on successful fetch
+                const newImagesMetadata = responseData.data.files;
+                setCurrentImageList(currentImageList.concat(newImagesMetadata));
+                renderImageItemsToGrid(newImagesMetadata, true);
+                setupPhotoSwipeIfNeeded();
+                imagesWereAdded = true;
+
+                // Update totalImages if pagination info from this load is more accurate
+                if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
+                    setTotalImages(responseData.data.pagination.total_items);
+                }
+            } else if (responseData.status !== 'success') {
+                showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
+                // Do not increment currentPage if the fetch failed
+            }
+            // If status is 'success' but no files, means we've reached the end for this fetch attempt.
+            // imagesWereAdded remains false in this case.
+
+        } catch (error) {
+            console.error('[app.js] Error in loadMoreImages (API call):', error);
+            showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
+        } finally {
+            toggleInfiniteScrollSpinner(false);
+        }
+    }
+
+    setIsLoadingMore(false); // Finished attempting to add more images to the view
+
+    // Unified preload trigger: After any attempt to add images (from preload or API),
+    // if images were actually added, and we might still have more images, try to preload the next batch.
+    if (imagesWereAdded && currentImageList.length < totalImages) {
+        preloadNextBatch();
+    } else if (!imagesWereAdded && preloadedImages.length === 0 && currentImageList.length < totalImages) {
+        // If nothing was added (e.g., API returned empty for the current attempt, or preloaded was empty),
+        // AND nothing is currently preloaded, AND we still think there are more images, try to preload.
+        // This can help if totalImages was updated or if a previous preload failed.
+        preloadNextBatch();
+    }
+}
+
+// --- NEW: Preload Next Batch Function ---
+async function preloadNextBatch() {
+    if (isCurrentlyPreloading || preloadedImages.length > 0) {
+        // console.log('[app.js] Preload skipped: already preloading or data exists.');
+        return; 
+    }
+    // If all *known* images are already in currentImageList or more, no need to preload.
+    // This check is crucial to prevent preloading beyond the actual number of images.
+    if (currentImageList.length >= totalImages && totalImages > 0) {
+        // console.log('[app.js] Preload skipped: all known images loaded.');
+        return;
+    }
+
+    isCurrentlyPreloading = true;
+    const pageToPreload = currentPage + 1; // currentPage is the last successfully *rendered* page.
+    
+    // Safety check: If pageToPreload somehow seems too high based on a hypothetical max_pages
+    // (though API returning empty is the primary guard for this)
+    // if (IMAGES_PER_PAGE > 0 && totalImages > 0 && pageToPreload > Math.ceil(totalImages / IMAGES_PER_PAGE)) {
+    //     console.log(`[app.js] Preload skipped: page ${pageToPreload} seems beyond total pages.`);
+    //     isCurrentlyPreloading = false;
+    //     return;
+    // }
+
+    console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
 
     try {
         const responseData = await fetchDataApi('list_files', 
-            { path: currentFolder, page: currentPage, limit: IMAGES_PER_PAGE }
+            { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }
         );
-        if (responseData.status === 'success' && responseData.data.files) {
-            const newImagesMetadata = responseData.data.files;
-            if (newImagesMetadata.length > 0) {
-                setCurrentImageList(currentImageList.concat(newImagesMetadata));
-                renderImageItemsToGrid(newImagesMetadata, true);
-                setupPhotoSwipeIfNeeded(); 
-            } 
-            toggleLoadMoreButton(currentImageList.length < totalImages);
+
+        if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+            setPreloadedImages(responseData.data.files);
+            console.log(`[app.js] preloadNextBatch: Successfully preloaded ${responseData.data.files.length} images for page ${pageToPreload}.`);
+            
+            // Update totalImages if pagination info from preload is more accurate
+            if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
+                console.log(`[app.js] preloadNextBatch: Updating totalImages from ${totalImages} to ${responseData.data.pagination.total_items}`);
+                setTotalImages(responseData.data.pagination.total_items);
+            }
         } else {
-            showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
-            toggleLoadMoreButton(false);
+            setPreloadedImages([]); // Clear if preload failed or returned no new images
+            if (responseData.status !== 'success') {
+                console.warn(`[app.js] preloadNextBatch: Failed to preload page ${pageToPreload}. Status: ${responseData.status}, Message: ${responseData.message}`);
+            } else {
+                console.log(`[app.js] preloadNextBatch: No more images to preload for page ${pageToPreload} (API returned success but no files).`);
+            }
         }
     } catch (error) {
-        console.error('[app.js] Error in loadMoreImages:', error);
-        showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
-        toggleLoadMoreButton(false); // Also hide load more button on critical error
+        console.error(`[app.js] preloadNextBatch: Error preloading page ${pageToPreload}:`, error);
+        setPreloadedImages([]); // Clear on error
     } finally {
-        hideLoadingIndicator(); // Ensure indicator is hidden
-        setIsLoadingMore(false);
+        isCurrentlyPreloading = false;
     }
 }
 
@@ -710,9 +778,73 @@ function initializeAppEventListeners() {
         console.error("[app.js] Could not initialize SelectionManager: one or more required DOM elements not found.");
     }
 
-    // ... (other listeners like searchInput, clearSearch, backButton, shareButton, downloadAllLink remain if not part of selection)
-    // Note: downloadAllLink's direct click listener for downloading the whole folder should remain if it's separate from selection mode.
-    // The selectionManager will only control its visibility when selection mode is active/inactive.
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    const clearSearchButton = document.getElementById('clearSearch'); // Assuming you have a clear search button
+
+    if (searchInput) {
+        searchInput.addEventListener('input', debounce(async (e) => {
+            const searchTerm = e.target.value.trim();
+            // When searching, always show the top-level directory view
+            // and let loadTopLevelDirectories handle showing/hiding based on search term
+            showDirectoryView(); 
+            await loadTopLevelDirectories(searchTerm);
+            if (clearSearchButton) { // Show clear button if there's text
+                clearSearchButton.style.display = searchTerm ? 'inline-block' : 'none';
+            }
+        }, 300));
+    }
+    if (clearSearchButton && searchInput) {
+        clearSearchButton.addEventListener('click', async () => {
+            searchInput.value = '';
+            clearSearchButton.style.display = 'none';
+            showDirectoryView();
+            await loadTopLevelDirectories(''); // Load all top-level directories
+        });
+         // Initially hide clear button
+        clearSearchButton.style.display = 'none';
+    }
+
+
+    // Back to top button
+    const backToTopButton = document.getElementById('backToTop');
+    if (backToTopButton) {
+        window.addEventListener('scroll', () => {
+            if (window.pageYOffset > 300) {
+                backToTopButton.style.display = 'block';
+            } else {
+                backToTopButton.style.display = 'none';
+            }
+        });
+        backToTopButton.addEventListener('click', () => {
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+        });
+        backToTopButton.style.display = 'none'; // Initially hidden
+    }
+
+    // Infinite scroll listener
+    window.addEventListener('scroll', debounce(() => {
+        const imageView = document.getElementById('image-view');
+        if (imageView && imageView.style.display === 'block' &&
+            !isLoadingMore && 
+            currentImageList.length < totalImages && 
+            totalImages > 0) {
+            
+            // Check if near bottom of page - using a larger threshold (e.g., one viewport height)
+            const threshold = window.innerHeight; // Or a fixed larger value like 600 or 800
+            if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
+                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px`);
+                loadMoreImages();
+            }
+        }
+    }, 100)); // Debounce by 100ms
+
+    // Handle popstate for back/forward navigation
+    window.addEventListener('popstate', (event) => {
+        console.log("[app.js] popstate event triggered:", event.state, location.hash);
+        // Re-evaluate the hash to handle navigation
+        handleUrlHash();
+    });
 }
 
 // New function in app.js to handle the download request initiated by selectionManager

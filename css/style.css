@@ -31,3 +31,34 @@
 
 /* --- Library Customizations --- */
 @import url('libs/photoswipe_custom.css');
+
+/* Infinite Scroll Spinner Styles */
+#load-more-container {
+    /* Container is already styled for centering text by uiImageView.js, keep it simple here */
+    /* padding: 20px 0; /* Adjust as needed */
+}
+
+#load-more-container .loading-spinner {
+    display: inline-block; /* Or block if it takes full width */
+    padding: 10px 0;
+    font-style: italic;
+    color: #888; /* Lighter color for the text */
+}
+
+/* Optional: Animated spinner using ::after pseudo-element */
+#load-more-container .loading-spinner::after {
+    content: '';
+    display: inline-block;
+    width: 20px;
+    height: 20px;
+    border: 3px solid rgba(136, 136, 136, 0.3); /* Light grey border (using #888 base) */
+    border-radius: 50%;
+    border-top-color: #888; /* Spinner accent color */
+    animation: spin 1s ease-in-out infinite;
+    margin-left: 10px;
+    vertical-align: middle;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}

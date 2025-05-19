@@ -27,48 +27,6 @@ if (isset($_GET['folder'])) {
     <title><?php echo htmlspecialchars($config['app_title'] ?? 'Photo Gallery'); ?></title>
     <link rel="icon" type="image/png" href="theme/favicon.png"> <!-- Favicon -->
 
-    <script>
-    console.log('[DIAGNOSTIC from index.php HEAD] SCRIPT RUNNING'); // Initial check
-
-    const originalAddEventListener = EventTarget.prototype.addEventListener;
-    console.log('[DIAGNOSTIC from index.php HEAD] Applying EventTarget.prototype.addEventListener wrapper...');
-
-    EventTarget.prototype.addEventListener = function(type, listener, options) {
-        const eventTypesToLog = ['wheel', 'mousewheel', 'scroll', 'DOMMouseScroll'];
-        if (eventTypesToLog.includes(type)) {
-            console.log(`[DIAGNOSTIC AddListener WRAPPER] type: ${type}, target:`, this, 'listener:', listener, 'options:', options);
-
-            const originalListener = listener;
-            listener = function(event) {
-                console.log(`[DIAGNOSTIC Event FIRED via WRAPPER] type: ${event.type}, target:`, event.target, 'currentTarget:', event.currentTarget, 'event:', event);
-                if (event.defaultPrevented) {
-                    console.log('[DIAGNOSTIC Event DefaultPrevented via WRAPPER] Default was already prevented for:', event.type);
-                }
-                const result = originalListener.apply(this, arguments);
-                return result;
-            };
-        }
-        return originalAddEventListener.call(this, type, listener, options);
-    };
-    console.log('[DIAGNOSTIC from index.php HEAD] EventTarget.prototype.addEventListener wrapper APPLIED.');
-
-    function diagnosticWheelHandler(event) {
-        console.log(`[DIAGNOSTIC DIRECT ${event.currentTarget === window ? 'WINDOW' : 'DOCUMENT'} LISTENER] Event FIRED: ${event.type}, target:`, event.target, 'event:', event);
-        if (event.defaultPrevented) {
-            console.log(`[DIAGNOSTIC DIRECT ${event.currentTarget === window ? 'WINDOW' : 'DOCUMENT'} LISTENER] Default was PREVENTED for: ${event.type}`);
-        }
-        // Do not call event.preventDefault() here, just observe.
-    }
-
-    console.log('[DIAGNOSTIC from index.php HEAD] Adding DIRECT wheel/mousewheel listeners to window and document (capturing)...');
-    window.addEventListener('wheel', diagnosticWheelHandler, true);
-    window.addEventListener('mousewheel', diagnosticWheelHandler, true); // For older browsers/compatibility
-    document.addEventListener('wheel', diagnosticWheelHandler, true);
-    document.addEventListener('mousewheel', diagnosticWheelHandler, true); // For older browsers/compatibility
-    console.log('[DIAGNOSTIC from index.php HEAD] DIRECT wheel/mousewheel listeners ADDED.');
-
-    </script>
-
     <!-- Corrected PhotoSwipe 5 CSS CDN -->
     <link rel="stylesheet" href="https://unpkg.com/photoswipe@5/dist/photoswipe.css">
     <!-- Your custom styles -->
@@ -123,9 +81,11 @@ if (isset($_GET['folder'])) {
                  </div>
             </div>
             <div id="subfolder-display-area"></div>
-            <div id="image-grid"></div>
-            <div id="load-more-container" style="text-align: center; margin-top: 20px; display: none;">
-                <button id="loadMoreBtn" class="button">Tải thêm ảnh</button>
+            <div id="image-grid">
+                <!-- Masonry items will go here -->
+            </div>
+            <div id="load-more-container" class="load-more-container-styling" style="display: none;">
+                <!-- <button id="loadMoreBtn" class="button">Tải thêm ảnh</button> --> <!-- Button removed for infinite scroll -->
             </div>
         </div>
     </main>
