@@ -22,14 +22,24 @@
     position: relative; 
     overflow: hidden; /* Keep for border-radius */
     border-radius: 6px;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
     /* Ensure item height is determined by content */
     height: auto; 
     line-height: 0; /* Prevent extra space issues */
+
+    /* Initial state for fade-in animation */
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+}
+
+/* State for when item is loaded and laid out */
+.image-item.image-item--visible {
+    opacity: 1;
+    transform: translateY(0);
 }
 
 .image-item:hover {
-    transform: scale(1.02); /* Phóng to nhẹ khi hover */
+    transform: scale(1.02); /* This will apply on top of translateY(0) once visible */
     box-shadow: 0 6px 15px rgba(0,0,0,0.3);
 }
 

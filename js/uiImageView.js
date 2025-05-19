@@ -156,20 +156,21 @@ export function renderImageItems(imagesDataToRender, append = false) {
     }
 
     const fragment = document.createDocumentFragment();
+    const newElements = []; // Array to store references to the new item elements
 
     imagesDataToRender.forEach((imgData) => {
-        // Determine the correct index from the global currentImageList
         const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
-        
         const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe);
         fragment.appendChild(imageElement);
+        newElements.push(imageElement); // Store reference
     });
 
     imageGroupContainer.appendChild(fragment); // Append all new items at once
 
-    // Initialize or update Masonry after images are loaded
     if (typeof Masonry !== 'undefined' && typeof imagesLoaded !== 'undefined') {
-        const imgLoad = imagesLoaded(imageGroupContainer);
+        // Important: Use imagesLoaded on the specific new elements we just added,
+        // to avoid re-processing already loaded images from previous batches.
+        const imgLoad = imagesLoaded(newElements);
 
         imgLoad.on('always', function() {
             if (!masonryInstance) {
@@ -178,20 +179,42 @@ export function renderImageItems(imagesDataToRender, append = false) {
                     columnWidth: '.image-item',
                     gutter: 16,
                     percentPosition: true,
+                    // Consider transitionDuration: 0 if CSS transitions handle all animation
+                    // transitionDuration: 0 
                 });
             } else {
-                masonryInstance.reloadItems();
-                masonryInstance.layout();
+                masonryInstance.appended(newElements); // Inform Masonry about new items
+                // No, reloadItems is better if we aren't hiding/showing with 'appended'
+                // masonryInstance.reloadItems(); 
             }
-            // Additional layout for desktop after a short delay
-            setTimeout(function() {
-                if (masonryInstance) {
-                    masonryInstance.layout();
-                }
-            }, 150); // 150ms delay
+            // It might be better to use masonry.appended(newElements) then masonry.layout()
+            // For now, reloadItems() and layout() covers adding items. 
+            // If performance is an issue with many items, `appended` can be more efficient.
+            masonryInstance.reloadItems(); 
+            masonryInstance.layout();
+
+            // After Masonry has laid out the items, make them visible
+            // Use a slight delay to ensure layout calculation is complete before triggering CSS transition
+            setTimeout(() => {
+                newElements.forEach(el => {
+                    el.classList.add('image-item--visible');
+                });
+            }, 50); // 50ms delay, adjust if needed, or remove if direct class add works smoothly
+
         });
 
-        // Layout on progress for smoother loading as images appear
+        // Optional: if you want items to appear one by one as they load (more complex)
+        // imgLoad.on('progress', function(instance, image) {
+        //     if (masonryInstance) {
+        //         masonryInstance.layout();
+        //     }
+        //     // If you want individual fade-in on progress:
+        //     // const item = image.img.closest('.image-item');
+        //     // if (item) item.classList.add('image-item--visible');
+        // });
+
+        // Keeping the original progress layout for now, as it helps Masonry adjust.
+        // The final reveal is handled by the 'always' callback.
         imgLoad.on('progress', function() {
             if (masonryInstance) {
                 masonryInstance.layout();
