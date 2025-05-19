@@ -100,3 +100,28 @@
     align-items: center;
     justify-content: center;
 }
+
+/* === Global Loading Indicator (Non-Layout-Breaking) === */
+main.container.user-view {
+    position: relative; /* Needed for absolute positioning of #loading-indicator */
+}
+
+#loading-indicator {
+    position: absolute;
+    top: 10px; /* Adjust as needed from the top of the main.container */
+    left: 50%;
+    transform: translateX(-50%);
+    background-color: var(--color-background-light, rgba(40, 40, 40, 0.85)); /* Use theme variable or a default */
+    color: var(--color-text, #e6edf3);
+    padding: 8px 15px;
+    border-radius: var(--border-radius-medium, 6px);
+    z-index: 1050; /* Ensure it's above most content, but below modals if necessary */
+    box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+    /* display: none; is set inline in HTML initially */
+    /* JavaScript will toggle display: block/flex or visibility */
+}
+
+#loading-indicator p {
+    margin: 0;
+    padding: 0;
+}

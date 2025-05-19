@@ -46,6 +46,9 @@ function setupSearchHandlers() {
         return;
     }
 
+    // Initially hide the clear button using visibility
+    clearSearchBtnEl.style.visibility = 'hidden';
+
     const performSearch = debounce(async () => {
         console.log('[uiDirectoryView] performSearch triggered.');
         const term = searchInputEl.value.trim();
@@ -61,7 +64,8 @@ function setupSearchHandlers() {
     searchInputEl.addEventListener('input', performSearch);
     clearSearchBtnEl.addEventListener('click', () => {
         searchInputEl.value = ''; 
-        clearSearchBtnEl.style.display = 'none'; 
+        // clearSearchBtnEl.style.display = 'none'; 
+        clearSearchBtnEl.style.visibility = 'hidden';
         performSearch(); 
     });
 }
@@ -158,8 +162,9 @@ export async function loadTopLevelDirectories(searchTerm = null) {
     directoryListEl.innerHTML = '<div class="loading-placeholder">Đang tải danh sách album...</div>';
 
     const isSearching = searchTerm !== null && searchTerm !== '';
-    searchInputEl.value = searchTerm || '';
-    clearSearchBtnEl.style.display = isSearching ? 'inline-block' : 'none';
+    // searchInputEl.value = searchTerm || ''; // REMOVED - This was likely causing search input flicker
+    // clearSearchBtnEl.style.display = isSearching ? 'inline-block' : 'none';
+    clearSearchBtnEl.style.visibility = isSearching ? 'visible' : 'hidden';
 
     if (searchAbortController) {
         searchAbortController.abort(); // Abort previous search if any
@@ -179,7 +184,7 @@ export async function loadTopLevelDirectories(searchTerm = null) {
         console.log('[uiDirectoryView] API response for list_files:', responseData);
 
         // Clear the placeholder only after API response, before rendering or showing API error
-        directoryListEl.innerHTML = ''; 
+        // directoryListEl.innerHTML = ''; // REMOVED THIS LINE - THIS WAS LIKELY CAUSING FLICKER
 
         if (responseData.status === 'error' && responseData.isAbortError) {
             console.log('[uiDirectoryView] Search aborted by user (request was cancelled by a new one).');
