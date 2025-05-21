@@ -44,11 +44,14 @@
     *   `logs/`: Thư mục chứa file log ứng dụng.
 *   **Tác vụ nền (Cron/Scheduled Tasks):**
     *   `worker_cache.php`: Script chạy nền (worker) để xử lý các yêu cầu tạo thumbnail kích thước lớn (ảnh và video) một cách bất đồng bộ. Lấy các job từ bảng `cache_jobs`.
+    *   `worker_zip.php`: Script chạy nền (worker) để xử lý các yêu cầu tạo file ZIP một cách bất đồng bộ. Lấy các job từ bảng `zip_jobs`.
     *   `cron_cache_manager.php`: Script chạy theo lịch (cron job) để:
         *   Dọn dẹp các file thumbnail "mồ côi" (không có ảnh gốc tương ứng) trong thư mục cache.
         *   **Quan trọng:** Đã thêm bước kiểm tra an toàn để ngăn chặn việc xóa toàn bộ cache nếu script không tìm thấy bất kỳ file ảnh gốc hợp lệ nào (do lỗi cấu hình, thư mục nguồn bị ngắt kết nối, v.v.).
     *   `cron_log_cleaner.php`: Script chạy theo lịch để dọn dẹp các file log cũ.
-    *   `run_cache_cleanup.bat`: Ví dụ file batch để chạy các script cron trên Windows.
+    *   `cron_zip_cleanup.php`: Script chạy theo lịch để tự động xóa các file ZIP đã được tải xuống sau một khoảng thời gian nhất định (ví dụ: 5 phút) nhằm giải phóng dung lượng ổ cứng.
+    *   `run_cache_cleanup.bat`: Ví dụ file batch để chạy các script cron trên Windows. (Lưu ý: Nên cập nhật file này để bao gồm cả `cron_zip_cleanup.php` nếu sử dụng)
+    *   `setup_workers_schedule.bat`: File batch để thiết lập các tác vụ theo lịch trên Windows cho tất cả các worker và cron job cần thiết, bao gồm cả `cron_zip_cleanup.php`.
 
 ## 4. Luồng hoạt động & Khái niệm chính
 
@@ -74,6 +77,14 @@
     *   Thumbnail cho video được tự động tạo bằng FFmpeg (lấy frame từ giữa video) thông qua `worker_cache.php` cho kích thước lớn và "on-the-fly" cho kích thước nhỏ.
     *   Video được phát trực tiếp trong PhotoSwipe lightbox sử dụng thẻ HTML5 `<video>`, với hỗ trợ streaming (range requests) từ API.
     *   Người dùng có thể tải video trực tiếp từ giao diện PhotoSwipe hoặc thông qua chức năng chọn nhiều mục.
+*   **Đã triển khai bảng điều khiển (panel) hàng đợi ZIP bất đồng bộ trên giao diện người dùng, cung cấp phản hồi trực quan về nhiều công việc nén ZIP cùng lúc.**
+*   **Đã triển khai cơ chế tự động xóa file ZIP sau khi người dùng tải về được một khoảng thời gian (mặc định 5 phút) để tránh làm đầy ổ cứng, sử dụng script `cron_zip_cleanup.php`.**
+*   **Đã khắc phục các vấn đề CSS và UI (Giao diện Người dùng):**
+    *   **Giao diện Thư viện Ảnh Chính:** Đã giải quyết sự không nhất quán về chiều rộng hiển thị lưới ảnh giữa trang chủ và chế độ xem thư mục con. Hiện tại, trang chủ có giao diện "đóng hộp" (boxed-in) và chế độ xem thư mục con/album có giao diện toàn chiều rộng (full-width) như mong muốn, thông qua việc sử dụng lớp `gallery-view-active` trên `<body>` và CSS điều kiện.
+*   **Tính năng Chọn nhiều ảnh/video để tải về cho Khách hàng (Đã triển khai):**
+    *   (Hoàn thành) Cho phép khách hàng chọn nhiều ảnh/video trong một album thông qua `js/selectionManager.js`.
+    *   (Hoàn thành) Cung cấp nút "Tải về các mục đã chọn" để tạo file ZIP bất đồng bộ (`request_zip`, theo dõi qua `get_zip_status`) chứa các mục đó. Người dùng tải về qua `download_final_zip`.
+    *   (Hoàn thành) Các file ZIP được tạo sẽ tự động bị xóa sau một khoảng thời gian nhất định sau khi được tải xuống để tiết kiệm dung lượng lưu trữ.
 
 ## 5. Tình trạng Hiện tại
 
@@ -169,6 +180,7 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
 *   **Tính năng Chọn nhiều ảnh/video để tải về cho Khách hàng (Đã triển khai):**
     *   (Hoàn thành) Cho phép khách hàng chọn nhiều ảnh/video trong một album thông qua `js/selectionManager.js`.
     *   (Hoàn thành) Cung cấp nút "Tải về các mục đã chọn" để tạo file ZIP bất đồng bộ (`request_zip`, theo dõi qua `get_zip_status`) chứa các mục đó. Người dùng tải về qua `download_final_zip`.
+    *   (Hoàn thành) Các file ZIP được tạo sẽ tự động bị xóa sau một khoảng thời gian nhất định sau khi được tải xuống để tiết kiệm dung lượng lưu trữ.
 
 *   **Tối ưu Hiệu suất (Tiếp tục):**
     *   Đánh giá và tối ưu hiệu suất cho việc tạo preview RAW, thumbnail video.

@@ -440,7 +440,12 @@ while ($running) {
                     // +++ BEGIN DEBUG LOGGING +++
                     error_log_worker($job, "Preparing to mark job as completed. SQL: {$sql_complete}");
                     error_log_worker($job, "Params for completion: [zip_filename => '{$final_zip_filename}', final_zip_path => '{$zip_filepath}', zip_filesize => {$zip_filesize}, job_id => {$job_id}]");
-                    // +++ END DEBUG LOGGING +++
+                    // +++ ADDED SAFETY CHECK LOG +++
+                    if (empty($zip_filepath)) {
+                        error_log_worker($job, "CRITICAL WARNING: $zip_filepath is EMPTY just before final DB update for job completion. This will result in an empty final_zip_path.");
+                    }
+                    // +++ END ADDED SAFETY CHECK LOG +++
+                    // +++ END DEBUG LOGGING ---
                     
                     if ($stmt_complete->execute([$final_zip_filename, $zip_filepath, $zip_filesize, $job_id])) {
                         if ($stmt_complete->rowCount() > 0) {
