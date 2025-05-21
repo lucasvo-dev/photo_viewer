@@ -557,7 +557,8 @@ switch ($action) {
         error_log("[API download_final_zip] ZIP_CACHE_DIR_API defined as: " . ZIP_CACHE_DIR_API);
 
         try {
-            $stmt = $pdo->prepare("SELECT source_path, status, zip_filename FROM zip_jobs WHERE job_token = ?");
+            // MODIFICATION: Fetch items_json as well to determine parent folder for multi-select
+            $stmt = $pdo->prepare("SELECT source_path, status, zip_filename, items_json FROM zip_jobs WHERE job_token = ?");
             $stmt->execute([$job_token]);
             $job = $stmt->fetch(PDO::FETCH_ASSOC);
 
@@ -637,6 +638,98 @@ switch ($action) {
                 }
                 fclose($file_handle);
                 error_log("[API download_final_zip] Finished streaming file. Approximate bytes handled by loop: {$bytes_sent}");
+
+                // --- BEGIN MODIFICATION: Record download timestamp ---
+                try {
+                    $stmt_update_download_time = $pdo->prepare(
+                        "UPDATE zip_jobs SET downloaded_at = CURRENT_TIMESTAMP, status = 'downloaded' " .
+                        "WHERE job_token = ? AND downloaded_at IS NULL AND status = 'completed'"
+                    );
+                    $stmt_update_download_time->execute([$job_token]);
+                    if ($stmt_update_download_time->rowCount() > 0) {
+                        error_log("[API download_final_zip] Recorded first download timestamp for job_token: {$job_token}");
+                    } else {
+                        // This might happen if downloaded_at was already set, or status wasn't 'completed'
+                        error_log("[API download_final_zip] Did not update download_at for job_token: {$job_token}. Already set, or status not 'completed', or job gone. Row count: " . $stmt_update_download_time->rowCount());
+                    }
+                } catch (PDOException $e) {
+                    error_log("[API download_final_zip] PDOException while trying to update downloaded_at for job_token {$job_token}: " . $e->getMessage());
+                    // Do not fail the download itself if this update fails.
+                }
+                // --- END MODIFICATION ---
+
+                // --- BEGIN MODIFICATION: Increment folder_stats.downloads for single folder ZIPs ---
+                if (!$is_multi_selected && !empty($job['source_path'])) {
+                    try {
+                        $original_folder_path = $job['source_path'];
+                        $path_parts = explode('/', $original_folder_path);
+                        $folder_for_stats = $original_folder_path; // Default to original
+
+                        if (count($path_parts) > 2) { // e.g., source_key/AlbumName/Subfolder
+                            $folder_for_stats = $path_parts[0] . '/' . $path_parts[1];
+                            error_log("[API download_final_zip STATS_UPDATE] SINGLE FOLDER: Normalized '{$original_folder_path}' to '{$folder_for_stats}' for stats.");
+                        } else {
+                            error_log("[API download_final_zip STATS_UPDATE] SINGLE FOLDER: Path '{$original_folder_path}' is already top-level or invalid for deeper normalization. Using as is for stats.");
+                        }
+                        
+                        error_log("[API download_final_zip STATS_UPDATE] Attempting to update folder_stats for SINGLE FOLDER. Effective Path for Stats: '{$folder_for_stats}'");
+                        $sql_update_folder_downloads = 
+                            "INSERT INTO folder_stats (folder_name, folder_path, downloads, views) " .
+                            "VALUES (?, ?, 1, 0) " .
+                            "ON DUPLICATE KEY UPDATE downloads = downloads + 1";
+                        $stmt_update_folder_downloads = $pdo->prepare($sql_update_folder_downloads);
+                        $stmt_update_folder_downloads->execute([$folder_for_stats, $folder_for_stats]);
+                        
+                        if ($stmt_update_folder_downloads->rowCount() > 0) {
+                            error_log("[API download_final_zip] Incremented download count for folder: {$folder_for_stats}");
+                        } else {
+                            error_log("[API download_final_zip] Failed to increment or no change in download count for folder: {$folder_for_stats}. Might be an issue with INSERT/UPDATE logic or folder_name not matching.");
+                        }
+                    } catch (PDOException $e) {
+                        error_log("[API download_final_zip] PDOException while trying to update folder_stats.downloads for original folder {$job['source_path']}: " . $e->getMessage());
+                    }
+                } elseif ($is_multi_selected && !empty($job['items_json'])) {
+                    $items = json_decode($job['items_json'], true);
+                    if (is_array($items) && !empty($items)) {
+                        $first_file_path = $items[0];
+                        $derived_parent_folder_path = dirname($first_file_path); // e.g., source_key/AlbumName or source_key/AlbumName/Subfolder
+
+                        $folder_for_stats_multi = $derived_parent_folder_path; // Default
+                        $path_parts_multi = explode('/', $derived_parent_folder_path);
+
+                        if (count($path_parts_multi) > 2) { // e.g., source_key/AlbumName/Subfolder
+                            $folder_for_stats_multi = $path_parts_multi[0] . '/' . $path_parts_multi[1];
+                            error_log("[API download_final_zip STATS_UPDATE] MULTI-SELECT: Normalized '{$derived_parent_folder_path}' to '{$folder_for_stats_multi}' for stats.");
+                        } else {
+                             error_log("[API download_final_zip STATS_UPDATE] MULTI-SELECT: Path '{$derived_parent_folder_path}' is already top-level or invalid for deeper normalization. Using as is for stats.");
+                        }
+
+                        if ($folder_for_stats_multi && $folder_for_stats_multi !== '.') {
+                            try {
+                                error_log("[API download_final_zip STATS_UPDATE] Attempting to update folder_stats for MULTI-SELECT. Original first item: '{$first_file_path}', Derived parent path: '{$derived_parent_folder_path}', Effective Path for Stats: '{$folder_for_stats_multi}'");
+                                $sql_update_folder_downloads = 
+                                    "INSERT INTO folder_stats (folder_name, folder_path, downloads, views) " .
+                                    "VALUES (?, ?, 1, 0) " .
+                                    "ON DUPLICATE KEY UPDATE downloads = downloads + 1";
+                                $stmt_update_folder_downloads = $pdo->prepare($sql_update_folder_downloads);
+                                $stmt_update_folder_downloads->execute([$folder_for_stats_multi, $folder_for_stats_multi]);
+                                if ($stmt_update_folder_downloads->rowCount() > 0) {
+                                    error_log("[API download_final_zip] Incremented download count for multi-select parent folder: {$folder_for_stats_multi}");
+                                } else {
+                                    error_log("[API download_final_zip] Failed to increment or no change for multi-select parent folder: {$folder_for_stats_multi}.");
+                                }
+                            } catch (PDOException $e) {
+                                error_log("[API download_final_zip] PDOException for multi-select folder_stats.downloads folder {$folder_for_stats_multi}: " . $e->getMessage());
+                            }
+                        } else {
+                             error_log("[API download_final_zip] Could not determine valid top-level parent folder for multi-select from path: {$first_file_path}. Derived parent: '{$derived_parent_folder_path}'");
+                        }
+                    } else {
+                        error_log("[API download_final_zip] items_json was empty or not an array for multi_select job_token: {$job_token}");
+                    }
+                }
+                // --- END MODIFICATION ---
+
                 exit;
             } else {
                 error_log("[API download_final_zip] File NOT found or NOT readable. Resolved Path: '" . ($zip_filepath ?: 'false') . "'. is_file: " . (is_file($zip_filepath) ? 'yes' : 'no') . ", is_readable: " . (is_readable($zip_filepath) ? 'yes' : 'no'));
@@ -887,7 +980,6 @@ switch ($action) {
                         // Log this, as it will likely cause ERR_CONTENT_LENGTH_MISMATCH on client
                         error_log("[get_image Range Request] Content-Length Mismatch: Expected {$length} but sent {$bytes_sent} for file {$source_absolute_path}, range {$start}-{$end}");
                         // It's hard to recover here as headers (including Content-Length) are already sent.
-                        // The client will likely experience an error.
                     }
 
                 } else {

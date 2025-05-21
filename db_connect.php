@@ -322,7 +322,7 @@ try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS zip_jobs (
             token VARCHAR(255) PRIMARY KEY,
             source_path TEXT NOT NULL,
-            status VARCHAR(50) NOT NULL DEFAULT 'pending', /* pending, processing, completed, failed, downloaded */
+            status VARCHAR(50) NOT NULL DEFAULT 'pending', /* pending, processing, completed, failed, downloaded, cleaned */
             progress INT DEFAULT 0, /* 0-100 */
             file_count INT DEFAULT 0,
             total_size BIGINT DEFAULT 0,
@@ -331,7 +331,8 @@ try {
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             items_json TEXT NULL, /* JSON array of selected file paths if source_path is _multiple_selected_ */
-            result_message TEXT NULL /* Store detailed success/error message from worker */
+            result_message TEXT NULL, /* Store detailed success/error message from worker */
+            downloaded_at TIMESTAMP NULL DEFAULT NULL /* Timestamp of first successful download */
         )");
 
         // Create jet_image_picks table for Jet Culling App
@@ -386,6 +387,8 @@ try {
         add_column_if_not_exists($pdo, 'zip_jobs', 'items_json', 'TEXT DEFAULT NULL');
         error_log('[db_connect.php] Checking/adding result_message column to zip_jobs...');
         add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT NULL DEFAULT NULL');
+        error_log("[db_connect.php] Checking/adding downloaded_at column to zip_jobs...");
+        add_column_if_not_exists($pdo, 'zip_jobs', 'downloaded_at', 'TIMESTAMP NULL DEFAULT NULL');
         error_log("[db_connect.php] Checking/adding result_message column to zip_jobs...");
 
     }

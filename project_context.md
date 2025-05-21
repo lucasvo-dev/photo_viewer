@@ -33,7 +33,7 @@
     *   `api.php`: **Điểm vào chính (Entry Point)** cho tất cả các yêu cầu API. Chỉ chứa logic `require` các file xử lý khác.
     *   `api/init.php`: Khởi tạo cấu hình lỗi, session, gọi `db_connect.php`, định nghĩa hằng số và biến API toàn cục.
     *   `api/helpers.php`: Chứa các hàm hỗ trợ chung (ví dụ: `json_response()`, `validate_source_and_path()`, `check_folder_access()`, `create_thumbnail()`, `create_video_thumbnail()`, `find_first_image_in_source()`).
-    *   `api/actions_public.php`: Xử lý các action công khai (ví dụ: `list_files` - nhận diện ảnh/video, `get_thumbnail` - cho ảnh/video, `get_image` - stream ảnh/video hỗ trợ range requests, `request_zip`, `get_zip_status`, `download_final_zip`, `authenticate`).
+    *   `api/actions_public.php`: Xử lý các action công khai (ví dụ: `list_files` - nhận diện ảnh/video, `get_thumbnail` - cho ảnh/video, `get_image` - stream ảnh/video hỗ trợ range requests, `get_image_metadata` (lấy siêu dữ liệu cơ bản như kích thước, loại của ảnh/video, chủ yếu từ cache), `request_zip`, `get_zip_status`, `download_final_zip`, `authenticate`).
     *   `api/actions_admin.php`: Xử lý các action yêu cầu quyền admin (ví dụ: `admin_login`, `admin_logout`, `admin_list_folders`, `admin_set_password`, `admin_remove_password`).
     *   `api/actions_jet.php`: Xử lý các action cho Jet Culling Workspace (ví dụ: `jet_list_images`, `jet_update_pick_status`).
 *   **Cấu hình & Dữ liệu:**
@@ -221,6 +221,13 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
         *   **Trạng thái:** Hoàn thành. Hệ thống hiện tại sử dụng `fetchDataApi` (trong `js/apiService.js`) với cấu trúc response chuẩn. Các lỗi từ API call do người dùng khởi tạo được hiển thị qua `showModalWithMessage`. Các lỗi từ tác vụ nền (ví dụ: polling ZIP status) được phản ánh trong UI chuyên biệt của chúng (ví dụ: ZIP panel) để tránh làm phiền người dùng bằng modal liên tục. Cách tiếp cận này được đánh giá là nhất quán và phù hợp.
 
 ## Thay đổi gần đây (Latest Changes)
+
+*   **2025-05-19 (Bạn & AI):**
+    *   **Nâng cao API Danh sách Tệp và Metadata Ảnh/Video:**
+        *   API `list_files` (`api/actions_public.php`) được cập nhật để tự động truy xuất và bao gồm kích thước (chiều rộng, chiều cao) cho các mục ảnh và video trong phản hồi. Hệ thống ưu tiên lấy dữ liệu này từ các bản ghi hoàn chỉnh trong bảng `cache_jobs`. Riêng đối với ảnh, nếu thông tin không có sẵn trong cache, API sẽ cố gắng đọc kích thước trực tiếp từ tệp gốc. Cải tiến này giúp phía client hiển thị thông tin với độ chính xác cao hơn và tối ưu hóa việc tính toán layout.
+        *   Một endpoint API mới, `get_image_metadata`, đã được thêm vào `api/actions_public.php`. Endpoint này cho phép truy vấn siêu dữ liệu của một tệp ảnh hoặc video cụ thể, bao gồm đường dẫn, tên, loại tệp, và kích thước (chiều rộng, chiều cao). Thông tin kích thước cũng được ưu tiên lấy từ `cache_jobs`. API này đóng vai trò quan trọng cho các thư viện như PhotoSwipe và các thành phần giao diện người dùng khác cần thông tin kích thước trước khi hiển thị media.
+        *   Trong `api/actions_public.php` (action `get_image`): Đã xác nhận và đảm bảo `session_write_close()` được gọi trước khi bắt đầu quá trình stream file. Việc này giúp cải thiện đáng kể hiệu suất và tránh tình trạng khóa session kéo dài, đặc biệt quan trọng khi truyền tải các tệp media lớn.
+        *   Trong `api/actions_public.php` (action `download_final_zip`): Logic kiểm tra quyền truy cập đã được điều chỉnh. Cụ thể, đối với các tệp ZIP được tạo từ việc chọn nhiều tệp tin riêng lẻ (nhận diện qua `source_path` là `_multiple_selected_`), hệ thống sẽ không yêu cầu kiểm tra lại quyền truy cập của một "thư mục gốc" (vốn không áp dụng trong trường hợp này), giúp đảm bảo người dùng luôn có thể tải về các file ZIP này.
 
 *   **2025-05-18 (Bạn & AI):**
     *   **Tích hợp Chức năng Xem và Tải Video:**
