@@ -389,7 +389,12 @@ try {
         add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT NULL DEFAULT NULL');
         error_log("[db_connect.php] Checking/adding downloaded_at column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'downloaded_at', 'TIMESTAMP NULL DEFAULT NULL');
-        error_log("[db_connect.php] Checking/adding result_message column to zip_jobs...");
+        error_log("[db_connect.php] Checking/adding final_zip_path column to zip_jobs...");
+        add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_path', 'TEXT NULL DEFAULT NULL');
+        error_log("[db_connect.php] Checking/adding final_zip_name column to zip_jobs...");
+        add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_name', 'VARCHAR(255) NULL DEFAULT NULL');
+        error_log("[db_connect.php] Checking/adding total_size column to zip_jobs...");
+        add_column_if_not_exists($pdo, 'zip_jobs', 'total_size', 'BIGINT DEFAULT 0');
 
     }
 } catch (PDOException $e) {

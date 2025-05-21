@@ -425,14 +425,44 @@ while ($running) {
             while (!$update_final_status_success && $final_status_update_attempts < $max_final_status_update_retries) {
                 $final_status_update_attempts++;
                 try {
-                    $sql_complete = "UPDATE zip_jobs SET status = 'completed', zip_filename = ?, zip_filesize = ?, processed_files = total_files, current_file_processing = 'Completed', finished_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?";
+                    $sql_complete = "UPDATE zip_jobs SET " .
+                                    "status = 'completed', " .
+                                    "zip_filename = ?, " .
+                                    "final_zip_path = ?, " .
+                                    "zip_filesize = ?, " .
+                                    "processed_files = total_files, " .
+                                    "current_file_processing = 'Completed', " .
+                                    "finished_at = CURRENT_TIMESTAMP, " .
+                                    "updated_at = CURRENT_TIMESTAMP " .
+                                    "WHERE id = ?";
                     $stmt_complete = $pdo->prepare($sql_complete);
                     
-                    if ($stmt_complete->execute([$final_zip_filename, $zip_filesize, $job_id])) { // Use $final_zip_filename
+                    // +++ BEGIN DEBUG LOGGING +++
+                    error_log_worker($job, "Preparing to mark job as completed. SQL: {$sql_complete}");
+                    error_log_worker($job, "Params for completion: [zip_filename => '{$final_zip_filename}', final_zip_path => '{$zip_filepath}', zip_filesize => {$zip_filesize}, job_id => {$job_id}]");
+                    // +++ END DEBUG LOGGING +++
+                    
+                    if ($stmt_complete->execute([$final_zip_filename, $zip_filepath, $zip_filesize, $job_id])) {
                         if ($stmt_complete->rowCount() > 0) {
                             error_log_worker($job, "Job marked as 'completed' after {$final_status_update_attempts} attempt(s).");
                             echo_worker_status($job, "Job marked as 'completed'.");
                             $update_final_status_success = true;
+
+                            // +++ BEGIN READ BACK FOR DEBUG +++
+                            try {
+                                $stmt_read_back = $pdo->prepare("SELECT id, status, zip_filename, final_zip_path, final_zip_name, zip_filesize, downloaded_at FROM zip_jobs WHERE id = ?");
+                                $stmt_read_back->execute([$job_id]);
+                                $read_back_row = $stmt_read_back->fetch(PDO::FETCH_ASSOC);
+                                if ($read_back_row) {
+                                    error_log_worker($job, "READ BACK after update: " . print_r($read_back_row, true));
+                                } else {
+                                    error_log_worker($job, "READ BACK after update: Failed to fetch row for ID {$job_id}.");
+                                }
+                            } catch (PDOException $e_read) {
+                                error_log_worker($job, "READ BACK after update: PDOException: " . $e_read->getMessage());
+                            }
+                            // +++ END READ BACK FOR DEBUG +++
+
                         } else {
                             error_log_worker($job, "Attempt {$final_status_update_attempts}: 'completed' status update SQL execute OK, but rowCount is 0. Job ID: {$job_id}. Job might be gone or already completed by another process.");
                             // If rowCount is 0, it implies the WHERE id = ? condition didn't match, or the status was already what we tried to set it to.

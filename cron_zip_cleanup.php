@@ -55,19 +55,22 @@ echo "Cleanup interval: {$cleanup_interval_minutes} minutes after download.\n";
 
 // --- Main Logic ---
 try {
-    $sql_get_old_zips = 
-        "SELECT id, job_token, final_zip_name FROM zip_jobs " .
+    // For MySQL/MariaDB, use NOW() - INTERVAL X MINUTE
+    $cleanup_threshold_sql = "(NOW() - INTERVAL {$cleanup_interval_minutes} MINUTE)";
+
+    $sql_get_old_zips =
+        "SELECT id, job_token, final_zip_path, downloaded_at FROM zip_jobs " .
         "WHERE status = 'downloaded' AND downloaded_at IS NOT NULL " .
-        "AND downloaded_at < (NOW() - INTERVAL {$cleanup_interval_minutes} MINUTE)";
+        "AND downloaded_at < {$cleanup_threshold_sql}";
     
-    // For SQLite, the equivalent of NOW() - INTERVAL X MINUTE is DATETIME('now', '-X minutes')
-    // However, db_connect.php shows this is a MySQL project.
-    // If it were SQLite, the query would be:
-    // "AND downloaded_at < DATETIME('now', '-{$cleanup_interval_minutes} minutes')";
+    error_log("[Cron ZIP Cleanup] Executing SQL to find jobs: " . $sql_get_old_zips);
+    echo "Executing SQL: {$sql_get_old_zips}\n";
 
     $stmt_get_zips = $pdo->prepare($sql_get_old_zips);
     $stmt_get_zips->execute();
     $jobs_to_cleanup = $stmt_get_zips->fetchAll(PDO::FETCH_ASSOC);
+
+    error_log("[Cron ZIP Cleanup] Found " . count($jobs_to_cleanup) . " ZIP job(s) to process for cleanup.");
 
     if (empty($jobs_to_cleanup)) {
         echo "No ZIP files found ready for cleanup.\n";
@@ -81,59 +84,105 @@ try {
     foreach ($jobs_to_cleanup as $job) {
         $job_id = $job['id'];
         $job_token = $job['job_token'];
-        $zip_filename = $job['final_zip_name'];
+        $zip_filepath_from_db = $job['final_zip_path'];
+        $downloaded_at_from_db = $job['downloaded_at'];
 
-        if (empty($zip_filename)) {
-            error_log("[Cron ZIP Cleanup] Job ID {$job_id} (Token: {$job_token}) has status 'downloaded' but zip_filename is empty. Skipping file deletion, attempting to delete DB record.");
-            // Proceed to delete DB record as the file reference is missing anyway
-        } else {
-            $zip_filepath = realpath(ZIP_CACHE_DIR . $zip_filename);
+        error_log("[Cron ZIP Cleanup] Processing Job ID: {$job_id}, Token: {$job_token}, Downloaded At: {$downloaded_at_from_db}, Final Zip Path: '{$zip_filepath_from_db}'");
 
-            if ($zip_filepath && is_file($zip_filepath)) {
-                echo "Attempting to delete ZIP file: {$zip_filepath} for job token {$job_token}\n";
-                if (unlink($zip_filepath)) {
-                    echo "Successfully deleted ZIP file: {$zip_filepath}\n";
-                    error_log("[Cron ZIP Cleanup] Successfully deleted ZIP file: {$zip_filepath} for job token {$job_token}");
-                } else {
-                    $error_count++;
-                    $error_message = "Failed to delete ZIP file: {$zip_filepath} for job token {$job_token}. Check permissions.";
-                    echo "ERROR: {$error_message}\n";
-                    error_log("[Cron ZIP Cleanup] ERROR: {$error_message}");
-                    // Don't delete the DB record if file deletion failed, so we can retry or investigate
-                    continue; 
-                }
-            } else {
-                echo "ZIP file not found or path invalid for job token {$job_token}: {$zip_filename} (Resolved: " . ($zip_filepath ?: 'false') . "). Assuming already deleted or moved.\n";
-                error_log("[Cron ZIP Cleanup] ZIP file not found for job token {$job_token}: {$zip_filename}. Path: " . ZIP_CACHE_DIR . $zip_filename . ". Resolved: " . ($zip_filepath ?: 'false') . ". Proceeding to delete DB record.");
-            }
-        }
-
-        // Delete the job record from the database if file is deleted or was missing
-        try {
-            $stmt_delete_job = $pdo->prepare("DELETE FROM zip_jobs WHERE id = ?");
-            if ($stmt_delete_job->execute([$job_id])) {
-                if ($stmt_delete_job->rowCount() > 0) {
-                    echo "Successfully deleted job record ID {$job_id} (Token: {$job_token}) from database.\n";
-                    error_log("[Cron ZIP Cleanup] Successfully deleted job record ID {$job_id} (Token: {$job_token}) from database.");
+        if (empty($zip_filepath_from_db)) {
+            error_log("[Cron ZIP Cleanup] Job ID {$job_id} (Token: {$job_token}) has status 'downloaded' but final_zip_path is empty. Skipping file deletion, attempting to update status to 'cleaned'.");
+            // Try to mark as cleaned even if path is missing, to prevent reprocessing
+            try {
+                $stmt_mark_cleaned = $pdo->prepare("UPDATE zip_jobs SET status = 'cleaned' WHERE id = ? AND status = 'downloaded'");
+                if ($stmt_mark_cleaned->execute([$job_id]) && $stmt_mark_cleaned->rowCount() > 0) {
+                    echo "Marked job ID {$job_id} as 'cleaned' due to missing final_zip_path.\n";
+                    error_log("[Cron ZIP Cleanup] Marked job ID {$job_id} (Token: {$job_token}) as 'cleaned' due to missing final_zip_path.");
                     $cleaned_count++;
                 } else {
-                     // This could happen if another process deleted it in the meantime
-                    echo "Job record ID {$job_id} (Token: {$job_token}) already deleted or not found during delete attempt.\n";
-                    error_log("[Cron ZIP Cleanup] Job record ID {$job_id} (Token: {$job_token}) already deleted or not found during delete attempt (rowCount 0).");
-                    // If rowCount is 0 but execute was true, it's not a fatal error for this job, count as cleaned.
-                    $cleaned_count++; 
+                    error_log("[Cron ZIP Cleanup] Failed to mark job ID {$job_id} (Token: {$job_token}) as 'cleaned' for missing path or already cleaned.");
+                     // If it failed to update, it might be already cleaned or another issue. Log and continue.
+                }
+            } catch (PDOException $e) {
+                error_log("[Cron ZIP Cleanup] PDOException while trying to mark job ID {$job_id} (Token: {$job_token}) as 'cleaned' for missing path: " . $e->getMessage());
+            }
+            continue; // Skip to next job
+        } 
+
+        // $zip_filepath_from_db should be the absolute path stored by the worker.
+        // No need to prepend ZIP_CACHE_DIR if final_zip_path is indeed the full absolute path.
+        // Let's assume final_zip_path IS the full path as intended.
+        $zip_filepath_to_delete = $zip_filepath_from_db; 
+
+        error_log("[Cron ZIP Cleanup] Checking file: '{$zip_filepath_to_delete}' for job token {$job_token}");
+
+        if (is_file($zip_filepath_to_delete) && is_readable($zip_filepath_to_delete)) { // Added readable check for safety
+            echo "Attempting to delete ZIP file: {$zip_filepath_to_delete} for job token {$job_token}\n";
+            error_log("[Cron ZIP Cleanup] Attempting to delete ZIP file: {$zip_filepath_to_delete} for job token {$job_token}");
+            if (unlink($zip_filepath_to_delete)) {
+                echo "Successfully deleted ZIP file: {$zip_filepath_to_delete}\n";
+                error_log("[Cron ZIP Cleanup] Successfully deleted ZIP file: {$zip_filepath_to_delete} for job token {$job_token}");
+                // File deleted, now update status to 'cleaned' instead of deleting record
+                try {
+                    $stmt_mark_cleaned = $pdo->prepare("UPDATE zip_jobs SET status = 'cleaned' WHERE id = ? AND status = 'downloaded'");
+                    if ($stmt_mark_cleaned->execute([$job_id]) && $stmt_mark_cleaned->rowCount() > 0) {
+                        echo "Successfully marked job ID {$job_id} (Token: {$job_token}) as 'cleaned' in database.\n";
+                        error_log("[Cron ZIP Cleanup] Successfully marked job ID {$job_id} (Token: {$job_token}) as 'cleaned' in database.");
+                        $cleaned_count++;
+                    } else {
+                        $error_count++;
+                        $db_error_message = "Failed to mark job ID {$job_id} (Token: {$job_token}) as 'cleaned' in database (or already cleaned).";
+                        echo "ERROR: {$db_error_message}\n";
+                        error_log("[Cron ZIP Cleanup] ERROR: {$db_error_message} - SQL Error: " . print_r($stmt_mark_cleaned->errorInfo(), true));
+                    }
+                } catch (PDOException $e) {
+                    $error_count++;
+                    $pdo_error_message = "PDOException while marking job ID {$job_id} (Token: {$job_token}) as 'cleaned': " . $e->getMessage();
+                    echo "ERROR: {$pdo_error_message}\n";
+                    error_log("[Cron ZIP Cleanup] ERROR: {$pdo_error_message}");
                 }
             } else {
                 $error_count++;
-                $db_error_message = "Failed to delete job record ID {$job_id} (Token: {$job_token}) from database.";
-                echo "ERROR: {$db_error_message}\n";
-                error_log("[Cron ZIP Cleanup] ERROR: {$db_error_message} - SQL Error: " . print_r($stmt_delete_job->errorInfo(), true));
+                $error_message = "Failed to delete ZIP file (unlink failed): {$zip_filepath_to_delete} for job token {$job_token}. Check permissions.";
+                echo "ERROR: {$error_message}\n";
+                error_log("[Cron ZIP Cleanup] ERROR: {$error_message}");
+                // Do not mark as cleaned if file deletion failed, so we can retry or investigate
+                continue; 
             }
-        } catch (PDOException $e) {
-            $error_count++;
-            $pdo_error_message = "PDOException while deleting job record ID {$job_id} (Token: {$job_token}): " . $e->getMessage();
-            echo "ERROR: {$pdo_error_message}\n";
-            error_log("[Cron ZIP Cleanup] ERROR: {$pdo_error_message}");
+        } else {
+            // Log why the file was not found or not readable
+            if (!file_exists($zip_filepath_to_delete)) {
+                error_log("[Cron ZIP Cleanup] File does not exist: '{$zip_filepath_to_delete}'");
+            } else if (!is_file($zip_filepath_to_delete)) {
+                error_log("[Cron ZIP Cleanup] Path is not a file: '{$zip_filepath_to_delete}'");
+            } else if (!is_readable($zip_filepath_to_delete)) {
+                error_log("[Cron ZIP Cleanup] File is not readable: '{$zip_filepath_to_delete}' (check permissions)");
+            } else {
+                error_log("[Cron ZIP Cleanup] Unknown reason for is_file/is_readable returning false for: '{$zip_filepath_to_delete}'");
+            }
+
+            echo "ZIP file not found or not readable for job token {$job_token}: Path from DB '{$zip_filepath_from_db}'. Assuming already deleted or moved. Marking as cleaned.\n";
+            error_log("[Cron ZIP Cleanup] ZIP file not found or not readable for job token {$job_token}: Path from DB '{$zip_filepath_from_db}'. Assuming already deleted. Marking as cleaned.");
+            // File is not there, so mark the job as 'cleaned'
+            try {
+                $stmt_mark_cleaned_missing = $pdo->prepare("UPDATE zip_jobs SET status = 'cleaned' WHERE id = ? AND status = 'downloaded'");
+                if ($stmt_mark_cleaned_missing->execute([$job_id]) && $stmt_mark_cleaned_missing->rowCount() > 0) {
+                    echo "Successfully marked job ID {$job_id} (Token: {$job_token}) as 'cleaned' (file was missing).\n";
+                    error_log("[Cron ZIP Cleanup] Successfully marked job ID {$job_id} (Token: {$job_token}) as 'cleaned' (file was missing).");
+                    $cleaned_count++; 
+                } else {
+                    echo "Job ID {$job_id} (Token: {$job_token}) already cleaned or failed to mark as cleaned (file was missing).\n";
+                    error_log("[Cron ZIP Cleanup] Job ID {$job_id} (Token: {$job_token}) already cleaned or failed to mark as cleaned (file was missing, rowCount 0 or execute failed).");
+                    // If it failed to update, it might be another issue, but we assume it's okay for now if file is missing
+                    // Let's count it as cleaned to avoid loop, but this path indicates a potential inconsistency.
+                    if ($stmt_mark_cleaned_missing->rowCount() > 0) $cleaned_count++;
+                    else $error_count++; // If update failed, it's an error.
+                }
+            } catch (PDOException $e) {
+                $error_count++;
+                $pdo_error_message = "PDOException while marking missing file job ID {$job_id} (Token: {$job_token}) as 'cleaned': " . $e->getMessage();
+                echo "ERROR: {$pdo_error_message}\n";
+                error_log("[Cron ZIP Cleanup] ERROR: {$pdo_error_message}");
+            }
         }
         echo "----\n";
     }
