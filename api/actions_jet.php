@@ -159,6 +159,7 @@ switch ($jet_action) {
         error_log("[JET_GET_RAW_PREVIEW] Entered case.");
         $source_key = $_GET['source_key'] ?? null;
         $image_relative_path = $_GET['image_path'] ?? null; // e.g., 'folder/image.nef' or 'image.arw'
+        $requested_size = $_GET['size'] ?? 'preview'; // NEW: Optional size parameter, default to 'preview'
 
         if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
             error_log("[JET_GET_RAW_PREVIEW] Error: Invalid source key '{$source_key}'");
@@ -220,12 +221,20 @@ switch ($jet_action) {
 
         // Cache path construction
         // JET_PREVIEW_CACHE_ROOT / SIZE / source_key / relative_dir (if any) / filename.jpg
-        $cache_dir_path = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . JET_PREVIEW_SIZE . DIRECTORY_SEPARATOR . $source_key . DIRECTORY_SEPARATOR . dirname($clean_image_relative_path);
+
+        // Determine target size based on requested_size parameter
+        $target_size = JET_PREVIEW_SIZE; // Default to main preview size
+        if ($requested_size === 'filmstrip' && defined('JET_FILMSTRIP_THUMB_SIZE')) {
+            $target_size = JET_FILMSTRIP_THUMB_SIZE; // Use filmstrip size if requested and defined
+        }
+
+        $cache_dir_path = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . $target_size . DIRECTORY_SEPARATOR . $source_key . DIRECTORY_SEPARATOR . dirname($clean_image_relative_path);
         $cache_file_name = basename($clean_image_relative_path, '.' . $raw_extension) . '.jpg';
         $cached_preview_full_path = rtrim($cache_dir_path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $cache_file_name;
 
         error_log("[JET_GET_RAW_PREVIEW] RAW file: {$full_raw_file_path_realpath}");
         error_log("[JET_GET_RAW_PREVIEW] Cache path: {$cached_preview_full_path}");
+        error_log("[JET_GET_RAW_PREVIEW] Target size: {$target_size}"); // Log the determined size
 
         if (file_exists($cached_preview_full_path) && filesize($cached_preview_full_path) > 0) {
             error_log("[JET_GET_RAW_PREVIEW] Serving from cache: {$cached_preview_full_path}");
@@ -276,7 +285,8 @@ switch ($jet_action) {
 
         // Step 2: Convert temporary PPM to final JPG
         // Using > for resize, not \>
-        $magick_ppm_to_jpg_cmd = "\"{$magick_executable_path}\" convert {$escaped_temp_ppm_path} -resize {$preview_size}x{$preview_size}> -quality 85 {$escaped_final_cache_path} 2>&1";
+        // Update resize command to use $target_size
+        $magick_ppm_to_jpg_cmd = "\"{$magick_executable_path}\" convert {$escaped_temp_ppm_path} -resize {$target_size}x{$target_size}> -quality 85 {$escaped_final_cache_path} 2>&1";
         error_log("[JET_GET_RAW_PREVIEW] Executing Step 2 (PPM to JPG). CMD: {$magick_ppm_to_jpg_cmd}");
         $magick_output = shell_exec($magick_ppm_to_jpg_cmd);
         $trimmed_magick_output = is_string($magick_output) ? trim($magick_output) : '';

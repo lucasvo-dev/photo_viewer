@@ -415,104 +415,222 @@ body.jet-app-active {
 
 /* --- Jet Preview Overlay (Non-PhotoSwipe, custom for RAW previews) --- */
 /* This is for the #jet-preview-area */
-.jet-preview-overlay-container { /* This is the div made visible by JS inside #jet-preview-area */
+.jet-preview-overlay-container {
     position: fixed;
     top: 0;
     left: 0;
     width: 100%;
     height: 100%;
-    background-color: var(--jet-bg-preview-overlay);
-    z-index: 1000; /* Below loading indicator, above other content */
+    background-color: rgba(0, 0, 0, 0.9);
     display: flex;
-    flex-direction: column;
+    flex-direction: column; /* Arrange main preview, controls, and filmstrip vertically */
     align-items: center;
     justify-content: center;
-    padding: 15px;
+    z-index: 1000;
+    padding: 20px;
     box-sizing: border-box;
 }
-.jet-preview-overlay-container .jet-preview-controls-top {
+
+.jet-preview-controls-top {
+    width: 100%;
+    max-width: 1200px; /* Match max width of main content area */
     display: flex;
     justify-content: space-between;
     align-items: center;
-    width: 100%;
-    max-width: 1200px; /* Limit width of top controls */
-    padding: 0 10px 10px 10px; /* Padding for controls, not the overall overlay */
-    box-sizing: border-box;
-    color: var(--jet-text-secondary);
-    flex-shrink: 0;
+    margin-bottom: 10px;
+    color: #ccc; /* Light gray text */
+    font-size: 0.9em;
 }
-.jet-preview-overlay-container #jet-preview-image-name {
-    font-size: 1.1em;
-    text-align: left;
+
+#jet-preview-image-name {
     flex-grow: 1;
+    margin-right: 10px;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
-}
-.jet-preview-overlay-container .jet-preview-image-container {
-    flex-grow: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    overflow: hidden; /* Handles large images gracefully */
-    position: relative; /* For nav buttons */
-}
-.jet-preview-overlay-container #jet-preview-main-image {
-    max-width: 100%;
-    max-height: 100%;
-    display: block; /* Removes bottom space under img */
-    object-fit: contain; /* Scale image down to fit, preserving aspect ratio */
-    border-radius: 3px;
-    box-shadow: var(--jet-box-shadow-preview-image);
-}
-.jet-preview-overlay-container .jet-preview-controls-nav {
-    position: absolute;
-    top: 50%;
-    left: 0;
-    right: 0;
-    transform: translateY(-50%);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 0 10px; /* Padding for nav buttons from edge */
-    box-sizing: border-box;
-    pointer-events: none; /* Allow clicks to pass through to image if not on a button */
-}
-.jet-preview-overlay-container .jet-preview-controls-nav button {
-    pointer-events: all; /* Make sure buttons are clickable */
 }
 
-.jet-preview-overlay-container .nav-group-left,
-.jet-preview-overlay-container .nav-group-right {
-    display: flex;
-    gap: 10px;
-}
-
-.jet-preview-overlay-container button { /* General button style in preview */
-    background-color: var(--jet-bg-tertiary);
-    color: var(--jet-text-button);
-    border: 1px solid var(--jet-border-button);
-    padding: 8px 15px;
+.jet-preview-pick-button-base {
+     /* Base styles for the pick button */
+    background-color: rgba(255, 255, 255, 0.1);
+    border: 1px solid #555;
+    color: #ccc;
+    padding: 4px 8px;
     border-radius: 4px;
     cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-    font-size: 1em;
-    min-width: 80px; /* Ensure decent tap target */
+    font-size: 0.8em;
+    display: inline-flex;
+    align-items: center;
+    transition: background-color 0.2s ease;
 }
-.jet-preview-overlay-container button:hover {
-    background-color: var(--jet-bg-button-hover);
-    border-color: var(--jet-border-button-hover);
+
+.jet-preview-pick-button-base:hover {
+    background-color: rgba(255, 255, 255, 0.2);
 }
-.jet-preview-overlay-container #jet-preview-close-button {
-    /* Uses general button styles */
+
+#jet-preview-pick-color-indicator {
+    display: inline-block;
+    width: 12px;
+    height: 12px;
+    margin-left: 5px;
+    border-radius: 3px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    vertical-align: middle;
 }
-.jet-preview-overlay-container #jet-preview-close-button:hover {
-    background-color: var(--jet-bg-button-close-hover);
-    border-color: var(--jet-border-button-close-hover);
-    color: var(--jet-text-on-dark-accent);
+
+.picked-red #jet-preview-pick-color-indicator { background-color: red; border-color: red; }
+.picked-green #jet-preview-pick-color-indicator { background-color: green; border-color: green; }
+.picked-blue #jet-preview-pick-color-indicator { background-color: blue; border-color: blue; }
+.picked-grey #jet-preview-pick-color-indicator { background-color: grey; border-color: grey; }
+
+/* Style for the main image container */
+.jet-preview-image-container {
+    position: relative; /* For positioning nav buttons */
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    width: 100%;
+    flex-grow: 1; /* Allow image area to take available space */
+    max-height: calc(100vh - 120px); /* Adjust based on header/footer height */
+    margin-bottom: 10px; /* Space below the main image */
 }
-/* .jet-preview-overlay-container #jet-preview-pick-button.picked is handled by .picked-COLOR classes */
+
+#jet-preview-main-image {
+    display: block;
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+    /* Prevent selecting image text */
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.preview-load-error-message {
+    color: red;
+    text-align: center;
+    font-size: 1.1em;
+    padding: 20px;
+    border: 1px dashed red;
+}
+
+/* Navigation Buttons (Prev/Next) */
+.preview-nav-button {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
+    color: white;
+    border: none;
+    padding: 10px 15px;
+    font-size: 1.5em;
+    cursor: pointer;
+    z-index: 10;
+    transition: background-color 0.2s ease;
+}
+
+.preview-nav-button:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+}
+
+#jet-preview-prev-button {
+    left: 10px;
+}
+
+#jet-preview-next-button {
+    right: 10px;
+}
+
+/* NEW: Thumbnail Filmstrip Styles */
+#jet-thumbnail-filmstrip {
+    width: 100%;
+    max-width: 1200px; /* Match max width of main content area */
+    height: 100px; /* Fixed height for the filmstrip */
+    display: flex; /* Arrange thumbnails horizontally */
+    overflow-x: auto; /* Enable horizontal scrolling */
+    overflow-y: hidden; /* Hide vertical scrollbar */
+    align-items: center; /* Vertically align thumbnails */
+    padding: 5px 0; /* Padding top/bottom */
+    margin-top: 10px; /* Space above the filmstrip */
+    background-color: rgba(0, 0, 0, 0.3); /* Slightly darker background for the strip */
+    border-radius: 5px;
+    /* Custom scrollbar for webkit browsers */
+    scrollbar-width: thin;
+    scrollbar-color: #888 transparent; /* Thumb, Track */
+}
+
+#jet-thumbnail-filmstrip::-webkit-scrollbar {
+    height: 8px; /* Height of the horizontal scrollbar */
+}
+
+#jet-thumbnail-filmstrip::-webkit-scrollbar-track {
+    background: transparent; /* Transparent track */
+}
+
+#jet-thumbnail-filmstrip::-webkit-scrollbar-thumb {
+    background-color: #888; /* Gray thumb */
+    border-radius: 4px; /* Rounded thumb */
+    border: 2px solid transparent; /* Space around thumb */
+}
+
+/* NEW: Container for filmstrip thumbnail */
+.jet-filmstrip-thumb-container {
+    position: relative; /* Needed for absolute positioning of ::after */
+    height: 90px; /* Container height matches image height */
+    width: auto; /* Allow container to size with image */
+    margin: 0 5px; /* Space between containers */
+    cursor: pointer;
+    border: 2px solid transparent; /* Default border for container */
+    transition: border-color 0.2s ease, transform 0.1s ease;
+    box-sizing: border-box;
+    display: flex; /* Use flex to center image within container if needed */
+    align-items: center;
+    justify-content: center;
+}
+
+.jet-filmstrip-thumb-container:hover {
+     transform: scale(1.05); /* Slightly enlarge on hover */
+}
+
+.jet-filmstrip-thumb-container.active {
+    border-color: #007bff; /* Highlight color for active thumbnail container */
+}
+
+/* Style for the actual image inside the container */
+.jet-filmstrip-thumb-container .jet-filmstrip-thumb {
+    display: block; /* Remove extra space below image */
+    max-height: 100%; /* Image takes full height of container */
+    width: auto; /* Maintain aspect ratio */
+    object-fit: contain; /* Ensure image fits within container */
+    border-radius: 2px; /* Match container border radius */
+}
+
+/* NEW: Pick color indicator for filmstrip thumbnail CONTAINER */
+.jet-filmstrip-thumb-container::after {
+    content: '';
+    position: absolute;
+    bottom: 2px; /* Adjust position as needed */
+    right: 2px; /* Adjust position as needed */
+    width: 8px; /* Smaller size for filmstrip */
+    height: 8px; /* Smaller size for filmstrip */
+    border-radius: 2px; /* Slightly smaller radius */
+    border: 1px solid rgba(0, 0, 0, 0.3); /* Border for visibility */
+    box-sizing: border-box;
+    display: none; /* Hidden by default */
+    z-index: 2; /* Above the image */
+}
+
+.jet-filmstrip-thumb-container.picked-red::after,
+.jet-filmstrip-thumb-container.picked-green::after,
+.jet-filmstrip-thumb-container.picked-blue::after,
+.jet-filmstrip-thumb-container.picked-grey::after {
+    display: block; /* Show indicator if picked */
+}
+
+/* Use the same color variables as the grid flags */
+.jet-filmstrip-thumb-container.picked-red::after { background-color: var(--jet-color-picked-red); }
+.jet-filmstrip-thumb-container.picked-green::after { background-color: var(--jet-color-picked-green); }
+.jet-filmstrip-thumb-container.picked-blue::after { background-color: var(--jet-color-picked-blue); }
+.jet-filmstrip-thumb-container.picked-grey::after { background-color: var(--jet-color-picked-grey-flag); }
 
 /* Media Query for Mobile Layout of Filters */
 @media (max-width: 768px) {

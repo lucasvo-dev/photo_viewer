@@ -157,10 +157,7 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
 *   **Tính năng Lọc ảnh (Culling) cho Designer & Admin (Jet Culling Workspace - Phát triển Tiếp theo):**
     *   **Mục tiêu:** Cung cấp một công cụ mạnh mẽ và hiệu quả cho designer để duyệt và chọn lựa (cull) ảnh từ các bộ ảnh lớn, đặc biệt là ảnh RAW. Admin có thể xem lại và quản lý các lựa chọn này.
     *   **Các Tính năng Tiếp theo và Nâng cao (Beyond Current MVP):**
-        *   **Hiển thị Siêu dữ liệu Nâng cao:** Cho phép hiển thị thêm siêu dữ liệu EXIF quan trọng (ví dụ: thông số máy ảnh, ống kính, ISO, tốc độ màn trập) kèm theo ảnh xem trước trong lưới và chế độ xem chi tiết.
         *   **Cải thiện Zoom/Pan:** Hoàn thiện các tương tác nâng cao trong chế độ xem trước (ví dụ: zoom chi tiết hơn, pan mượt mà hơn) để kiểm tra độ nét hiệu quả.
-        *   **Đánh giá Sao (Star Ratings):** Triển khai hệ thống đánh giá từ 0-5 sao cho ảnh, lưu vào CSDL (`jet_image_picks` hoặc bảng mới) và tích hợp vào chức năng lọc/sắp xếp.
-        *   **Lọc/Sắp xếp Nâng cao:** Bổ sung các tùy chọn lọc và sắp xếp dựa trên siêu dữ liệu EXIF (ngày chụp chi tiết, thông số camera, v.v.) và đánh giá sao (nếu được triển khai).
         *   **Hợp tác Đa người dùng Chi tiết hơn:**
             *   Giao diện cho Admin để dễ dàng xem, so sánh và quản lý các lựa chọn (picks, ratings, colors) từ nhiều designer khác nhau trên cùng một bộ ảnh.
             *   Cung cấp thống kê chi tiết hơn về lựa chọn của từng designer.

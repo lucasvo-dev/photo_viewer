@@ -3,7 +3,7 @@
 
 return [
     // --- Database --- 
-    // 'db_path' => __DIR__ . '/database.sqlite', // Removed SQLite path
+    
     'type' => 'mysql',             // Added MySQL type
     'host' => 'localhost',         // Added MySQL host (default)
     'name' => 'photo_gallery',    // Added MySQL database name (default)
@@ -52,6 +52,7 @@ return [
     // --- Jet Culling App Specific Settings ---
     'jet_preview_cache_root' => __DIR__ . '/cache/jet_previews',
     'jet_preview_size' => 750, // Default width for grid previews in Jet app
+    'jet_filmstrip_thumb_size' => 120, // New: Size for thumbnails in the horizontal filmstrip
 
     // --- API Settings ---
     'pagination_limit' => 100, // Default limit for list_files pagination (API currently uses 100, JS uses 50)

@@ -588,7 +588,6 @@ document.addEventListener('DOMContentLoaded', () => {
                                                         // This needs to align with what the API (e.g. jet_list_folders_in_raw_source) returns for 'path'.
                                                         // The old `loadItemsForCurrentPath` built this progressively.
                                                         // The `jet_list_raw_sources` returns 'source_key/folder_name' as path for top level.
-                                                        // So, we should simplify. The item.path from API `jet_list_raw_sources` is `source_key/folder_name`.
                                                         // We need just the folder_name for the `path` param to `jet_list_images`.
                          const sourcePrefix = item.source_key + '/';
                          if (item.path.startsWith(sourcePrefix)) {
@@ -659,6 +658,173 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Image Preview Mode Functions ---
 
+    function closeImagePreview() {
+        const overlay = document.getElementById('jet-image-preview-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+        isPreviewOpen = false;
+        currentPreviewImageObject = null;
+        currentPreviewIndex = -1;
+        // Remove keyboard listeners
+        document.removeEventListener('keydown', handlePreviewKeyPress);
+    }
+
+    // Refactored: This function now only creates the overlay structure and sets up the initial main image
+    function renderPreviewOverlayStructure() { // No longer takes imageObject, just creates structure
+        // Remove existing overlay if any (shouldn't be necessary if state is managed)
+        const existingOverlay = document.getElementById('jet-image-preview-overlay');
+        if (existingOverlay) existingOverlay.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'jet-image-preview-overlay';
+        overlay.classList.add('jet-preview-overlay-container'); // For styling
+
+        // Image container
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'jet-preview-image-container';
+        
+        // Image element (source will be set later by updatePreviewImage)
+        const imgPreview = document.createElement('img');
+        imgPreview.id = 'jet-preview-main-image';
+        imgPreview.alt = 'Preview Image'; // Generic alt, will be updated
+        // imgPreview.onerror handled by updatePreviewImage
+        // imgPreview.onload handled by updatePreviewImage
+
+        imageContainer.appendChild(imgPreview);
+
+        // Close button
+        const closeButton = document.createElement('button');
+        closeButton.id = 'jet-preview-close-button';
+        closeButton.textContent = 'Đóng (Esc)'; // Close (Esc)
+        closeButton.addEventListener('click', closeImagePreview);
+
+        // Navigation buttons
+        const prevButton = document.createElement('button');
+        prevButton.id = 'jet-preview-prev-button';
+        prevButton.textContent = 'Trước (←)'; // Previous
+        // Event listeners added later
+
+        const nextButton = document.createElement('button');
+        nextButton.id = 'jet-preview-next-button';
+        nextButton.textContent = 'Sau (→)'; // Next
+        // Event listeners added later
+
+        // Pick button
+        const pickButton = document.createElement('button');
+        pickButton.id = 'jet-preview-pick-button';
+        pickButton.className = 'jet-preview-pick-button-base'; // Base class
+        pickButton.textContent = 'Màu: '; // Base text
+        const colorIndicator = document.createElement('span');
+        colorIndicator.id = 'jet-preview-pick-color-indicator';
+        pickButton.appendChild(colorIndicator);
+
+        // Info/Metadata area (placeholder)
+        const imageNameDisplay = document.createElement('div');
+        imageNameDisplay.id = 'jet-preview-image-name';
+        imageNameDisplay.textContent = ''; // Will be updated
+
+        // Assemble the top controls
+        const controlsTop = document.createElement('div');
+        controlsTop.className = 'jet-preview-controls-top';
+        controlsTop.appendChild(imageNameDisplay);
+        controlsTop.appendChild(pickButton); // Temporary placement
+        controlsTop.appendChild(closeButton);
+
+        // Assemble the nav controls
+         const controlsNav = document.createElement('div');
+        controlsNav.className = 'jet-preview-controls-nav';
+        // Append nav buttons later
+
+        // NEW: Append navigation buttons to controlsNav
+        controlsNav.appendChild(prevButton);
+        controlsNav.appendChild(nextButton);
+
+        // Container for horizontal thumbnail filmstrip
+        const thumbnailFilmstrip = document.createElement('div');
+        thumbnailFilmstrip.id = 'jet-thumbnail-filmstrip';
+        // Filmstrip content will be added later
+
+        // Append major sections to overlay
+        overlay.appendChild(controlsTop);
+        overlay.appendChild(imageContainer);
+        overlay.appendChild(controlsNav);
+        overlay.appendChild(thumbnailFilmstrip); // Add filmstrip container
+
+        // Append overlay to body
+        document.body.appendChild(overlay);
+
+        // Add navigation button event listeners now that buttons exist
+        document.getElementById('jet-preview-prev-button').addEventListener('click', navigatePreviewPrev);
+        document.getElementById('jet-preview-next-button').addEventListener('click', navigatePreviewNext);
+    }
+
+    // NEW: Function to update only the main preview image source and state
+    function updatePreviewImage(imageObject) {
+        const imgPreview = document.getElementById('jet-preview-main-image');
+        const imageNameDisplay = document.getElementById('jet-preview-image-name');
+        const pickButtonInPreview = document.getElementById('jet-preview-pick-button');
+         const existingError = document.querySelector('#jet-image-preview-overlay .preview-load-error-message');
+
+        if (!imgPreview || !imageNameDisplay || !pickButtonInPreview) return;
+
+         // Remove any previous error message
+         if (existingError) {
+             existingError.remove();
+              imgPreview.style.display = 'block'; // Show image again if it was hidden
+         }
+
+        // Set the image source
+        imgPreview.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}`;
+        imgPreview.alt = `Preview of ${imageObject.name}`;
+
+        // Handle image load errors
+        imgPreview.onerror = () => {
+            imgPreview.alt = 'Lỗi tải ảnh xem trước.';
+            const errorPlaceholder = document.createElement('div');
+            errorPlaceholder.className = 'preview-load-error-message';
+            errorPlaceholder.textContent = 'Không thể tải ảnh xem trước. Nhấn Esc để đóng.';
+             const container = imgPreview.parentElement;
+             if(container) {
+                 imgPreview.style.display = 'none'; // Hide the broken image icon
+                 container.parentElement.insertBefore(errorPlaceholder, container); // Insert error before the container to affect layout
+             }
+        };
+
+        // Update image name display
+        imageNameDisplay.textContent = imageObject.name;
+
+        // Update the Pick button/indicator
+        const colorIndicatorSpan = pickButtonInPreview.querySelector('#jet-preview-pick-color-indicator');
+        pickButtonInPreview.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
+        if (imageObject.pick_color) {
+            pickButtonInPreview.classList.add(`picked-${imageObject.pick_color}`);
+            if(colorIndicatorSpan) {
+                 colorIndicatorSpan.textContent = imageObject.pick_color.toUpperCase();
+                 colorIndicatorSpan.style.backgroundColor = imageObject.pick_color;
+                 if (imageObject.pick_color === PICK_COLORS.GREY || imageObject.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
+            }
+        } else { // No color picked (null)
+             if(colorIndicatorSpan) {
+                colorIndicatorSpan.textContent = 'NONE';
+                colorIndicatorSpan.style.backgroundColor = 'transparent';
+                colorIndicatorSpan.style.color = '#ccc';
+            }
+        }
+
+         // Update the corresponding item in the main grid display (This logic might be redundant if handled elsewhere, but keep for sync)
+        const gridItems = document.querySelectorAll('.jet-image-item-container');
+        gridItems.forEach(gridItem => {
+            // Use dataset.imagePath for more reliable matching
+             if (gridItem.dataset.imagePath === imageObject.path && gridItem.dataset.sourceKey === imageObject.source_key) {
+                gridItem.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                if (imageObject.pick_color) {
+                    gridItem.classList.add(`picked-${imageObject.pick_color}`);
+                }
+             }
+        });
+    }
+
     function openImagePreview(imageObject, imageIndexInGrid) {
         if (!imageObject) {
             console.error('[Jet Preview] Attempted to open preview with no imageObject.');
@@ -673,115 +839,139 @@ document.addEventListener('DOMContentLoaded', () => {
             console.error('Preview area element not found!');
             return;
         }
-        previewArea.innerHTML = ''; // Clear previous preview
-        renderPreviewOverlay(currentPreviewImageObject); 
+
+        // Create the initial overlay structure if it doesn't exist
+        if (!document.getElementById('jet-image-preview-overlay')) {
+             renderPreviewOverlayStructure();
+        }
+        
+        // Update the main image source and related info
+        updatePreviewImage(currentPreviewImageObject);
+
+        // Render the thumbnail filmstrip initially
+        renderThumbnailFilmstrip(currentGridImages, currentPreviewIndex);
 
         // Add event listeners for preview navigation (keyboard)
         document.addEventListener('keydown', handlePreviewKeyPress);
     }
 
-    function closeImagePreview() {
-        const overlay = document.getElementById('jet-image-preview-overlay');
-        if (overlay) {
-            overlay.remove();
-        }
-        isPreviewOpen = false;
-        currentPreviewImageObject = null;
-        currentPreviewIndex = -1;
-        // Remove keyboard listeners
-        document.removeEventListener('keydown', handlePreviewKeyPress);
+    // Function to render the horizontal thumbnail filmstrip (called once on open)
+    function renderThumbnailFilmstrip(images, currentIndex) {
+        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+        if (!filmstripContainer) return;
+
+        filmstripContainer.innerHTML = ''; // Clear existing thumbnails (only on initial render)
+
+        images.forEach((imageObject, index) => {
+            // Create a container for the thumbnail and its indicator
+            const thumbContainer = document.createElement('div');
+            thumbContainer.classList.add('jet-filmstrip-thumb-container'); // New container class
+            thumbContainer.dataset.index = index; // Store the index on container
+
+            // Create the image element
+            const thumbElement = document.createElement('img');
+            thumbElement.classList.add('jet-filmstrip-thumb'); // Class for the image styling
+            thumbElement.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=filmstrip`;
+            thumbElement.alt = `Thumbnail of ${imageObject.name}`;
+
+            // Add pick color class to the CONTAINER if image is picked
+            if (imageObject.pick_color) {
+                thumbContainer.classList.add(`picked-${imageObject.pick_color}`);
+            }
+
+            // Highlight the current image's thumbnail CONTAINER
+            if (index === currentIndex) {
+                thumbContainer.classList.add('active');
+            }
+
+            // Add click listener to navigate on the CONTAINER
+            thumbContainer.addEventListener('click', () => {
+                 // Update state and UI without closing/reopening overlay
+                currentPreviewIndex = index;
+                currentPreviewImageObject = images[index];
+                updatePreviewImage(currentPreviewImageObject); // Update main image
+                updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
+            });
+
+            // Append image to container, then container to filmstrip
+            thumbContainer.appendChild(thumbElement);
+            filmstripContainer.appendChild(thumbContainer);
+        });
+
+        // Scroll the filmstrip to make the active thumbnail visible initially
+        updateFilmstripActiveThumbnail(currentIndex); // Use the new update function
     }
 
-    function renderPreviewOverlay(imageObject) {
-        // Remove existing overlay if any (shouldn't be necessary if state is managed)
-        const existingOverlay = document.getElementById('jet-image-preview-overlay');
-        if (existingOverlay) existingOverlay.remove();
+    // Function to update the active thumbnail in the filmstrip and scroll
+    function updateFilmstripActiveThumbnail(newIndex) {
+        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+        if (!filmstripContainer) return;
 
-        const overlay = document.createElement('div');
-        overlay.id = 'jet-image-preview-overlay';
-        overlay.classList.add('jet-preview-overlay-container'); // For styling
+        // Select thumbnail CONTAINERS
+        const thumbContainers = filmstripContainer.querySelectorAll('.jet-filmstrip-thumb-container');
 
-        // Image element
-        const imgPreview = document.createElement('img');
-        imgPreview.id = 'jet-preview-main-image';
-        imgPreview.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}`;
-        imgPreview.alt = `Preview of ${imageObject.name}`;
-        imgPreview.onerror = () => {
-            imgPreview.alt = 'Lỗi tải ảnh xem trước.';
-            // Could add more detailed error display within the preview
-            // For safety, try to close preview if image fails to load, or show placeholder
-            const errorPlaceholder = document.createElement('div');
-            errorPlaceholder.className = 'preview-load-error-message';
-            errorPlaceholder.textContent = 'Không thể tải ảnh xem trước. Nhấn Esc để đóng.';
-            imgPreview.replaceWith(errorPlaceholder);
+        // Remove active class from all thumbnail CONTAINERS
+        thumbContainers.forEach(container => container.classList.remove('active'));
 
-        };
+        // Add active class to the new active thumbnail CONTAINER
+        const newActiveThumbContainer = filmstripContainer.querySelector(`.jet-filmstrip-thumb-container[data-index="${newIndex}"]`);
+        if (newActiveThumbContainer) {
+            newActiveThumbContainer.classList.add('active');
 
-        // Close button
-        const closeButton = document.createElement('button');
-        closeButton.id = 'jet-preview-close-button';
-        closeButton.textContent = 'Đóng (Esc)'; // Close (Esc)
-        closeButton.addEventListener('click', closeImagePreview);
-
-        // Navigation buttons (placeholders for now)
-        const prevButton = document.createElement('button');
-        prevButton.id = 'jet-preview-prev-button';
-        prevButton.textContent = 'Trước (←)'; // Previous
-        prevButton.addEventListener('click', navigatePreviewPrev);
-
-        const nextButton = document.createElement('button');
-        nextButton.id = 'jet-preview-next-button';
-        nextButton.textContent = 'Sau (→)'; // Next
-        nextButton.addEventListener('click', navigatePreviewNext);
-
-        // Pick button (placeholder for now)
-        const pickButton = document.createElement('button');
-        pickButton.id = 'jet-preview-pick-button';
-        // Update pick button based on pick_color
-        pickButton.className = 'jet-preview-pick-button-base'; // Base class
-        pickButton.textContent = 'Màu: '; // Base text
-        const colorIndicator = document.createElement('span');
-        colorIndicator.id = 'jet-preview-pick-color-indicator';
-        if (imageObject.pick_color) {
-            pickButton.classList.add(`picked-${imageObject.pick_color}`);
-            colorIndicator.textContent = imageObject.pick_color.toUpperCase();
-            colorIndicator.style.backgroundColor = imageObject.pick_color; // Simple visual cue
-             if (imageObject.pick_color === 'grey' || imageObject.pick_color === 'blue') colorIndicator.style.color = 'white'; else colorIndicator.style.color = 'black';
-        } else {
-            colorIndicator.textContent = 'NONE';
-            colorIndicator.style.backgroundColor = 'transparent';
-            colorIndicator.style.color = '#ccc';
+             // Scroll the filmstrip to make the active thumbnail visible
+             newActiveThumbContainer.scrollIntoView({
+                behavior: 'smooth',
+                inline: 'center' // Scroll horizontally to center the thumbnail
+            });
         }
-        pickButton.appendChild(colorIndicator);
-        // pickButton.addEventListener('click', togglePickFromPreview); // This will be replaced by hotkey logic primarily
-        
-        // Info/Metadata area (placeholder)
-        const imageNameDisplay = document.createElement('div');
-        imageNameDisplay.id = 'jet-preview-image-name';
-        imageNameDisplay.textContent = imageObject.name;
+    }
 
-        // Assemble the preview
-        const controlsTop = document.createElement('div');
-        controlsTop.className = 'jet-preview-controls-top';
-        controlsTop.appendChild(imageNameDisplay);
-        controlsTop.appendChild(pickButton); // Temporary placement
-        controlsTop.appendChild(closeButton);
+    function navigatePreviewNext() {
+        if (!isPreviewOpen || currentGridImages.length === 0) return;
 
+        let nextIndex = currentPreviewIndex + 1;
+        if (nextIndex >= currentGridImages.length) {
+            nextIndex = 0; // Loop to the beginning
+        }
+        currentPreviewIndex = nextIndex;
+        currentPreviewImageObject = currentGridImages[currentPreviewIndex];
 
-        const imageContainer = document.createElement('div');
-        imageContainer.className = 'jet-preview-image-container';
-        imageContainer.appendChild(imgPreview);
+        // Update UI without re-rendering the whole overlay
+        updatePreviewImage(currentPreviewImageObject); // Update main image
+        updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
 
-        const controlsNav = document.createElement('div');
-        controlsNav.className = 'jet-preview-controls-nav';
-        controlsNav.appendChild(prevButton);
-        controlsNav.appendChild(nextButton);
-        
-        overlay.appendChild(controlsTop);
-        overlay.appendChild(imageContainer);
-        overlay.appendChild(controlsNav);
+        // Update grid selection to match preview (optional sync)
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        // Use dataset for more reliable matching
+        gridItems.forEach(gridItem => {
+             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
+                selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
+             }
+        });
+    }
 
-        document.body.appendChild(overlay);
+    function navigatePreviewPrev() {
+        if (!isPreviewOpen || currentGridImages.length === 0) return;
+
+        let prevIndex = currentPreviewIndex - 1;
+        if (prevIndex < 0) {
+            prevIndex = currentGridImages.length - 1; // Loop to the end
+        }
+        currentPreviewImageObject = currentGridImages[prevIndex];
+        currentPreviewIndex = prevIndex;
+
+         // Update UI without re-rendering the whole overlay
+        updatePreviewImage(currentPreviewImageObject); // Update main image
+        updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
+
+        // Update grid selection to match preview (optional sync)
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+         // Use dataset for more reliable matching
+        gridItems.forEach(gridItem => {
+             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
+                selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
+             }
+        });
     }
 
     function handlePreviewKeyPress(event) {
@@ -815,42 +1005,6 @@ document.addEventListener('DOMContentLoaded', () => {
             // case 'Delete':
             //     setPickColorViaAPI(PICK_COLORS.NONE); 
             //     break;
-        }
-    }
-
-    function navigatePreviewNext() {
-        if (!isPreviewOpen || currentGridImages.length === 0) return;
-        
-        let nextIndex = currentPreviewIndex + 1;
-        if (nextIndex >= currentGridImages.length) {
-            nextIndex = 0; // Loop to the beginning
-        }
-        currentPreviewIndex = nextIndex;
-        currentPreviewImageObject = currentGridImages[currentPreviewIndex];
-        renderPreviewOverlay(currentPreviewImageObject); // Re-render with new image
-
-        // Update grid selection to match preview
-        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        if (gridItems[currentPreviewIndex]) {
-            selectImageInGrid(currentPreviewImageObject, gridItems[currentPreviewIndex], currentPreviewIndex);
-        }
-    }
-
-    function navigatePreviewPrev() {
-        if (!isPreviewOpen || currentGridImages.length === 0) return;
-
-        let prevIndex = currentPreviewIndex - 1;
-        if (prevIndex < 0) {
-            prevIndex = currentGridImages.length - 1; // Loop to the end
-        }
-        currentPreviewImageObject = currentGridImages[prevIndex];
-        currentPreviewIndex = prevIndex; // Update index after setting object
-        renderPreviewOverlay(currentPreviewImageObject);
-
-        // Update grid selection to match preview
-        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        if (gridItems[currentPreviewIndex]) {
-            selectImageInGrid(currentPreviewImageObject, gridItems[currentPreviewIndex], currentPreviewIndex);
         }
     }
 
@@ -911,9 +1065,21 @@ document.addEventListener('DOMContentLoaded', () => {
                          if(colorIndicatorSpan) {
                             colorIndicatorSpan.textContent = 'NONE';
                             colorIndicatorSpan.style.backgroundColor = 'transparent';
-                            colorIndicator.style.color = '#ccc';
+                            colorIndicatorSpan.style.color = '#ccc';
                         }
                     }
+                }
+
+                // NEW: Update the corresponding thumbnail in the filmstrip
+                const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+                if (filmstripContainer && currentPreviewIndex !== -1) {
+                     const currentThumbContainer = filmstripContainer.querySelector(`.jet-filmstrip-thumb-container[data-index="${currentPreviewIndex}"]`);
+                     if (currentThumbContainer) {
+                        currentThumbContainer.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
+                         if (imageToUpdate.pick_color) {
+                             currentThumbContainer.classList.add(`picked-${imageToUpdate.pick_color}`);
+                         }
+                     }
                 }
 
                 // Update the corresponding item in the main grid display
@@ -1146,6 +1312,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
 
+                // NEW: Update the corresponding thumbnail in the filmstrip
+                const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+                if (filmstripContainer && currentPreviewIndex !== -1) {
+                     const currentThumbContainer = filmstripContainer.querySelector(`.jet-filmstrip-thumb-container[data-index="${currentPreviewIndex}"]`);
+                     if (currentThumbContainer) {
+                        currentThumbContainer.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
+                         if (data.pick_color) {
+                             currentThumbContainer.classList.add(`picked-${data.pick_color}`);
+                         }
+                     }
+                }
 
             } else {
                 showFeedback(`Lỗi cập nhật màu: ${data.error || 'Lỗi không xác định từ máy chủ.'}`, 'error');
