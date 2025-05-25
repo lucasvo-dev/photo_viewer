@@ -14,10 +14,10 @@ rules:
   - rule: Identify core technologies.
     description: |
       The backend is primarily PHP (>=7.4).
-      The database is SQLite.
+      The database is mySQL.
       The frontend uses Vanilla JavaScript (ES Modules), CSS, and HTML.
       PhotoSwipe 5 is used for the image lightbox.
-      PHP extensions required: pdo_sqlite, gd, zip, mbstring, fileinfo.
+      PHP extensions required: , gd, zip, mbstring, fileinfo.
 
   - rule: Understand key project structure.
     description: |
@@ -31,7 +31,6 @@ rules:
       - `api/actions_admin.php`: Handles admin-only API actions.
       - `config.php`: Central configuration file (DB credentials, image sources, admin user). **Sensitive, do not commit credentials.**
       - `db_connect.php`: Core setup (requires config, connects DB, defines sources, auto-creates tables).
-      - `database.sqlite`: SQLite database file.
       - `cache/thumbnails/`: Stores generated thumbnails.
       - `images/`: Default image source directory (can be configured).
       - `logs/`: Application log files.
