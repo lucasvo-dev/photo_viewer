@@ -406,6 +406,10 @@ switch ($action) {
                 error_log("[API request_zip MULTI] Items JSON snippet: {$items_json_snippet}");
                 error_log("[API request_zip MULTI] ZIP Filename Hint: '{$zip_filename_hint}' (Type: " . gettype($zip_filename_hint) . ")");
 
+                // ==> ADDED LOGGING HERE
+                error_log("[API request_zip MULTI PRE-INSERT] Attempting to insert job. Token: {$job_token}, SourcePath: {$source_path_for_db}, Status: 'pending', ItemsJSON: {$items_json}, ResultMessage(Hint): {$zip_filename_hint}");
+                // <== END ADDED LOGGING
+
                 try {
                     $sql = "INSERT INTO zip_jobs (source_path, job_token, status, items_json, result_message) VALUES (?, ?, 'pending', ?, ?)";
                     $stmt = $pdo->prepare($sql);
@@ -434,8 +438,8 @@ switch ($action) {
                 }
 
                 $path_info = validate_source_and_path($folder_to_zip);
-                if (!$path_info || $path_info['is_root'] || $path_info['is_file']) { // Ensure it's a directory
-                    json_error('Đường dẫn thư mục không hợp lệ, là thư mục gốc hoặc là một tệp.', 400);
+                if (!$path_info || $path_info['is_root']) { // validate_source_and_path ensures it's a directory if $path_info is not null
+                    json_error('Đường dẫn thư mục không hợp lệ hoặc là thư mục gốc.', 400);
                 }
 
                 $current_source_prefixed_path = $path_info['source_prefixed_path'];
@@ -483,6 +487,9 @@ switch ($action) {
                 }
 
                 $job_token = generate_job_token();
+                // ==> ADDED LOGGING HERE
+                error_log("[API request_zip SINGLE PRE-INSERT] Attempting to insert job. Token: {$job_token}, SourcePath: {$current_source_prefixed_path}, Status: 'pending', ResultMessage(Hint): {$zip_filename_hint}");
+                // <== END ADDED LOGGING
                 try {
                     $sql = "INSERT INTO zip_jobs (source_path, job_token, status, result_message) VALUES (?, ?, 'pending', ?)"; // items_json is NULL by default for folder jobs
                     $stmt = $pdo->prepare($sql);

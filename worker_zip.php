@@ -416,11 +416,37 @@ while ($running) {
             error_log_worker($job, "ZIP creation successful: {$zip_filepath}, Size: {$zip_filesize} bytes");
             echo_worker_status($job, "ZIP creation successful: {$zip_filepath}");
 
+            // --- ADDED: Verify ZIP file exists and is readable before marking as completed ---
+            if (!is_file($zip_filepath) || !is_readable($zip_filepath)) {
+                $critical_error_msg = "CRITICAL FAILURE: ZIP file '{$zip_filepath}' does not exist or is not readable after creation. Job ID {$job_id}.";
+                error_log_worker($job, $critical_error_msg);
+                echo_worker_status($job, $critical_error_msg);
+                mark_zip_job_as_failed($pdo, $job_id, $critical_error_msg, ($job ? "[Job {$job['id']} ({$job['job_token']})]" : "[Job ID {$job_id}]"));
+                throw new Exception($critical_error_msg);
+            }
+            // --- END ADDED ---
+
             // Update DB to completed (WITH RETRY LOGIC)
             $update_final_status_success = false;
             $final_status_update_attempts = 0;
             $max_final_status_update_retries = 5; // Max 5 attempts for final status update
             $retry_final_status_delay_ms = 500;  // Start with 500ms delay, increases each attempt
+
+            // ==> ADDED CHECK: If $zip_filepath is empty here, the ZIP creation effectively failed or path was lost.
+            // Do not attempt to mark as 'completed'. Mark as 'failed' instead.
+            if (empty($zip_filepath)) {
+                $critical_error_msg = "CRITICAL FAILURE: Determined $zip_filepath is EMPTY before attempting to mark job as completed. ZIP file path is missing. Job ID {$job_id}.";
+                error_log_worker($job, $critical_error_msg);
+                echo_worker_status($job, $critical_error_msg);
+                // Use the existing helper to mark as failed. This will also be caught by main try-catch if it throws,
+                // but this call itself has retry logic.
+                mark_zip_job_as_failed($pdo, $job_id, $critical_error_msg, ($job ? "[Job {$job['id']} ({$job['job_token']})]" : "[Job ID {$job_id}]"));
+                // Skip the 'completed' update logic entirely for this job by throwing an exception
+                // that the main loop's catch block will handle (it just logs and continues usually).
+                // This ensures it doesn't proceed to the $update_final_status_success logic.
+                throw new Exception($critical_error_msg); // This will be caught by the outer job processing loop's catch.
+            }
+            // <== END ADDED CHECK
 
             while (!$update_final_status_success && $final_status_update_attempts < $max_final_status_update_retries) {
                 $final_status_update_attempts++;

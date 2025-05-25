@@ -75,6 +75,71 @@ echo "Cleanup interval: {$cleanup_interval_minutes} minutes after CREATION.
 echo "Max cleanup attempts for a single file: " . MAX_CLEANUP_ATTEMPTS . "
 ";
 
+// --- New Helper Functions ---
+function cleanup_orphaned_files($pdo, $zip_cache_dir) {
+    echo "Checking for orphaned ZIP files...\n";
+    $orphaned_files = [];
+    
+    // Get all ZIP files in cache directory
+    $zip_files = glob($zip_cache_dir . '*.zip');
+    if (empty($zip_files)) {
+        echo "No ZIP files found in cache directory.\n";
+        return 0;
+    }
+    
+    // Get all final_zip_paths from database
+    $stmt = $pdo->query("SELECT final_zip_path FROM zip_jobs WHERE final_zip_path IS NOT NULL AND final_zip_path != ''");
+    $db_paths = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    
+    // Find orphaned files (exist on disk but not in DB)
+    foreach ($zip_files as $file) {
+        if (!in_array($file, $db_paths)) {
+            $orphaned_files[] = $file;
+        }
+    }
+    
+    // Delete orphaned files
+    $deleted_count = 0;
+    foreach ($orphaned_files as $file) {
+        if (unlink($file)) {
+            echo "Deleted orphaned file: " . basename($file) . "\n";
+            error_log("[Cron ZIP Cleanup] Deleted orphaned file: {$file}");
+            $deleted_count++;
+        } else {
+            error_log("[Cron ZIP Cleanup] Failed to delete orphaned file: {$file}");
+        }
+    }
+    
+    return $deleted_count;
+}
+
+function cleanup_stale_records($pdo) {
+    echo "Checking for stale database records...\n";
+    
+    // Find records where final_zip_path exists but file is missing
+    $stmt = $pdo->query("SELECT id, job_token, final_zip_path FROM zip_jobs WHERE final_zip_path IS NOT NULL AND final_zip_path != ''");
+    $stale_records = [];
+    
+    while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        if (!file_exists($row['final_zip_path'])) {
+            $stale_records[] = $row;
+        }
+    }
+    
+    // Clean up stale records
+    $cleaned_count = 0;
+    foreach ($stale_records as $record) {
+        $update_stmt = $pdo->prepare("UPDATE zip_jobs SET final_zip_path = NULL, final_zip_name = NULL, zip_filename = NULL, zip_filesize = NULL WHERE id = ?");
+        if ($update_stmt->execute([$record['id']])) {
+            echo "Cleaned stale record for job ID {$record['id']} (Token: {$record['job_token']})\n";
+            error_log("[Cron ZIP Cleanup] Cleaned stale record for job ID {$record['id']} (Token: {$record['job_token']})");
+            $cleaned_count++;
+        }
+    }
+    
+    return $cleaned_count;
+}
+
 // --- Main Logic ---
 try {
     // For MySQL/MariaDB, use NOW() - INTERVAL X MINUTE against created_at
@@ -87,6 +152,85 @@ try {
         STATUS_CLEANUP_FAILED_DELETE, 
         STATUS_CLEANUP_FAILED_UNREADABLE
     ];
+    // $terminal_statuses_placeholders is defined later, just before the main query
+
+    // Log DB Current Time and Threshold (moved earlier for debug block)
+    $times = ['current_db_time' => 'N/A', 'threshold_time' => 'N/A']; // Initialize to avoid errors if DB query fails
+    try {
+        $current_db_time_stmt = $pdo->query("SELECT NOW() as current_db_time, {$cleanup_threshold_sql} as threshold_time");
+        $times_result = $current_db_time_stmt->fetch(PDO::FETCH_ASSOC);
+        if ($times_result) {
+            $times = $times_result;
+        }
+        error_log("[Cron ZIP Cleanup] DB Current Time: {$times['current_db_time']}, Calculated Threshold: {$times['threshold_time']}");
+    } catch (PDOException $e) {
+        error_log("[Cron ZIP Cleanup] Warning: Could not fetch DB time for logging: " . $e->getMessage());
+    }
+
+    // +++ SPECIFIC JOB DEBUG BLOCK (TEMPORARY) +++
+    // Set this to the ID of the job you want to debug (e.g., 129)
+    // To disable, set to null or comment out.
+    // $debug_job_id_to_check = 130; // <--- SET JOB ID HERE FOR DEBUGGING (Commented out for now)
+    // 
+    // if ($debug_job_id_to_check !== null && is_numeric($debug_job_id_to_check)) {
+    //     error_log("[Cron ZIP Cleanup DEBUG] --- STARTING DEBUG FOR JOB ID: {$debug_job_id_to_check} ---");
+    //     try {
+    //         // Ensure $terminal_statuses_for_cron is available here
+    //         if (empty($terminal_statuses_for_cron)) {
+    //              error_log("[Cron ZIP Cleanup DEBUG] CRITICAL: terminal_statuses_for_cron is empty or not defined before debug block!");
+    //         } else {
+    //             // CORRECTED: final_zip_path != '' for prepared statements
+    //             $stmt_debug = $pdo->prepare("SELECT id, job_token, final_zip_path, created_at, status, cleanup_attempts, 
+    //                                             (final_zip_path IS NOT NULL) as check_path_not_null,
+    //                                             (final_zip_path != '') as check_path_not_empty, 
+    //                                             (created_at < {$cleanup_threshold_sql}) as check_created_at_older,
+    //                                             (status NOT IN (:s1, :s2, :s3, :s4)) as check_status_not_terminal,
+    //                                             NOW() as current_db_time_debug
+    //                                         FROM zip_jobs 
+    //                                         WHERE id = :job_id");
+    //             $stmt_debug->bindValue(':job_id', $debug_job_id_to_check, PDO::PARAM_INT);
+    //             $stmt_debug->bindValue(':s1', $terminal_statuses_for_cron[0], PDO::PARAM_STR);
+    //             $stmt_debug->bindValue(':s2', $terminal_statuses_for_cron[1], PDO::PARAM_STR);
+    //             $stmt_debug->bindValue(':s3', $terminal_statuses_for_cron[2], PDO::PARAM_STR);
+    //             $stmt_debug->bindValue(':s4', $terminal_statuses_for_cron[3], PDO::PARAM_STR);
+    //             
+    //             if (!$stmt_debug->execute()) {
+    //                 $error_info_debug = $stmt_debug->errorInfo();
+    //                 error_log("[Cron ZIP Cleanup DEBUG] Job ID {$debug_job_id_to_check}: SQL execution FAILED. Error: " . print_r($error_info_debug, true));
+    //             } else {
+    //                 $debug_job_data = $stmt_debug->fetch(PDO::FETCH_ASSOC);
+    //                 if ($debug_job_data) {
+    //                     error_log("[Cron ZIP Cleanup DEBUG] Job ID {$debug_job_id_to_check} Data:");
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Raw Data: " . print_r($debug_job_data, true));
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   DB NOW() (at debug query time): " . $debug_job_data['current_db_time_debug']);
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   created_at: " . $debug_job_data['created_at']);
+    //                     // Use the $times variable captured before this debug block
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Calculated Threshold (for main query, captured earlier): {$times['threshold_time']}");
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Condition (final_zip_path IS NOT NULL): " . ($debug_job_data['check_path_not_null'] ? 'TRUE' : 'FALSE'));
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Condition (final_zip_path != ''): " . ($debug_job_data['check_path_not_empty'] ? 'TRUE' : 'FALSE'));
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Condition (created_at < THRESHOLD from debug SQL): " . ($debug_job_data['check_created_at_older'] ? 'TRUE' : 'FALSE'));
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   status: " . $debug_job_data['status']);
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Terminal Statuses for check: " . implode(', ', $terminal_statuses_for_cron));
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   Condition (status NOT IN terminal_list): " . ($debug_job_data['check_status_not_terminal'] ? 'TRUE' : 'FALSE'));
+    //                     
+    //                     $all_conditions_met = $debug_job_data['check_path_not_null'] &&
+    //                                           $debug_job_data['check_path_not_empty'] &&
+    //                                           $debug_job_data['check_created_at_older'] &&
+    //                                           $debug_job_data['check_status_not_terminal'];
+    //                     error_log("[Cron ZIP Cleanup DEBUG]   All conditions for main query met (as per debug SQL evaluation)?: " . ($all_conditions_met ? 'YES' : 'NO'));
+    // 
+    //                 } else {
+    //                     error_log("[Cron ZIP Cleanup DEBUG] Job ID {$debug_job_id_to_check}: No data found for this ID.");
+    //                 }
+    //             }
+    //         }
+    //     } catch (PDOException $e_debug) {
+    //         error_log("[Cron ZIP Cleanup DEBUG] Job ID {$debug_job_id_to_check}: PDOException: " . $e_debug->getMessage());
+    //     }
+    //     error_log("[Cron ZIP Cleanup DEBUG] --- ENDING DEBUG FOR JOB ID: {$debug_job_id_to_check} ---");
+    // }
+    // +++ END SPECIFIC JOB DEBUG BLOCK +++
+
     $terminal_statuses_placeholders = implode(',', array_fill(0, count($terminal_statuses_for_cron), '?'));
 
     // Select jobs that are older than the interval, have a zip path, and are not already in a terminal state.
@@ -103,8 +247,14 @@ try {
 ";
 
     $stmt_get_zips = $pdo->prepare($sql_get_old_zips);
-    $stmt_get_zips->execute($terminal_statuses_for_cron); // Bind the array of terminal statuses
-    $jobs_to_cleanup = $stmt_get_zips->fetchAll(PDO::FETCH_ASSOC);
+    if (!$stmt_get_zips->execute($terminal_statuses_for_cron)) {
+        $error_info = $stmt_get_zips->errorInfo();
+        error_log("[Cron ZIP Cleanup] CRITICAL: SQL execution failed for getting old zips. SQL: {$sql_get_old_zips} Params: " . implode(', ', $terminal_statuses_for_cron) . " Error: " . print_r($error_info, true));
+        echo "[Cron ZIP Cleanup] CRITICAL: SQL execution failed. Check logs.\n";
+        $jobs_to_cleanup = []; // Ensure it's an empty array so script can exit gracefully or handle as no jobs
+    } else {
+        $jobs_to_cleanup = $stmt_get_zips->fetchAll(PDO::FETCH_ASSOC);
+    }
 
     error_log("[Cron ZIP Cleanup] Found " . count($jobs_to_cleanup) . " ZIP job(s) to process for cleanup (based on creation time).");
 
@@ -117,6 +267,29 @@ try {
     $cleaned_count = 0;
     $error_count = 0;
 
+    // --- Healing Step: Mark broken jobs as cleaned_by_timeout ---
+    try {
+        $sql_heal_broken = "UPDATE zip_jobs SET status = ?, result_message = ?, final_zip_path = NULL, cleanup_attempts = cleanup_attempts + 1, updated_at = NOW() WHERE (final_zip_path IS NULL OR final_zip_path = '') AND status = 'completed'";
+        $stmt_heal = $pdo->prepare($sql_heal_broken);
+        $msg = "Healed by cron: completed job missing final_zip_path at " . date('Y-m-d H:i:s');
+        $stmt_heal->execute([STATUS_CLEANED_BY_TIMEOUT, $msg]);
+        $healed_count = $stmt_heal->rowCount();
+        if ($healed_count > 0) {
+            error_log("[Cron ZIP Cleanup] Healed {$healed_count} broken completed jobs missing final_zip_path.");
+            echo "Healed {$healed_count} broken completed jobs missing final_zip_path.\n";
+        }
+    } catch (Throwable $e) {
+        error_log("[Cron ZIP Cleanup] Healing step failed: " . $e->getMessage());
+    }
+
+    // Add new cleanup steps before processing jobs
+    $orphaned_deleted = cleanup_orphaned_files($pdo, ZIP_CACHE_DIR);
+    $stale_cleaned = cleanup_stale_records($pdo);
+    
+    echo "Cleanup summary:\n";
+    echo "- Deleted {$orphaned_deleted} orphaned ZIP files\n";
+    echo "- Cleaned {$stale_cleaned} stale database records\n";
+    
     foreach ($jobs_to_cleanup as $job) {
         $job_id = $job['id'];
         $job_token = $job['job_token'];

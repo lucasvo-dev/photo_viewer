@@ -248,15 +248,9 @@ try {
          http_response_code(500);
          die("Database connection error. Please check server logs.");
     }
-    // If included, let the including script handle the error (e.g., api.php will send JSON error)
-    // We might set a global flag or re-throw exception if needed by caller.
-
-} catch (Exception $e) {
-    error_log("Configuration Error: " . $e->getMessage());
-     if (basename($_SERVER['PHP_SELF']) == basename(__FILE__)) {
-         http_response_code(500);
-         die("Database configuration error.");
-     }
+    // If this script is included, re-throw to let the caller handle it,
+    // or handle it based on context (e.g., API might return JSON error).
+    throw $e; // Re-throw if not directly accessed
 }
 
 // $pdo variable is now available for use in including scripts (like api.php)
@@ -332,7 +326,8 @@ try {
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
             items_json TEXT NULL, /* JSON array of selected file paths if source_path is _multiple_selected_ */
             result_message TEXT NULL, /* Store detailed success/error message from worker */
-            downloaded_at TIMESTAMP NULL DEFAULT NULL /* Timestamp of first successful download */
+            downloaded_at TIMESTAMP NULL DEFAULT NULL /* Timestamp of first successful download */,
+            cleanup_attempts TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT 'Number of times cleanup has been attempted for this job ZIP file'
         )");
 
         // Create jet_image_picks table for Jet Culling App
@@ -395,6 +390,8 @@ try {
         add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_name', 'VARCHAR(255) NULL DEFAULT NULL');
         error_log("[db_connect.php] Checking/adding total_size column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'total_size', 'BIGINT DEFAULT 0');
+        error_log("[db_connect.php] Checking/adding cleanup_attempts column to zip_jobs...");
+        add_column_if_not_exists($pdo, 'zip_jobs', 'cleanup_attempts', 'TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT \'Number of times cleanup has been attempted for this job ZIP file\' AFTER downloaded_at');
 
     }
 } catch (PDOException $e) {
