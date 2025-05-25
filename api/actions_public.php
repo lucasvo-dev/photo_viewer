@@ -227,13 +227,13 @@ switch ($action) {
                                         $item_data['width'] = (int)$dims_row['original_width'];
                                         $item_data['height'] = (int)$dims_row['original_height'];
                                     } else {
-                                        error_log("[list_files] Original dimensions not found or invalid in cache_jobs for {$item_path}. Attempting live getimagesize.");
-                                        // DIAGNOSTIC: Try to get live dimensions if not in cache or invalid
+                                        // Try to get live dimensions if not in cache or invalid
                                         $live_dims = @getimagesize($fileinfo->getPathname()); // $fileinfo is from the DirectoryIterator
                                         if ($live_dims) {
                                             $item_data['width'] = (int)$live_dims[0];
                                             $item_data['height'] = (int)$live_dims[1];
-                                            error_log("[list_files] Fetched LIVE dimensions for {$item_path}: {$item_data['width']}x{$item_data['height']}");
+                                            // Reduce logging: only log failures, not every fetch
+                                            // error_log("[list_files] Fetched LIVE dimensions for {$item_path}: {$item_data['width']}x{$item_data['height']}");
                                         } else {
                                             error_log("[list_files] Failed to fetch live dimensions for {$item_path}. Will default to 0x0.");
                                             // Width and height remain 0,0 if live also fails
@@ -251,7 +251,7 @@ switch ($action) {
                                         $item_data['width'] = (int)$dims_row_vid['original_width'];
                                         $item_data['height'] = (int)$dims_row_vid['original_height'];
                                     } else {
-                                        error_log("[list_files] Video dimensions not found in cache_jobs for {$item_path}. Will default to 0x0.");
+                                        // error_log("[list_files] Video dimensions not found in cache_jobs for {$item_path}. Will default to 0x0.");
                                     }
                                 }
                                 $all_file_items[] = $item_data;
@@ -806,7 +806,7 @@ switch ($action) {
                 if ($is_image) {
                     if ($size_param == THUMBNAIL_JOB_SIZE_LARGE) {
                         // ADD DIAGNOSTIC LOGGING
-                        // error_log("[GetThumbnail DEBUG] Attempting to queue 750px job. Image: {$source_prefixed_path_for_hash}, Size Param: {$size_param}, Is PDO null? " . (is_null($pdo) ? 'YES' : 'NO'));
+                
                         // END DIAGNOSTIC LOGGING
 
                         // Requested 750px image thumbnail is not cached, queue job and serve 150px.

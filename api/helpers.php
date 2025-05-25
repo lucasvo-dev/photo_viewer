@@ -310,7 +310,7 @@ function find_first_image_in_source($source_key, $relative_dir_path, array &$all
     $resolved_target_dir_absolute = realpath($target_dir_absolute);
 
     if ($resolved_target_dir_absolute === false || !is_dir($resolved_target_dir_absolute) || !is_readable($resolved_target_dir_absolute)) {
-        // error_log("[find_first_image DEBUG] Target directory invalid/unreadable: {$target_dir_absolute} (Resolved: " . ($resolved_target_dir_absolute ?: 'false') . ")"); // REMOVED LOG
+    
         return null; // Directory doesn't exist or isn't readable
     }
 
@@ -319,7 +319,7 @@ function find_first_image_in_source($source_key, $relative_dir_path, array &$all
         return null;
     }
 
-    // error_log("[find_first_image DEBUG] Scanning recursively inside: {$resolved_target_dir_absolute}"); // REMOVED LOG
+
 
     try {
         // *** Use Recursive Iterator for finding the first image recursively ***
@@ -340,17 +340,17 @@ function find_first_image_in_source($source_key, $relative_dir_path, array &$all
                     // Calculate relative path from the TARGET directory being scanned
                     $image_relative_to_target_dir = substr($image_real_path, strlen($resolved_target_dir_absolute));
                     $image_relative_to_target_dir = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $image_relative_to_target_dir), '/');
-                    // error_log("[find_first_image DEBUG] Found valid image: {$image_relative_to_target_dir}"); // REMOVED LOG
+
                     $image_files[$image_relative_to_target_dir] = true; 
                 }
             }
         }
-        // error_log("[find_first_image DEBUG] Scanned {$files_scanned_count} files/items total."); // REMOVED LOG
+        
 
         if (!empty($image_files)) {
             uksort($image_files, 'strnatcasecmp');
             $first_image_relative_path = key($image_files);
-            // error_log("[find_first_image DEBUG] Returning first image: {$first_image_relative_path}"); // REMOVED LOG
+
             return $first_image_relative_path;
         }
 
@@ -359,7 +359,7 @@ function find_first_image_in_source($source_key, $relative_dir_path, array &$all
         return null;
     }
 
-    // error_log("[find_first_image DEBUG] No valid images found in {$resolved_target_dir_absolute} or its subdirectories."); // REMOVED LOG
+    
     return null; // No image found
 }
 

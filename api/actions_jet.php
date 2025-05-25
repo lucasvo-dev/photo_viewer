@@ -28,7 +28,7 @@ if (!function_exists('json_error')) {
 
 $jet_action = $_GET['action'] ?? null;
 
-// error_log("[JET_ACTION] Action in actions_jet.php: " . $jet_action); // Optional: for fine-grained debugging
+
 
 switch ($jet_action) {
     case 'jet_list_images':

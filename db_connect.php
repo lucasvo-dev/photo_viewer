@@ -67,10 +67,11 @@ if (isset($config['image_sources']) && is_array($config['image_sources'])) {
                     'name' => $source_config['name'] ?? $key // Use name from config or key as fallback
                 ];
             } else {
-                error_log("CONFIG WARNING: Image source '{$key}' path '{$source_config['path']}' is invalid or not readable. Skipping.");
+                // Commented out to reduce log noise - only logged once per config load
+                // error_log("CONFIG WARNING: Image source '{$key}' path '{$source_config['path']}' is invalid or not readable. Skipping.");
             }
         } else {
-             error_log("CONFIG WARNING: Image source '{$key}' is missing 'path'. Skipping.");
+             // error_log("CONFIG WARNING: Image source '{$key}' is missing 'path'. Skipping.");
         }
     }
 } else {
@@ -107,10 +108,10 @@ if (isset($config['raw_image_sources']) && is_array($config['raw_image_sources']
                     'name' => $source_name
                 ];
             } else {
-                error_log("CONFIG WARNING: RAW Image source '{$key}' path '{$path_to_check}' is invalid or not readable. Skipping.");
+                // error_log("CONFIG WARNING: RAW Image source '{$key}' path '{$path_to_check}' is invalid or not readable. Skipping.");
             }
         } else {
-             error_log("CONFIG WARNING: RAW Image source '{$key}' is missing path or has incorrect format. Skipping.");
+             // error_log("CONFIG WARNING: RAW Image source '{$key}' is missing path or has incorrect format. Skipping.");
         }
     }
 } else {
@@ -296,21 +297,13 @@ try {
             INDEX idx_cache_jobs_folder_path (folder_path(255)),
             INDEX idx_cache_jobs_created_at (created_at)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
-        error_log("[db_connect.php] Ensuring cache_jobs table exists with all columns (including original_width, original_height)...");
-
         // Add 'size' and 'type' columns to cache_jobs if they don't exist
         add_column_if_not_exists($pdo, 'cache_jobs', 'size', 'INT DEFAULT NULL AFTER folder_path');
-        error_log("[db_connect.php] Checking/adding size column to cache_jobs...");
         add_column_if_not_exists($pdo, 'cache_jobs', 'type', "VARCHAR(10) DEFAULT 'image' AFTER size");
-        error_log("[db_connect.php] Checking/adding type column to cache_jobs...");
         add_column_if_not_exists($pdo, 'cache_jobs', 'worker_id', "VARCHAR(255) NULL DEFAULT NULL AFTER result_message");
-        error_log("[db_connect.php] Checking/adding worker_id column to cache_jobs...");
         add_column_if_not_exists($pdo, 'cache_jobs', 'image_count', "INT DEFAULT 0 AFTER processed_files");
-        error_log("[db_connect.php] Checking/adding image_count column to cache_jobs...");
         add_column_if_not_exists($pdo, 'cache_jobs', 'original_width', "INT DEFAULT NULL AFTER worker_id");
-        error_log("[db_connect.php] Checking/adding original_width column to cache_jobs...");
         add_column_if_not_exists($pdo, 'cache_jobs', 'original_height', "INT DEFAULT NULL AFTER original_width");
-        error_log("[db_connect.php] Checking/adding original_height column to cache_jobs...");
 
         // Create zip_jobs table
         $pdo->exec("CREATE TABLE IF NOT EXISTS zip_jobs (
@@ -378,19 +371,12 @@ try {
         }
 
         // --- AUTO-MIGRATION: Ensure new columns exist ---
-        error_log('[db_connect.php] Checking/adding items_json column to zip_jobs...');
         add_column_if_not_exists($pdo, 'zip_jobs', 'items_json', 'TEXT DEFAULT NULL');
-        error_log('[db_connect.php] Checking/adding result_message column to zip_jobs...');
         add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT NULL DEFAULT NULL');
-        error_log("[db_connect.php] Checking/adding downloaded_at column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'downloaded_at', 'TIMESTAMP NULL DEFAULT NULL');
-        error_log("[db_connect.php] Checking/adding final_zip_path column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_path', 'TEXT NULL DEFAULT NULL');
-        error_log("[db_connect.php] Checking/adding final_zip_name column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_name', 'VARCHAR(255) NULL DEFAULT NULL');
-        error_log("[db_connect.php] Checking/adding total_size column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'total_size', 'BIGINT DEFAULT 0');
-        error_log("[db_connect.php] Checking/adding cleanup_attempts column to zip_jobs...");
         add_column_if_not_exists($pdo, 'zip_jobs', 'cleanup_attempts', 'TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT \'Number of times cleanup has been attempted for this job ZIP file\' AFTER downloaded_at');
 
     }

@@ -1,5 +1,5 @@
 <?php
-error_log('--- API.PHP TOP LEVEL EXECUTION MARKER ---'); // New marker
+// error_log('--- API.PHP TOP LEVEL EXECUTION MARKER ---'); // New marker (commented out)
 // api.php (Main Entry Point)
 
 // --- 1. Initialization & Global Setup ---
@@ -11,8 +11,9 @@ require_once __DIR__ . '/api/helpers.php';
 
 // --- 3. Route Action to Appropriate Handler ---
 
-error_log("[API ROUTING] Action received: " . ($action ?? 'NOT SET')); // LOG THE ACTION
-error_log('--- API.PHP BEFORE ACTION ROUTING ---'); // New marker
+// LOG THE ACTION (commented out to reduce log noise)
+// error_log("[API ROUTING] Action received: " . ($action ?? 'NOT SET'));
+// error_log('--- API.PHP BEFORE ACTION ROUTING ---');
 
 // Define specific Jet application actions that are handled by actions_jet.php
 // $jetAppSpecificActions = ['jet_list_images', 'jet_get_raw_preview']; // REMOVED
@@ -31,8 +32,8 @@ if (strpos($action, 'jet_') === 0 && $action !== 'jet_list_raw_sources') {
     require_once __DIR__ . '/api/actions_jet.php';
 }
 
-// New log after the first if block, to see if we pass it when $action is not in $jetAppSpecificActions
-error_log('--- API.PHP AFTER JET APP SPECIFIC ACTIONS IF --- Action: ' . $action);
+// New log after the first if block (commented out to reduce log noise)
+// error_log('--- API.PHP AFTER JET APP SPECIFIC ACTIONS IF --- Action: ' . $action);
 
 // The second block (previously elseif, now if from the successful test)
 // handles admin actions and jet_list_raw_sources

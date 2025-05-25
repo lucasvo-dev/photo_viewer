@@ -248,12 +248,10 @@ while ($running) {
             $timestamp = date('Y-m-d H:i:s');
             $log_prefix = "[{$timestamp}] [Job {$job_id} ({$job_token})]";
 
-            echo "\n{$log_prefix} Processing job. Source Path: {$source_path_from_job}\n";
-            error_log_worker($job, "Processing job. Source Path: '{$source_path_from_job}', Items JSON: " . ($items_json_from_job ? 'present (' . strlen($items_json_from_job) . ' bytes)' : 'absent') . ", Filename Hint: '{$zip_filename_hint_from_job}'");
+            echo "\n{$log_prefix} Processing job: {$source_path_from_job}\n";
+            error_log_worker($job, "Processing job. Path: '{$source_path_from_job}', Items JSON: " . ($items_json_from_job ? 'present (' . strlen($items_json_from_job) . ' bytes)' : 'absent') . ", Filename Hint: '{$zip_filename_hint_from_job}'");
 
-            // --- DEBUG LOG ---
-            error_log_worker($job, "DEBUG: source_path_from_job = '$source_path_from_job', items_json_from_job = " . var_export($items_json_from_job, true));
-            // --- END DEBUG LOG ---
+
 
             $files_to_add = []; // Format: ['disk_path' => ABSOLUTE_PATH, 'zip_path' => RELATIVE_PATH_IN_ZIP]
             $total_files_to_zip = 0;
