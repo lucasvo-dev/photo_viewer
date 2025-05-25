@@ -727,9 +727,28 @@ document.addEventListener('DOMContentLoaded', () => {
         // Assemble the top controls
         const controlsTop = document.createElement('div');
         controlsTop.className = 'jet-preview-controls-top';
-        controlsTop.appendChild(imageNameDisplay);
-        controlsTop.appendChild(pickButton); // Temporary placement
-        controlsTop.appendChild(closeButton);
+        
+        // NEW: Create containers for layout
+        const leftControlArea = document.createElement('div');
+        leftControlArea.className = 'jet-preview-control-area left';
+
+        const centerControlArea = document.createElement('div');
+        centerControlArea.className = 'jet-preview-control-area center';
+
+        const rightControlArea = document.createElement('div');
+        rightControlArea.className = 'jet-preview-control-area right';
+
+        // Append elements to their respective containers
+        leftControlArea.appendChild(imageNameDisplay);
+        
+        centerControlArea.appendChild(pickButton); // Move pick button to center area
+        
+        rightControlArea.appendChild(closeButton);
+
+        // Append control areas to the top controls container
+        controlsTop.appendChild(leftControlArea);
+        controlsTop.appendChild(centerControlArea);
+        controlsTop.appendChild(rightControlArea);
 
         // Assemble the nav controls
          const controlsNav = document.createElement('div');
@@ -801,14 +820,16 @@ document.addEventListener('DOMContentLoaded', () => {
             pickButtonInPreview.classList.add(`picked-${imageObject.pick_color}`);
             if(colorIndicatorSpan) {
                  colorIndicatorSpan.textContent = imageObject.pick_color.toUpperCase();
-                 colorIndicatorSpan.style.backgroundColor = imageObject.pick_color;
-                 if (imageObject.pick_color === PICK_COLORS.GREY || imageObject.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
+                 // Background color and text color are now handled by the button's CSS classes
+                 // colorIndicatorSpan.style.backgroundColor = imageObject.pick_color;
+                 // if (imageObject.pick_color === PICK_COLORS.GREY || imageObject.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
             }
         } else { // No color picked (null)
              if(colorIndicatorSpan) {
                 colorIndicatorSpan.textContent = 'NONE';
-                colorIndicatorSpan.style.backgroundColor = 'transparent';
-                colorIndicatorSpan.style.color = '#ccc';
+                // Background color and text color are now handled by the button's CSS classes
+                // colorIndicatorSpan.style.backgroundColor = 'transparent';
+                // colorIndicatorSpan.style.color = '#ccc';
             }
         }
 
@@ -1056,21 +1077,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     pickButtonInPreview.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
                     if (imageToUpdate.pick_color) {
                         pickButtonInPreview.classList.add(`picked-${imageToUpdate.pick_color}`);
-                        if(colorIndicatorSpan) {
+                        // Update text content based on new color
+                         if(colorIndicatorSpan) {
                              colorIndicatorSpan.textContent = imageToUpdate.pick_color.toUpperCase();
-                             colorIndicatorSpan.style.backgroundColor = imageToUpdate.pick_color;
-                             if (imageToUpdate.pick_color === PICK_COLORS.GREY || imageToUpdate.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
-                        }
+                         }
                     } else { // No color picked (null)
                          if(colorIndicatorSpan) {
                             colorIndicatorSpan.textContent = 'NONE';
-                            colorIndicatorSpan.style.backgroundColor = 'transparent';
-                            colorIndicatorSpan.style.color = '#ccc';
                         }
                     }
                 }
 
-                // NEW: Update the corresponding thumbnail in the filmstrip
+                // Update the corresponding thumbnail in the filmstrip
                 const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
                 if (filmstripContainer && currentPreviewIndex !== -1) {
                      const currentThumbContainer = filmstripContainer.querySelector(`.jet-filmstrip-thumb-container[data-index="${currentPreviewIndex}"]`);

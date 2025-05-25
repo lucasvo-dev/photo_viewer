@@ -427,24 +427,47 @@ body.jet-app-active {
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    padding: 20px;
+    padding: 15px; /* Reduced padding */
     box-sizing: border-box;
 }
 
 .jet-preview-controls-top {
     width: 100%;
     max-width: 1200px; /* Match max width of main content area */
-    display: flex;
-    justify-content: space-between;
+    display: flex; /* Use Flexbox */
+    justify-content: space-between; /* Distribute space */
     align-items: center;
-    margin-bottom: 10px;
+    margin-bottom: 8px; /* Reduced margin */
     color: #ccc; /* Light gray text */
     font-size: 0.9em;
 }
 
+/* NEW: Styles for control area containers */
+.jet-preview-control-area {
+    display: flex;
+    align-items: center;
+}
+
+.jet-preview-control-area.left {
+    flex-grow: 1; /* Allow left area to take available space */
+    justify-content: flex-start;
+    margin-right: 10px; /* Space between left and center */
+}
+
+.jet-preview-control-area.center {
+    /* Center area for the pick button - doesn't need flex-grow */
+    justify-content: center;
+}
+
+.jet-preview-control-area.right {
+    flex-grow: 1; /* Allow right area to take available space */
+    justify-content: flex-end;
+    margin-left: 10px; /* Space between center and right */
+}
+
 #jet-preview-image-name {
     flex-grow: 1;
-    margin-right: 10px;
+    margin-right: 10px; /* Keep space from pick button if not using containers */
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -452,36 +475,62 @@ body.jet-app-active {
 
 .jet-preview-pick-button-base {
      /* Base styles for the pick button */
-    background-color: rgba(255, 255, 255, 0.1);
+    /* background-color: rgba(255, 255, 255, 0.1); *//* Remove base background */
     border: 1px solid #555;
-    color: #ccc;
-    padding: 4px 8px;
+    color: #ccc; /* Base text color */
+    padding: 6px 12px; /* Adjusted padding */
     border-radius: 4px;
     cursor: pointer;
-    font-size: 0.8em;
+    font-size: 1em; /* Increased font size */
     display: inline-flex;
     align-items: center;
-    transition: background-color 0.2s ease;
+    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+    min-width: 80px; /* Ensure a minimum width */
+    justify-content: center; /* Center content inside button */
 }
 
 .jet-preview-pick-button-base:hover {
-    background-color: rgba(255, 255, 255, 0.2);
+    background-color: rgba(255, 255, 255, 0.2); /* Hover background */
 }
 
 #jet-preview-pick-color-indicator {
+    /* This span will now just hold the text */
     display: inline-block;
-    width: 12px;
-    height: 12px;
-    margin-left: 5px;
-    border-radius: 3px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
+    /* width: 12px; *//* Remove fixed width */
+    height: auto; /* Auto height */
+    margin-left: 0; /* Remove margin */
+    border-radius: 0; /* Remove border radius */
+    border: none; /* Remove border */
     vertical-align: middle;
+    font-weight: bold;
+    text-align: center;
+    /* Initial text color - will be overridden by picked classes */
+    color: #ccc; 
+    background-color: transparent; /* Ensure no background on indicator */
+    padding: 0; /* Remove padding */
 }
 
-.picked-red #jet-preview-pick-color-indicator { background-color: red; border-color: red; }
-.picked-green #jet-preview-pick-color-indicator { background-color: green; border-color: green; }
-.picked-blue #jet-preview-pick-color-indicator { background-color: blue; border-color: blue; }
-.picked-grey #jet-preview-pick-color-indicator { background-color: grey; border-color: grey; }
+/* Update pick button styles to fill the entire button */
+.jet-preview-pick-button-base.picked-red {
+    background-color: var(--jet-color-picked-red); border-color: var(--jet-color-picked-red); color: white; /* Text color for contrast */
+}
+.jet-preview-pick-button-base.picked-green {
+    background-color: var(--jet-color-picked-green); border-color: var(--jet-color-picked-green); color: white; /* Text color for contrast */
+}
+.jet-preview-pick-button-base.picked-blue {
+    background-color: var(--jet-color-picked-blue); border-color: var(--jet-color-picked-blue); color: white; /* Text color for contrast */
+}
+.jet-preview-pick-button-base.picked-grey {
+    background-color: var(--jet-color-picked-grey-indicator); border-color: var(--jet-color-picked-grey-indicator); color: black; /* Text color for contrast */
+}
+
+/* Ensure text color is correct within the indicator span when button is picked */
+.jet-preview-pick-button-base.picked-red #jet-preview-pick-color-indicator,
+.jet-preview-pick-button-base.picked-green #jet-preview-pick-color-indicator,
+.jet-preview-pick-button-base.picked-blue #jet-preview-pick-color-indicator,
+.jet-preview-pick-button-base.picked-grey #jet-preview-pick-color-indicator {
+    color: inherit; /* Inherit color from the parent button */
+}
 
 /* Style for the main image container */
 .jet-preview-image-container {
@@ -491,8 +540,10 @@ body.jet-app-active {
     align-items: center;
     width: 100%;
     flex-grow: 1; /* Allow image area to take available space */
-    max-height: calc(100vh - 120px); /* Adjust based on header/footer height */
-    margin-bottom: 10px; /* Space below the main image */
+    max-height: calc(100vh - 160px); /* Adjusted based on increased filmstrip height and reduced spacing */
+    margin-bottom: 8px; /* Reduced margin */
+    /* Ensure clicks on the container itself don't interfere if buttons are overlaid */
+    pointer-events: none;
 }
 
 #jet-preview-main-image {
@@ -524,8 +575,12 @@ body.jet-app-active {
     padding: 10px 15px;
     font-size: 1.5em;
     cursor: pointer;
-    z-index: 10;
+    z-index: 10; /* Ensure buttons are above the image */
     transition: background-color 0.2s ease;
+    /* Ensure clicks on the buttons are captured */
+    pointer-events: auto;
+    /* Rounded corners on the side facing the image */
+    border-radius: 4px;
 }
 
 .preview-nav-button:hover {
@@ -534,23 +589,32 @@ body.jet-app-active {
 
 #jet-preview-prev-button {
     left: 10px;
+    border-top-right-radius: 0;
+    border-bottom-right-radius: 0;
 }
 
 #jet-preview-next-button {
     right: 10px;
+    border-top-left-radius: 0;
+    border-bottom-left-radius: 0;
+}
+
+/* Remove or adjust .jet-preview-controls-nav as buttons are now positioned differently */
+.jet-preview-controls-nav {
+    display: none; /* Hide the container as buttons are now positioned absolutely */
 }
 
 /* NEW: Thumbnail Filmstrip Styles */
 #jet-thumbnail-filmstrip {
     width: 100%;
     max-width: 1200px; /* Match max width of main content area */
-    height: 100px; /* Fixed height for the filmstrip */
+    height: 140px; /* Increased height for the filmstrip */
     display: flex; /* Arrange thumbnails horizontally */
     overflow-x: auto; /* Enable horizontal scrolling */
     overflow-y: hidden; /* Hide vertical scrollbar */
     align-items: center; /* Vertically align thumbnails */
     padding: 5px 0; /* Padding top/bottom */
-    margin-top: 10px; /* Space above the filmstrip */
+    margin-top: 8px; /* Reduced space above the filmstrip */
     background-color: rgba(0, 0, 0, 0.3); /* Slightly darker background for the strip */
     border-radius: 5px;
     /* Custom scrollbar for webkit browsers */
@@ -575,9 +639,9 @@ body.jet-app-active {
 /* NEW: Container for filmstrip thumbnail */
 .jet-filmstrip-thumb-container {
     position: relative; /* Needed for absolute positioning of ::after */
-    height: 90px; /* Container height matches image height */
+    height: 130px; /* Container height matches new filmstrip inner height */
     width: auto; /* Allow container to size with image */
-    margin: 0 5px; /* Space between containers */
+    margin: 0 3px; /* Reduced space between containers */
     cursor: pointer;
     border: 2px solid transparent; /* Default border for container */
     transition: border-color 0.2s ease, transform 0.1s ease;
@@ -585,6 +649,7 @@ body.jet-app-active {
     display: flex; /* Use flex to center image within container if needed */
     align-items: center;
     justify-content: center;
+    flex-shrink: 0; /* Prevent containers from shrinking */
 }
 
 .jet-filmstrip-thumb-container:hover {
