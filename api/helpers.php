@@ -45,6 +45,16 @@ function json_error($msg, $code = 400)
     json_response(['error' => $msg], $code);
 }
 
+/** Gửi JSON thành công */
+function json_success($data = null)
+{
+    $response = ['success' => true];
+    if ($data !== null) {
+        $response = array_merge($response, $data);
+    }
+    json_response($response, 200);
+}
+
 /**
  * Chuẩn hóa và làm sạch đường dẫn đầu vào (loại bỏ .., \, null bytes, dấu / dư thừa).
  */

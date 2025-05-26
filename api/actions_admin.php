@@ -12,7 +12,7 @@ if (!isset($action)) {
 }
 
 // Check if the user is logged in for all admin actions (except login itself)
-if ($action !== 'admin_login' && $action !== 'admin_check_auth' && empty($_SESSION['admin_logged_in'])) {
+if ($action !== 'admin_login' && $action !== 'admin_check_auth' && (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin')) {
     // For admin_check_auth, it needs to run to report not logged in
     if ($action !== 'admin_check_auth') {
         json_error("Yêu cầu đăng nhập Admin.", 403);
@@ -57,8 +57,8 @@ switch ($action) {
         break;
 
     case 'admin_check_auth':
-        if (!empty($_SESSION['admin_logged_in'])) {
-            json_response(['logged_in' => true, 'username' => $_SESSION['admin_username'] ?? '']);
+        if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
+            json_response(['logged_in' => true, 'username' => $_SESSION['username'] ?? '']);
         } else {
             json_response(['logged_in' => false]);
         }
@@ -501,133 +501,9 @@ switch ($action) {
         }
         break;
 
-    // --- JET CULLING APP ACTIONS ---
-    case 'jet_list_raw_sources':
-        error_log("[JET_ADMIN_ACTION] Entered case: jet_list_raw_sources - Now listing top-level folders from all RAW sources.");
 
-        if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES)) {
-            error_log("[Jet API] RAW_IMAGE_SOURCES constant is not defined or not an array. Check config.");
-            json_error("Lỗi cấu hình nguồn RAW phía server.", 500);
-        }
 
-        if (empty(RAW_IMAGE_SOURCES)) {
-            json_response(['folders' => []]); // Return empty array if no RAW sources are configured
-            break;
-        }
 
-        $top_level_folders = [];
-
-        foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
-            if (!is_array($source_config) || !isset($source_config['path'])) {
-                error_log("[Jet API] Skipping invalid RAW source config for key: {$source_key}");
-                continue;
-            }
-            $base_path = $source_config['path']; // This is already a realpath
-
-            if (!is_dir($base_path) || !is_readable($base_path)) {
-                error_log("[Jet API] RAW source path not found or not readable for key '{$source_key}': {$base_path}");
-                continue;
-            }
-
-            try {
-                $iterator = new DirectoryIterator($base_path);
-                foreach ($iterator as $fileinfo) {
-                    if ($fileinfo->isDot() || !$fileinfo->isDir()) {
-                        continue;
-                    }
-                    $folder_name = $fileinfo->getFilename();
-                    $top_level_folders[] = [
-                        'name' => $folder_name,
-                        // Full path relative to system, but for API, client needs source_key/folder_name
-                        'path' => $source_key . '/' . $folder_name, 
-                        'source_key' => $source_key,
-                        'type' => 'folder' // Consistent with jet_list_folders_in_raw_source
-                    ];
-                }
-            } catch (Exception $e) {
-                error_log("[Jet API] Error scanning RAW source directory '{$base_path}' for key '{$source_key}': " . $e->getMessage());
-                // Continue to next source if one fails
-            }
-        }
-
-        // Sort all collected top-level folders alphabetically by name
-        usort($top_level_folders, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
-
-        json_response(['folders' => $top_level_folders]);
-        break;
-
-    case 'jet_list_folders_in_raw_source':
-        $source_key = $_GET['source_key'] ?? null;
-        $relative_path = $_GET['path'] ?? ''; // Relative path within the source
-
-        if (!$source_key) {
-            json_error("Thiếu tham số 'source_key'.", 400);
-        }
-
-        if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES) || !isset(RAW_IMAGE_SOURCES[$source_key])) {
-            error_log("[Jet API] Invalid or undefined RAW source key: {$source_key}");
-            json_error("Nguồn RAW không hợp lệ hoặc không được định nghĩa: " . htmlspecialchars($source_key), 404);
-        }
-
-        $source_config = RAW_IMAGE_SOURCES[$source_key];
-        $base_path = $source_config['path']; // This is already a realpath from db_connect.php
-
-        // Sanitize and validate the relative path to prevent directory traversal
-        // Normalize slashes, remove leading/trailing slashes, remove ".."
-        $sanitized_relative_path = trim(str_replace('..', '', $relative_path), '/');
-        $sanitized_relative_path = str_replace('\\', '/', $sanitized_relative_path);
-        
-        $full_path_to_scan = $base_path;
-        if (!empty($sanitized_relative_path)) {
-            $full_path_to_scan .= '/' . $sanitized_relative_path;
-        }
-
-        // Final check that the path is still within the base path (though str_replace('..','') helps a lot)
-        if (realpath($full_path_to_scan) === false || strpos(realpath($full_path_to_scan), $base_path) !== 0) {
-            error_log("[Jet API] Path traversal attempt or invalid path for source '{$source_key}': {$relative_path} (resolved: {$full_path_to_scan})");
-            json_error("Đường dẫn không hợp lệ.", 400);
-        }
-        
-        if (!is_dir($full_path_to_scan) || !is_readable($full_path_to_scan)) {
-            error_log("[Jet API] Directory not found or not readable: {$full_path_to_scan}");
-            json_error("Không thể truy cập thư mục: " . htmlspecialchars($sanitized_relative_path), 404);
-        }
-
-        $folders = [];
-        $files = []; // For later, if we list files too
-
-        try {
-            $iterator = new DirectoryIterator($full_path_to_scan);
-            foreach ($iterator as $fileinfo) {
-                if ($fileinfo->isDot()) continue;
-
-                $itemName = $fileinfo->getFilename();
-                $item_relative_path = !empty($sanitized_relative_path) ? $sanitized_relative_path . '/' . $itemName : $itemName;
-
-                if ($fileinfo->isDir()) {
-                    $folders[] = [
-                        'name' => $itemName,
-                        'path' => $item_relative_path, // Path relative to the source_key root
-                        'type' => 'folder'
-                    ];
-                }
-                // TODO: Later, identify RAW files based on allowed RAW extensions if needed in this view
-                // else if ($fileinfo->isFile()) { ... }
-            }
-            // Sort folders alphabetically
-            usort($folders, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
-
-            json_response([
-                'source_key' => $source_key,
-                'current_path' => $sanitized_relative_path,
-                'folders' => $folders,
-                // 'files' => $files // For later
-            ]);
-        } catch (Exception $e) {
-            error_log("[Jet API] Error scanning directory '{$full_path_to_scan}': " . $e->getMessage());
-            json_error("Lỗi khi quét thư mục: " . $e->getMessage(), 500);
-        }
-        break;
 
     // Default case for unknown admin actions
     default:

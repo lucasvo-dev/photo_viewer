@@ -1,24 +1,22 @@
 <?php
-session_start(); // Always start the session
+session_start();
 
-// --- LOGIN CHECK ---
-// For now, we'll assume admin login is sufficient.
-// Later, we might introduce a 'designer' role.
-if (!isset($_SESSION['admin_logged_in']) || $_SESSION['admin_logged_in'] !== true) {
-    header('Location: login.php'); // Not logged in, redirect to login page
+// Kiểm tra đăng nhập designer hoặc admin
+if (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['designer', 'admin'])) {
+    header('Location: login.php?redirect=jet');
     exit;
 }
 
-// --- LOGOUT HANDLING ---
+// Lấy thông tin người dùng
+$username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['username']) : 'User';
+
+// Xử lý đăng xuất
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
-    session_unset();   // Unset all session variables
-    session_destroy(); // Destroy the session completely
-    header('Location: login.php'); // Redirect to login page
+    session_unset();
+    session_destroy();
+    header('Location: login.php?redirect=jet');
     exit;
 }
-
-// Get admin username from session to display (if available)
-$username = isset($_SESSION['admin_username']) ? htmlspecialchars($_SESSION['admin_username']) : 'User';
 
 // Placeholder for RAW_IMAGE_SOURCES - this should ideally be loaded from config.php
 // For now, this is just a reminder. The actual loading will be in API/init.
@@ -42,7 +40,10 @@ if (!defined('RAW_IMAGE_SOURCES')) {
     <div class="container jet-view"> <!-- Specific class for Jet view styling -->
         <div class="header">
             <h1>Jet - Photo Culling Workspace</h1>
-            <a href="jet.php?action=logout" class="button logout-link">Đăng xuất (<?php echo $username; ?>)</a>
+            <div class="user-info">
+                <span id="jet-user-info"><?php echo ($_SESSION['user_role'] === 'admin' ? 'Admin' : 'Designer') . ': ' . $username; ?></span>
+                <a href="jet.php?action=logout" class="button logout-link">Đăng xuất</a>
+            </div>
         </div>
 
         <div id="jet-app-container">

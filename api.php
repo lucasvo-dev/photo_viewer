@@ -18,37 +18,30 @@ require_once __DIR__ . '/api/helpers.php';
 // Define specific Jet application actions that are handled by actions_jet.php
 // $jetAppSpecificActions = ['jet_list_images', 'jet_get_raw_preview']; // REMOVED
 
-// Restore the first if block as it was, but make it general for all jet_ actions
-// Condition: action starts with 'jet_' AND is NOT 'jet_list_raw_sources'
-if (strpos($action, 'jet_') === 0 && $action !== 'jet_list_raw_sources') { 
-    // These are Jet culling app specific actions processed by actions_jet.php
-    // IMPORTANT: Changed to check for admin_logged_in for consistency
-    if (empty($_SESSION['admin_logged_in'])) { 
-        error_log('--- API.PHP SESSION FAIL for Jet App Specific Action: ' . $action . ' (Reason: admin_logged_in is empty) Session data: ' . print_r($_SESSION, true) . ' SID: ' . session_id());
-        json_error("Truy cập bị Từ chối. Yêu cầu xác thực quản trị viên cho hành động Jet (app specific).", 403);
+// Kiểm tra quyền cho các action Jet
+if (strpos($action, 'jet_') === 0) {
+    error_log("[API.PHP] Jet action detected: " . $action);
+    error_log("[API.PHP] Session user_id: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+    error_log("[API.PHP] Session user_role: " . ($_SESSION['user_role'] ?? 'NOT SET'));
+    if (!isset($_SESSION['user_role']) || 
+        ($_SESSION['user_role'] !== 'designer' && $_SESSION['user_role'] !== 'admin')) {
+        json_error("Truy cập bị từ chối. Yêu cầu quyền designer hoặc admin.", 403);
         exit;
     }
-    error_log('--- API.PHP SESSION OK for Jet App Specific Action: ' . $action . ' (admin_logged_in is set) SID: ' . session_id());
+    error_log("[API.PHP] About to include actions_jet.php");
     require_once __DIR__ . '/api/actions_jet.php';
 }
 
 // New log after the first if block (commented out to reduce log noise)
 // error_log('--- API.PHP AFTER JET APP SPECIFIC ACTIONS IF --- Action: ' . $action);
 
-// The second block (previously elseif, now if from the successful test)
-// handles admin actions and jet_list_raw_sources
-// Condition: action starts with 'admin_' OR IS 'jet_list_raw_sources'
-if (strpos($action, 'admin_') === 0 || $action === 'jet_list_raw_sources') {
-    error_log('--- API.PHP INSIDE ADMIN/JET_LIST_RAW_SOURCES IF --- Checking session for action: ' . $action);
-    // IMPORTANT: Temporarily changed to check for admin_logged_in instead of user_id for broader compatibility
-    if (empty($_SESSION['admin_logged_in'])) { 
-        error_log('--- API.PHP SESSION FAIL for action: ' . $action . ' (Reason: admin_logged_in is empty) Session data: ' . print_r($_SESSION, true) . ' SID: ' . session_id());
-        json_error("Truy cập bị Từ chối. Yêu cầu xác thực quản trị viên (" . htmlspecialchars($action) . ").", 403);
+// Handle admin-only actions
+if (strpos($action, 'admin_') === 0) {
+    // Check for admin role using the new role-based system
+    if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+        json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
         exit;
     }
-    // If admin_logged_in is set, we can assume user_id should correspond to admin_username if needed by actions_admin/jet.
-    // For now, just ensuring admin_logged_in is sufficient for this auth check.
-    error_log('--- API.PHP SESSION OK (admin_logged_in is set) for action: ' . $action . ' SID: ' . session_id());
     require_once __DIR__ . '/api/actions_admin.php';
 
 } elseif (!empty($action)) { // Catches any other non-empty action as potentially public

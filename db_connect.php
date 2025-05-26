@@ -2,7 +2,7 @@
 // --- Database Connection Configuration ---
 
 // Load central configuration
-$config = require_once __DIR__ . '/config.php';
+$config = require __DIR__ . '/config.php';
 
 if (!$config) {
     error_log("CRITICAL CONFIG ERROR: Failed to load config.php");
@@ -108,10 +108,10 @@ if (isset($config['raw_image_sources']) && is_array($config['raw_image_sources']
                     'name' => $source_name
                 ];
             } else {
-                // error_log("CONFIG WARNING: RAW Image source '{$key}' path '{$path_to_check}' is invalid or not readable. Skipping.");
+                error_log("CONFIG WARNING: RAW Image source '{$key}' path '{$path_to_check}' is invalid or not readable. Realpath result: " . ($resolved_path ?: 'false') . ". Is_dir: " . (is_dir($path_to_check) ? 'true' : 'false') . ". Is_readable: " . (is_readable($path_to_check) ? 'true' : 'false'));
             }
         } else {
-             // error_log("CONFIG WARNING: RAW Image source '{$key}' is missing path or has incorrect format. Skipping.");
+             error_log("CONFIG WARNING: RAW Image source '{$key}' is missing path or has incorrect format. Skipping.");
         }
     }
 } else {
@@ -323,16 +323,27 @@ try {
             cleanup_attempts TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT 'Number of times cleanup has been attempted for this job ZIP file'
         )");
 
-        // Create jet_image_picks table for Jet Culling App
-        // This table stores which images a user has "picked"
+        // Create users table if not exists
+        $pdo->exec("CREATE TABLE IF NOT EXISTS users (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            username VARCHAR(50) NOT NULL UNIQUE,
+            password VARCHAR(255) NOT NULL,
+            role ENUM('admin', 'designer') NOT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login TIMESTAMP NULL
+        )");
+
+        // Create jet_image_picks table if not exists (for storing designer's picks)
         $pdo->exec("CREATE TABLE IF NOT EXISTS jet_image_picks (
-            user_username VARCHAR(255) NOT NULL,
-            source_key VARCHAR(255) NOT NULL,
-            image_relative_path TEXT NOT NULL,
-            pick_color VARCHAR(20) DEFAULT NULL, -- Stores 'red', 'green', 'blue', 'grey', or NULL for no pick
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            user_id INT NOT NULL,
+            source_key VARCHAR(50) NOT NULL,
+            image_relative_path VARCHAR(255) NOT NULL,
+            pick_color VARCHAR(20) DEFAULT NULL,
             pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-            PRIMARY KEY (user_username, source_key, image_relative_path(255)) -- Path part of PK needs length
-        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            UNIQUE KEY unique_pick (user_id, source_key, image_relative_path)
+        )");
 
         // Alter jet_image_picks table if it has the old structure
         if (column_exists($pdo, 'jet_image_picks', 'is_picked')) {
@@ -368,6 +379,78 @@ try {
                  error_log("Ensuring jet_image_picks table: adding pick_status_updated_at column as is_picked was not found either.");
                  $pdo->exec("ALTER TABLE jet_image_picks ADD COLUMN pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER pick_color");
             }
+        }
+
+        // Fix column name mismatch: image_path should be image_relative_path
+        if (column_exists($pdo, 'jet_image_picks', 'image_path') && !column_exists($pdo, 'jet_image_picks', 'image_relative_path')) {
+            error_log("Migrating jet_image_picks table: renaming image_path to image_relative_path.");
+            // Drop the old unique constraint first
+            $pdo->exec("ALTER TABLE jet_image_picks DROP INDEX unique_pick");
+            // Rename the column
+            $pdo->exec("ALTER TABLE jet_image_picks CHANGE COLUMN image_path image_relative_path VARCHAR(255) NOT NULL");
+            // Add the new unique constraint
+            $pdo->exec("ALTER TABLE jet_image_picks ADD UNIQUE KEY unique_pick (user_id, source_key, image_relative_path)");
+        }
+
+        // Comprehensive table cleanup for jet_image_picks
+        try {
+            // Check if we have a messy table state and need to recreate it
+            $show_create_stmt = $pdo->prepare("SHOW CREATE TABLE jet_image_picks");
+            $show_create_stmt->execute();
+            $create_result = $show_create_stmt->fetch();
+            $create_table = $create_result['Create Table'];
+            
+            // Check if table has incorrect unique constraint or columns
+            $needs_cleanup = (
+                strpos($create_table, 'user_username') !== false ||
+                (strpos($create_table, 'image_path') !== false && strpos($create_table, 'image_relative_path') !== false) ||
+                strpos($create_table, 'picked_at') !== false
+            );
+            
+            if ($needs_cleanup) {
+                error_log("Cleaning up jet_image_picks table structure...");
+                
+                // Backup existing data
+                $backup_stmt = $pdo->query("SELECT * FROM jet_image_picks");
+                $backup_data = $backup_stmt->fetchAll();
+                
+                // Drop and recreate the table with correct structure
+                $pdo->exec("DROP TABLE jet_image_picks");
+                $pdo->exec("CREATE TABLE jet_image_picks (
+                    id INT AUTO_INCREMENT PRIMARY KEY,
+                    user_id INT NOT NULL,
+                    source_key VARCHAR(50) NOT NULL,
+                    image_relative_path VARCHAR(255) NOT NULL,
+                    pick_color VARCHAR(20) DEFAULT NULL,
+                    pick_status_updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                    UNIQUE KEY unique_pick (user_id, source_key, image_relative_path)
+                )");
+                
+                // Restore data
+                if (!empty($backup_data)) {
+                    $restore_stmt = $pdo->prepare("INSERT INTO jet_image_picks (user_id, source_key, image_relative_path, pick_color, pick_status_updated_at) VALUES (?, ?, ?, ?, ?)");
+                    foreach ($backup_data as $row) {
+                        $user_id = $row['user_id'] ?? 1; // Default to admin if missing
+                        $source_key = $row['source_key'] ?? '';
+                        $image_path = $row['image_relative_path'] ?? $row['image_path'] ?? ''; // Try both column names
+                        $pick_color = $row['pick_color'] ?? null;
+                        $updated_at = $row['pick_status_updated_at'] ?? $row['picked_at'] ?? null;
+                        
+                        if ($image_path && $source_key) {
+                            try {
+                                $restore_stmt->execute([$user_id, $source_key, $image_path, $pick_color, $updated_at]);
+                            } catch (PDOException $e) {
+                                error_log("Error restoring pick data for image {$image_path}: " . $e->getMessage());
+                            }
+                        }
+                    }
+                }
+                
+                error_log("jet_image_picks table cleanup completed.");
+            }
+        } catch (PDOException $e) {
+            error_log("Error during jet_image_picks table cleanup: " . $e->getMessage());
         }
 
         // --- AUTO-MIGRATION: Ensure new columns exist ---

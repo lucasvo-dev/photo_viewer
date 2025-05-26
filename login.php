@@ -1,12 +1,15 @@
 <?php
 session_start(); // Luôn bắt đầu session ở đầu file cần dùng session
+require_once 'db_connect.php';
 
 // Load central configuration
 $config = require_once __DIR__ . '/config.php';
 if (!$config) {
     error_log("CRITICAL CONFIG ERROR: Failed to load config.php in login.php");
     // Show generic error, dont reveal config issues
-    $error_message = 'Lỗi cấu hình server.'; 
+    $error_message = 'Lỗi cấu hình server.';
+    $admin_username = 'admin'; // Fallback
+    $admin_password_hash = null;
 } else {
     $admin_username = $config['admin_username'] ?? 'admin'; // Use from config, fallback
     $admin_password_hash = $config['admin_password_hash'] ?? null;
@@ -16,34 +19,92 @@ if (!$config) {
 // define('ADMIN_USERNAME', 'admin'); 
 // define('ADMIN_PASSWORD_HASH', '...'); 
 
-$error_message = '';
+$error = '';
+$username = '';
 
-// Nếu admin đã đăng nhập rồi, chuyển thẳng đến trang admin
-if (isset($_SESSION['admin_logged_in']) && $_SESSION['admin_logged_in'] === true) {
-    header('Location: admin.php');
+// Check if config loaded properly
+if (isset($error_message)) {
+    $error = $error_message;
+}
+
+// Nếu đã đăng nhập, chuyển hướng dựa trên role
+if (isset($_SESSION['user_role'])) {
+    if ($_SESSION['user_role'] === 'admin') {
+        header('Location: admin.php');
+    } else {
+        header('Location: jet.php');
+    }
     exit;
 }
 
-// Xử lý khi người dùng gửi form đăng nhập
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Check if config loaded correctly before proceeding
-    if (empty($admin_password_hash)) {
-        $error_message = 'Lỗi cấu hình server nghiêm trọng.';
-    } else {
-        $username_attempt = isset($_POST['username']) ? trim($_POST['username']) : '';
-        $password_attempt = isset($_POST['password']) ? $_POST['password'] : '';
+    $username = $_POST['username'] ?? '';
+    $password = $_POST['password'] ?? '';
+    $redirect = $_GET['redirect'] ?? 'admin';
 
-        // Kiểm tra thông tin đăng nhập using config values
-        if ($username_attempt === $admin_username && password_verify($password_attempt, $admin_password_hash)) {
-            // Đăng nhập thành công
-            session_regenerate_id(true);
-            $_SESSION['admin_logged_in'] = true;
-            $_SESSION['admin_username'] = $username_attempt;
-            header('Location: admin.php');
-            exit;
-        } else {
-            // Đăng nhập thất bại
-            $error_message = 'Tên đăng nhập hoặc mật khẩu không đúng.';
+
+
+    if (empty($username) || empty($password)) {
+        $error = 'Vui lòng nhập tên đăng nhập và mật khẩu.';
+    } else {
+        try {
+            // Kiểm tra admin mặc định từ config
+            if ($username === $admin_username && $admin_password_hash && password_verify($password, $admin_password_hash)) {
+                // Tạo hoặc cập nhật admin trong database
+                $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ? AND role = 'admin'");
+                $stmt->execute([$username]);
+                $admin = $stmt->fetch();
+
+                if (!$admin) {
+                    // Tạo admin mới nếu chưa tồn tại
+                    $stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')");
+                    $stmt->execute([$username, $admin_password_hash]);
+                    $admin_id = $pdo->lastInsertId();
+                } else {
+                    $admin_id = $admin['id'];
+                }
+
+                // Đăng nhập thành công
+                $_SESSION['user_id'] = $admin_id;
+                $_SESSION['username'] = $username;
+                $_SESSION['user_role'] = 'admin';
+
+                // Cập nhật last_login
+                $stmt = $pdo->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?");
+                $stmt->execute([$admin_id]);
+
+                header('Location: admin.php');
+                exit;
+            }
+
+            // Kiểm tra user trong database
+            $stmt = $pdo->prepare("SELECT id, username, password_hash, role FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            $user = $stmt->fetch();
+
+            if ($user && password_verify($password, $user['password_hash'])) {
+                // Đăng nhập thành công
+                $_SESSION['user_id'] = $user['id'];
+                $_SESSION['username'] = $user['username'];
+                $_SESSION['user_role'] = $user['role'];
+
+                // Cập nhật last_login
+                $stmt = $pdo->prepare("UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?");
+                $stmt->execute([$user['id']]);
+
+                // Điều hướng dựa trên role và redirect
+                if ($user['role'] === 'admin') {
+                    header('Location: admin.php');
+                } else {
+                    header('Location: jet.php');
+                }
+                exit;
+            } else {
+                $error = 'Tên đăng nhập hoặc mật khẩu không đúng.';
+            }
+        } catch (PDOException $e) {
+            error_log("Login error: " . $e->getMessage());
+            $error = 'Đã xảy ra lỗi khi đăng nhập. Vui lòng thử lại sau.';
         }
     }
 }
@@ -53,7 +114,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Đăng nhập Admin</title>
+    <title>Đăng nhập - <?php echo htmlspecialchars($config['app_title'] ?? 'Thư viện Ảnh'); ?></title>
     <link rel="icon" type="image/png" href="theme/favicon.png"> <!-- Favicon -->
     <link rel="stylesheet" href="css/style.css"> <style>
         /* CSS riêng cho trang login */
@@ -103,19 +164,25 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         .error { color: #f85149; margin-top: -10px; margin-bottom: 15px; font-size: 0.9em; text-align: center; }
     </style>
 </head>
-<body>
-    <div class="login-container">
-        <h2>Đăng nhập Trang Quản trị</h2>
-        <?php if (!empty($error_message)): ?>
-            <p class="error"><?php echo htmlspecialchars($error_message); ?></p>
-        <?php endif; ?>
-        <form method="post" action="login.php" novalidate>
-             <label for="username">Tên đăng nhập:</label>
-            <input type="text" id="username" name="username" required autocomplete="username">
-             <label for="password">Mật khẩu:</label>
-            <input type="password" id="password" name="password" required autocomplete="current-password">
-            <button type="submit" class="button">Đăng nhập</button>
-        </form>
+<body class="login-view">
+    <div class="container">
+        <div class="login-container">
+            <h1>Đăng nhập</h1>
+            <?php if ($error): ?>
+                <div class="error-message"><?php echo htmlspecialchars($error); ?></div>
+            <?php endif; ?>
+            <form method="POST" action="login.php<?php echo isset($_GET['redirect']) ? '?redirect=' . htmlspecialchars($_GET['redirect']) : ''; ?>">
+                <div class="form-group">
+                    <label for="username">Tên đăng nhập:</label>
+                    <input type="text" id="username" name="username" value="<?php echo htmlspecialchars($username); ?>" required>
+                </div>
+                <div class="form-group">
+                    <label for="password">Mật khẩu:</label>
+                    <input type="password" id="password" name="password" required>
+                </div>
+                <button type="submit" class="button">Đăng nhập</button>
+            </form>
+        </div>
     </div>
 </body>
 </html>

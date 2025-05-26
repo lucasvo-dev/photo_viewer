@@ -97,5 +97,10 @@ define('THUMBNAIL_SIZES_API', (defined('THUMBNAIL_SIZES') && is_array(THUMBNAIL_
 $action = $_REQUEST['action'] ?? ''; // Use REQUEST to handle both GET and POST actions
 $search_term = isset($_GET['search']) ? trim($_GET['search']) : null;
 
+// Debug action
+error_log("[API_INIT] Action from REQUEST: " . $action);
+error_log("[API_INIT] GET action: " . ($_GET['action'] ?? 'NOT SET'));
+error_log("[API_INIT] POST action: " . ($_POST['action'] ?? 'NOT SET'));
+
 // $pdo, $action, $search_term, $allowed_ext are now available globally
 // IMAGE_SOURCES, CACHE_THUMB_ROOT, THUMBNAIL_SIZES_API are available as constants 

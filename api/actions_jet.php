@@ -31,6 +31,137 @@ $jet_action = $_GET['action'] ?? null;
 
 
 switch ($jet_action) {
+    case 'jet_list_raw_sources':
+        error_log("[JET_ACTION] Entered case: jet_list_raw_sources - Now listing top-level folders from all RAW sources.");
+
+        if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES)) {
+            error_log("[Jet API] RAW_IMAGE_SOURCES constant is not defined or not an array. Check config.");
+            json_error("Lỗi cấu hình nguồn RAW phía server.", 500);
+        }
+
+        if (empty(RAW_IMAGE_SOURCES)) {
+            json_response(['folders' => []]); // Return empty array if no RAW sources are configured
+            exit;
+        }
+
+        $top_level_folders = [];
+
+        foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
+            if (!is_array($source_config) || !isset($source_config['path'])) {
+                error_log("[Jet API] Skipping invalid RAW source config for key: {$source_key}");
+                continue;
+            }
+            $base_path = $source_config['path']; // This is already a realpath
+
+            if (!is_dir($base_path) || !is_readable($base_path)) {
+                error_log("[Jet API] RAW source path not found or not readable for key '{$source_key}': {$base_path}");
+                continue;
+            }
+
+            try {
+                $iterator = new DirectoryIterator($base_path);
+                foreach ($iterator as $fileinfo) {
+                    if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                        continue;
+                    }
+                    $folder_name = $fileinfo->getFilename();
+                    $top_level_folders[] = [
+                        'name' => $folder_name,
+                        // Full path relative to system, but for API, client needs source_key/folder_name
+                        'path' => $source_key . '/' . $folder_name, 
+                        'source_key' => $source_key,
+                        'type' => 'folder' // Consistent with jet_list_folders_in_raw_source
+                    ];
+                }
+            } catch (Exception $e) {
+                error_log("[Jet API] Error scanning RAW source directory '{$base_path}' for key '{$source_key}': " . $e->getMessage());
+                // Continue to next source if one fails
+            }
+        }
+
+        // Sort all collected top-level folders alphabetically by name
+        usort($top_level_folders, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+
+        json_response(['folders' => $top_level_folders]);
+        exit;
+
+    case 'jet_list_folders_in_raw_source':
+        $source_key = $_GET['source_key'] ?? null;
+        $relative_path = $_GET['path'] ?? ''; // Relative path within the source
+
+        if (!$source_key) {
+            json_error("Thiếu tham số 'source_key'.", 400);
+            exit;
+        }
+
+        if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES) || !isset(RAW_IMAGE_SOURCES[$source_key])) {
+            error_log("[Jet API] Invalid or undefined RAW source key: {$source_key}");
+            json_error("Nguồn RAW không hợp lệ hoặc không được định nghĩa: " . htmlspecialchars($source_key), 404);
+            exit;
+        }
+
+        $source_config = RAW_IMAGE_SOURCES[$source_key];
+        $base_path = $source_config['path']; // This is already a realpath from db_connect.php
+
+        // Sanitize and validate the relative path to prevent directory traversal
+        // Normalize slashes, remove leading/trailing slashes, remove ".."
+        $sanitized_relative_path = trim(str_replace('..', '', $relative_path), '/');
+        $sanitized_relative_path = str_replace('\\', '/', $sanitized_relative_path);
+        
+        $full_path_to_scan = $base_path;
+        if (!empty($sanitized_relative_path)) {
+            $full_path_to_scan .= '/' . $sanitized_relative_path;
+        }
+
+        // Final check that the path is still within the base path (though str_replace('..','') helps a lot)
+        if (realpath($full_path_to_scan) === false || strpos(realpath($full_path_to_scan), $base_path) !== 0) {
+            error_log("[Jet API] Path traversal attempt or invalid path for source '{$source_key}': {$relative_path} (resolved: {$full_path_to_scan})");
+            json_error("Đường dẫn không hợp lệ.", 400);
+            exit;
+        }
+        
+        if (!is_dir($full_path_to_scan) || !is_readable($full_path_to_scan)) {
+            error_log("[Jet API] Directory not found or not readable: {$full_path_to_scan}");
+            json_error("Không thể truy cập thư mục: " . htmlspecialchars($sanitized_relative_path), 404);
+            exit;
+        }
+
+        $folders = [];
+        $files = []; // For later, if we list files too
+
+        try {
+            $iterator = new DirectoryIterator($full_path_to_scan);
+            foreach ($iterator as $fileinfo) {
+                if ($fileinfo->isDot()) continue;
+
+                $itemName = $fileinfo->getFilename();
+                $item_relative_path = !empty($sanitized_relative_path) ? $sanitized_relative_path . '/' . $itemName : $itemName;
+
+                if ($fileinfo->isDir()) {
+                    $folders[] = [
+                        'name' => $itemName,
+                        'path' => $item_relative_path, // Path relative to the source_key root
+                        'type' => 'folder'
+                    ];
+                }
+                // TODO: Later, identify RAW files based on allowed RAW extensions if needed in this view
+                // else if ($fileinfo->isFile()) { ... }
+            }
+            // Sort folders alphabetically
+            usort($folders, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+
+            json_response([
+                'source_key' => $source_key,
+                'current_path' => $sanitized_relative_path,
+                'folders' => $folders,
+                // 'files' => $files // For later
+            ]);
+        } catch (Exception $e) {
+            error_log("[Jet API] Error scanning directory '{$full_path_to_scan}': " . $e->getMessage());
+            json_error("Lỗi khi quét thư mục: " . $e->getMessage(), 500);
+        }
+        exit;
+
     case 'jet_list_images':
         error_log("[JET_LIST_IMAGES] Entered case.");
         $source_key = $_GET['source_key'] ?? null;
@@ -100,19 +231,73 @@ switch ($jet_action) {
         error_log("[JET_LIST_IMAGES] About to iterate directory: {$full_scan_path_realpath}");
 
         // Get current user for checking pick status
-        $current_user_for_picks = $_SESSION['admin_username'] ?? null;
+        $current_user_id = $_SESSION['user_id'] ?? null;
+        $current_user_role = $_SESSION['user_role'] ?? null;
         $user_picks = [];
-        if ($current_user_for_picks && $pdo) {
+        $all_picks = []; // For admin to see all picks
+        
+        if ($current_user_id && $pdo) {
             try {
-                // Fetch pick_color instead of is_picked
-                $sql_picks = "SELECT image_relative_path, pick_color FROM jet_image_picks WHERE user_username = :user_username AND source_key = :source_key";
-                $stmt_picks = $pdo->prepare($sql_picks);
-                $stmt_picks->bindParam(':user_username', $current_user_for_picks, PDO::PARAM_STR);
-                $stmt_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
-                $stmt_picks->execute();
-                while ($row = $stmt_picks->fetch(PDO::FETCH_ASSOC)) {
-                    // Store the actual color string, or null if no pick
-                    $user_picks[$row['image_relative_path']] = $row['pick_color']; 
+                if ($current_user_role === 'admin') {
+                    // Admin can see all picks from all users
+                    $sql_all_picks = "SELECT image_relative_path, pick_color, user_id, u.username 
+                                     FROM jet_image_picks j 
+                                     LEFT JOIN users u ON j.user_id = u.id 
+                                     WHERE j.source_key = :source_key AND j.pick_color IS NOT NULL";
+                    $stmt_all_picks = $pdo->prepare($sql_all_picks);
+                    $stmt_all_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
+                    $stmt_all_picks->execute();
+                    while ($row = $stmt_all_picks->fetch(PDO::FETCH_ASSOC)) {
+                        $image_path = $row['image_relative_path'];
+                        if (!isset($all_picks[$image_path])) {
+                            $all_picks[$image_path] = [];
+                        }
+                        $all_picks[$image_path][] = [
+                            'color' => $row['pick_color'],
+                            'user_id' => $row['user_id'],
+                            'username' => $row['username'] ?? 'Unknown'
+                        ];
+                    }
+                    
+                    // Also get current admin's picks for current user context
+                    $sql_admin_picks = "SELECT image_relative_path, pick_color FROM jet_image_picks WHERE user_id = :user_id AND source_key = :source_key";
+                    $stmt_admin_picks = $pdo->prepare($sql_admin_picks);
+                    $stmt_admin_picks->bindParam(':user_id', $current_user_id, PDO::PARAM_INT);
+                    $stmt_admin_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
+                    $stmt_admin_picks->execute();
+                    while ($row = $stmt_admin_picks->fetch(PDO::FETCH_ASSOC)) {
+                        $user_picks[$row['image_relative_path']] = $row['pick_color']; 
+                    }
+                } else {
+                    // Designer sees their own picks + admin picks (for guidance)
+                    $sql_picks = "SELECT image_relative_path, pick_color FROM jet_image_picks WHERE user_id = :user_id AND source_key = :source_key";
+                    $stmt_picks = $pdo->prepare($sql_picks);
+                    $stmt_picks->bindParam(':user_id', $current_user_id, PDO::PARAM_INT);
+                    $stmt_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
+                    $stmt_picks->execute();
+                    while ($row = $stmt_picks->fetch(PDO::FETCH_ASSOC)) {
+                        $user_picks[$row['image_relative_path']] = $row['pick_color']; 
+                    }
+                    
+                    // Get admin picks for guidance (admin user_id = 1 typically)
+                    $sql_admin_picks = "SELECT j.image_relative_path, j.pick_color, u.username 
+                                       FROM jet_image_picks j 
+                                       LEFT JOIN users u ON j.user_id = u.id 
+                                       WHERE u.role = 'admin' AND j.source_key = :source_key AND j.pick_color IS NOT NULL";
+                    $stmt_admin_picks = $pdo->prepare($sql_admin_picks);
+                    $stmt_admin_picks->bindParam(':source_key', $source_key, PDO::PARAM_STR);
+                    $stmt_admin_picks->execute();
+                    while ($row = $stmt_admin_picks->fetch(PDO::FETCH_ASSOC)) {
+                        $image_path = $row['image_relative_path'];
+                        if (!isset($all_picks[$image_path])) {
+                            $all_picks[$image_path] = [];
+                        }
+                        $all_picks[$image_path][] = [
+                            'color' => $row['pick_color'],
+                            'user_id' => 1, // Admin typically
+                            'username' => $row['username'] ?? 'Admin'
+                        ];
+                    }
                 }
             } catch (PDOException $e) {
                 error_log("[JET_LIST_IMAGES] Error fetching user picks: " . $e->getMessage());
@@ -129,7 +314,7 @@ switch ($jet_action) {
                     // error_log("[JET_LIST_IMAGES_ITERATOR] Checking file: {$entry}, Extension found: '{$extension}'"); 
                     if (in_array($extension, $raw_extensions)) {
                         $image_full_relative_path = (empty($clean_relative_path) ? '' : $clean_relative_path . '/') . $entry;
-                        $images[] = [
+                        $image_data = [
                             'name' => $entry,
                             'path' => $image_full_relative_path,
                             'source_key' => $source_key,
@@ -137,6 +322,13 @@ switch ($jet_action) {
                             'pick_color' => $user_picks[$image_full_relative_path] ?? null,
                             'modified_timestamp' => $fileinfo->getMTime()
                         ];
+                        
+                        // Add all picks info for admin or admin picks for designer guidance
+                        if (isset($all_picks[$image_full_relative_path])) {
+                            $image_data['all_picks'] = $all_picks[$image_full_relative_path];
+                        }
+                        
+                        $images[] = $image_data;
                     }
                 }
             }
@@ -351,23 +543,27 @@ switch ($jet_action) {
     // Renamed from jet_set_pick_status to jet_set_pick_color
     case 'jet_set_pick_color': 
         error_log("[JET_SET_PICK_COLOR] Entered case.");
+        error_log("[JET_SET_PICK_COLOR] Session user_id: " . ($_SESSION['user_id'] ?? 'NOT SET'));
+        error_log("[JET_SET_PICK_COLOR] Session user_role: " . ($_SESSION['user_role'] ?? 'NOT SET'));
+        error_log("[JET_SET_PICK_COLOR] Session username: " . ($_SESSION['username'] ?? 'NOT SET'));
         global $pdo; 
 
-        if (empty($_SESSION['admin_username'])) {
+        if (empty($_SESSION['user_id'])) {
             json_error("Lỗi: Người dùng chưa đăng nhập hoặc phiên làm việc đã hết hạn.", 403);
             exit;
         }
-        $user_username = $_SESSION['admin_username'];
+        $user_id = $_SESSION['user_id'];
+        error_log("[JET_SET_PICK_COLOR] Using user_id: " . $user_id);
 
         $source_key = $_POST['source_key'] ?? null;
-        $image_relative_path = $_POST['image_relative_path'] ?? null;
+        $image_path = $_POST['image_relative_path'] ?? null;
         $pick_color_input = $_POST['pick_color'] ?? null; // Expect 'red', 'green', 'blue', 'grey', or a value like 'none' or empty for unpick
 
         if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
             json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
             exit;
         }
-        if (!$image_relative_path) {
+        if (!$image_path) {
             json_error("Đường dẫn hình ảnh không được cung cấp.", 400);
             exit;
         }
@@ -386,20 +582,21 @@ switch ($jet_action) {
         } // If 'none', empty, or 'null', $color_to_store remains null, effectively unpicking.
         
         // Path sanitization (simple check, ensure it doesn't contain '..')
-        if (strpos($image_relative_path, '..') !== false) {
+        if (strpos($image_path, '..') !== false) {
             json_error("Đường dẫn hình ảnh không hợp lệ.", 400);
             exit;
         }
 
         try {
-            $sql = "INSERT INTO jet_image_picks (user_username, source_key, image_relative_path, pick_color, pick_status_updated_at) 
-                    VALUES (:user_username, :source_key, :image_relative_path, :pick_color_insert, NOW()) 
+            // Use image_relative_path for consistency with existing data
+            $sql = "INSERT INTO jet_image_picks (user_id, source_key, image_relative_path, pick_color, pick_status_updated_at) 
+                    VALUES (:user_id, :source_key, :image_relative_path, :pick_color_insert, NOW()) 
                     ON DUPLICATE KEY UPDATE pick_color = :pick_color_update, pick_status_updated_at = NOW()";
             
             $stmt = $pdo->prepare($sql);
-            $stmt->bindParam(':user_username', $user_username, PDO::PARAM_STR);
+            $stmt->bindParam(':user_id', $user_id, PDO::PARAM_INT);
             $stmt->bindParam(':source_key', $source_key, PDO::PARAM_STR);
-            $stmt->bindParam(':image_relative_path', $image_relative_path, PDO::PARAM_STR);
+            $stmt->bindParam(':image_relative_path', $image_path, PDO::PARAM_STR);
             
             // Bind $color_to_store to both placeholders.
             // If it's null, PDO should handle it as NULL for the database for both.
@@ -423,6 +620,257 @@ switch ($jet_action) {
             json_error("Lỗi cơ sở dữ liệu khi cập nhật lựa chọn pick: " . $e->getMessage(), 500);
         }
         break;
+
+    // Get user info
+    case 'jet_get_user_info':
+        if (!isset($_SESSION['user_id'])) {
+            json_error("Không tìm thấy thông tin người dùng.");
+            exit;
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT id, username, role, created_at, last_login FROM users WHERE id = ?");
+            $stmt->execute([$_SESSION['user_id']]);
+            $user = $stmt->fetch();
+
+            if ($user) {
+                json_success(['user' => $user]);
+            } else {
+                json_error("Không tìm thấy thông tin người dùng.");
+            }
+        } catch (PDOException $e) {
+            error_log("Error fetching user info: " . $e->getMessage());
+            json_error("Lỗi khi lấy thông tin người dùng.");
+        }
+        exit;
+
+    // List designers (admin only)
+    case 'jet_list_designers':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            $stmt = $pdo->prepare("SELECT id, username, created_at, last_login FROM users WHERE role = 'designer'");
+            $stmt->execute();
+            $designers = $stmt->fetchAll();
+
+            json_success(['designers' => $designers]);
+        } catch (PDOException $e) {
+            error_log("Error listing designers: " . $e->getMessage());
+            json_error("Lỗi khi lấy danh sách designer.");
+        }
+        exit;
+
+    // Get designer stats (admin only)
+    case 'jet_get_designer_stats':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $designer_id = $_GET['designer_id'] ?? null;
+        if (!$designer_id) {
+            json_error("Thiếu ID designer.");
+            exit;
+        }
+
+        try {
+            // Get total picks by color
+            $stmt = $pdo->prepare("
+                SELECT pick_color, COUNT(*) as count 
+                FROM jet_image_picks 
+                WHERE user_id = ? 
+                GROUP BY pick_color
+            ");
+            $stmt->execute([$designer_id]);
+            $picks_by_color = $stmt->fetchAll();
+
+            // Get total albums worked on
+            $stmt = $pdo->prepare("
+                SELECT COUNT(DISTINCT source_key) as album_count 
+                FROM jet_image_picks 
+                WHERE user_id = ?
+            ");
+            $stmt->execute([$designer_id]);
+            $album_count = $stmt->fetch()['album_count'];
+
+            json_success([
+                'picks_by_color' => $picks_by_color,
+                'album_count' => $album_count
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error getting designer stats: " . $e->getMessage());
+            json_error("Lỗi khi lấy thống kê designer.");
+        }
+        exit;
+
+    // Get detailed work progress stats (admin only)
+    case 'jet_get_detailed_stats':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            // Get all work activities grouped by designer and actual folder (extracted from image_relative_path)
+            $stmt = $pdo->prepare("
+                SELECT 
+                    u.id as user_id,
+                    u.username,
+                    COALESCE(folder_stats.source_key, 'N/A') as source_key,
+                    COALESCE(folder_stats.folder_name, 'N/A') as folder_name,
+                    COALESCE(folder_stats.picked_count, 0) as picked_count,
+                    COALESCE(folder_stats.red_count, 0) as red_count,
+                    COALESCE(folder_stats.green_count, 0) as green_count,
+                    COALESCE(folder_stats.blue_count, 0) as blue_count,
+                    COALESCE(folder_stats.grey_count, 0) as grey_count,
+                    folder_stats.last_activity
+                FROM users u
+                LEFT JOIN (
+                    SELECT 
+                        user_id,
+                        source_key,
+                        CASE 
+                            WHEN LOCATE('/', image_relative_path) > 0 
+                            THEN SUBSTRING_INDEX(image_relative_path, '/', 1)
+                            ELSE 'Root'
+                        END as folder_name,
+                        COUNT(DISTINCT image_relative_path) as picked_count,
+                        SUM(CASE WHEN pick_color = 'red' THEN 1 ELSE 0 END) as red_count,
+                        SUM(CASE WHEN pick_color = 'green' THEN 1 ELSE 0 END) as green_count,
+                        SUM(CASE WHEN pick_color = 'blue' THEN 1 ELSE 0 END) as blue_count,
+                        SUM(CASE WHEN pick_color = 'grey' THEN 1 ELSE 0 END) as grey_count,
+                        MAX(pick_status_updated_at) as last_activity
+                    FROM jet_image_picks 
+                    WHERE pick_color IS NOT NULL
+                    GROUP BY user_id, source_key, folder_name
+                ) folder_stats ON u.id = folder_stats.user_id
+                WHERE u.role IN ('designer', 'admin') AND folder_stats.source_key IS NOT NULL
+                ORDER BY u.username, folder_stats.source_key, folder_stats.folder_name, folder_stats.last_activity DESC
+            ");
+            $stmt->execute();
+            $work_progress = $stmt->fetchAll();
+
+            // Get total image counts per source_key from available image sources
+            // Note: This would ideally count actual images in each source, but for now we'll approximate
+            $source_totals = [];
+            foreach ($work_progress as $work) {
+                $key = $work['source_key'] . '/' . $work['folder_name'];
+                if (!isset($source_totals[$key])) {
+                    // For now, we'll set this as unknown - would need to scan actual directories
+                    // In a full implementation, you'd count files in each source directory
+                    $source_totals[$key] = null; // Will be marked as "unknown"
+                }
+            }
+
+            json_success([
+                'work_progress' => $work_progress,
+                'source_totals' => $source_totals
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error getting detailed stats: " . $e->getMessage());
+            json_error("Lỗi khi lấy thống kê chi tiết.");
+        }
+        exit;
+
+    // Create new designer user (admin only)
+    case 'jet_create_designer':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $username = $_POST['username'] ?? '';
+        $password = $_POST['password'] ?? '';
+
+        if (empty($username) || empty($password)) {
+            json_error("Tên đăng nhập và mật khẩu không được để trống.");
+            exit;
+        }
+
+        // Validate username format
+        if (!preg_match('/^[a-zA-Z0-9_]{3,20}$/', $username)) {
+            json_error("Tên đăng nhập phải từ 3-20 ký tự, chỉ bao gồm chữ cái, số và dấu gạch dưới.");
+            exit;
+        }
+
+        // Validate password strength
+        if (strlen($password) < 6) {
+            json_error("Mật khẩu phải có ít nhất 6 ký tự.");
+            exit;
+        }
+
+        try {
+            // Check if username already exists
+            $stmt = $pdo->prepare("SELECT id FROM users WHERE username = ?");
+            $stmt->execute([$username]);
+            if ($stmt->fetch()) {
+                json_error("Tên đăng nhập đã tồn tại.");
+                exit;
+            }
+
+            // Create new designer user
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'designer')");
+            $stmt->execute([$username, $password_hash]);
+
+            json_success([
+                'message' => 'Đã tạo tài khoản designer thành công.',
+                'user_id' => $pdo->lastInsertId()
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error creating designer: " . $e->getMessage());
+            json_error("Lỗi khi tạo tài khoản designer.");
+        }
+        exit;
+
+    // Change user password (admin only)
+    case 'jet_change_user_password':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $user_id = $_POST['user_id'] ?? null;
+        $new_password = $_POST['new_password'] ?? '';
+
+        if (!$user_id || empty($new_password)) {
+            json_error("Thiếu ID người dùng hoặc mật khẩu mới.");
+            exit;
+        }
+
+        // Validate password strength
+        if (strlen($new_password) < 6) {
+            json_error("Mật khẩu phải có ít nhất 6 ký tự.");
+            exit;
+        }
+
+        try {
+            // Check if user exists
+            $stmt = $pdo->prepare("SELECT username FROM users WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $user = $stmt->fetch();
+
+            if (!$user) {
+                json_error("Không tìm thấy người dùng.");
+                exit;
+            }
+
+            // Update password
+            $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
+            $stmt = $pdo->prepare("UPDATE users SET password_hash = ? WHERE id = ?");
+            $stmt->execute([$password_hash, $user_id]);
+
+            json_success([
+                'message' => 'Đã cập nhật mật khẩu cho người dùng: ' . $user['username']
+            ]);
+        } catch (PDOException $e) {
+            error_log("Error changing user password: " . $e->getMessage());
+            json_error("Lỗi khi thay đổi mật khẩu.");
+        }
+        exit;
 
     default:
         // error_log("[JET_ACTION] Unknown jet action in actions_jet.php: " . $jet_action);

@@ -1,0 +1,88 @@
+/* Admin Tabs CSS */
+.admin-tabs {
+    display: flex;
+    background-color: var(--bg-secondary);
+    border-radius: 8px;
+    padding: 4px;
+    margin-bottom: 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.admin-tab {
+    flex: 1;
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    border-radius: 6px;
+    font-weight: 500;
+    transition: all 0.3s ease;
+    text-align: center;
+}
+
+.admin-tab:hover {
+    background-color: var(--bg-tertiary);
+    color: var(--text-primary);
+}
+
+.admin-tab.active {
+    background-color: var(--accent-color);
+    color: white;
+}
+
+.admin-tab-content {
+    display: none;
+    animation: fadeIn 0.3s ease-in-out;
+}
+
+.admin-tab-content.active {
+    display: block;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Tab specific styling */
+.gallery-management-tab {
+    /* Existing gallery management styles */
+}
+
+.user-management-tab {
+    /* User management specific styles */
+}
+
+.tab-header {
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 2px solid var(--border-color);
+}
+
+.tab-header h2 {
+    margin: 0;
+    color: var(--text-primary);
+    font-size: 1.5rem;
+}
+
+.tab-header p {
+    margin: 5px 0 0 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+    .admin-tabs {
+        flex-direction: column;
+    }
+    
+    .admin-tab {
+        margin-bottom: 4px;
+    }
+    
+    .admin-tab:last-child {
+        margin-bottom: 0;
+    }
+} 

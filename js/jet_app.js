@@ -13,6 +13,11 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentRelativePath = ''; // This will be path relative to the source_key (e.g., folder1/subfolder2)
                                  // For top-level folders, it will be just the folder name.
     let currentGridImages = []; // Store the currently displayed images array
+    let currentUser = null;
+
+    // Realtime polling for pick updates
+    let pollingInterval = null;
+    const POLLING_INTERVAL = 3000; // 3 seconds
 
     // Variables for manual double-click detection
     let lastClickTime = 0;
@@ -216,6 +221,10 @@ document.addEventListener('DOMContentLoaded', () => {
         showLoading('Đang tải danh sách thư mục RAW gốc...');
         currentRawSourceKey = null; // Reset context
         currentRelativePath = '';
+        
+        // Stop realtime polling when leaving image view
+        stopRealtimePolling();
+        
         const itemListContainer = document.getElementById('jet-item-list-container');
         if(itemListContainer) itemListContainer.innerHTML = ''; // Clear previous items
         renderBreadcrumb(); // Render breadcrumb for the top level
@@ -328,6 +337,9 @@ document.addEventListener('DOMContentLoaded', () => {
             const images = await listImagesAPI(sourceKey, relativePath);
             currentGridImages = images; // Store the full list
             applySortAndFilterAndRender(); // NEW: Apply current sort and filter
+            
+            // Start realtime polling for pick updates
+            startRealtimePolling();
         } catch (error) {
             console.error('Error fetching images for grid:', error);
             itemListContainer.innerHTML = `<div class="jet-feedback-message error">Lỗi khi tải ảnh: ${error.message}</div>`;
@@ -394,6 +406,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
             imageItemContainer.appendChild(imgElement);
             imageItemContainer.appendChild(imageNameElement);
+            
+            // Add all_picks indicator for admin
+            if (image.all_picks && image.all_picks.length > 0) {
+                const allPicksIndicator = document.createElement('div');
+                allPicksIndicator.classList.add('all-picks-indicator');
+                
+                image.all_picks.forEach(pick => {
+                    const pickRow = document.createElement('div');
+                    pickRow.classList.add('pick-row');
+                    
+                    const pickDot = document.createElement('span');
+                    pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
+                    
+                    const pickText = document.createElement('span');
+                    pickText.classList.add('pick-text');
+                    pickText.textContent = pick.username || 'Unknown';
+                    
+                    pickRow.appendChild(pickDot);
+                    pickRow.appendChild(pickText);
+                    allPicksIndicator.appendChild(pickRow);
+                    
+                    // Debug log for troubleshooting
+                    console.log('Pick row created:', pick);
+                });
+                
+                imageItemContainer.appendChild(allPicksIndicator);
+            }
             
             // MODIFIED: Click listener now selects the image in the grid, and handles manual double-click
             imageItemContainer.addEventListener('click', () => {
@@ -668,6 +707,10 @@ document.addEventListener('DOMContentLoaded', () => {
         currentPreviewIndex = -1;
         // Remove keyboard listeners
         document.removeEventListener('keydown', handlePreviewKeyPress);
+        
+        // Clean up any picks info elements
+        const existingPicksInfo = document.getElementById('jet-preview-all-picks-info');
+        if (existingPicksInfo) existingPicksInfo.remove();
     }
 
     // Refactored: This function now only creates the overlay structure and sets up the initial main image
@@ -812,6 +855,25 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update image name display
         imageNameDisplay.textContent = imageObject.name;
+
+        // Add all picks info display next to image name if available
+        const existingPicksInfo = document.getElementById('jet-preview-all-picks-info');
+        if (existingPicksInfo) existingPicksInfo.remove();
+        
+        if (imageObject.all_picks && imageObject.all_picks.length > 0) {
+            const allPicksInfo = document.createElement('div');
+            allPicksInfo.id = 'jet-preview-all-picks-info';
+            allPicksInfo.className = 'jet-preview-all-picks-info';
+            
+            imageObject.all_picks.forEach(pick => {
+                const pickInfo = document.createElement('span');
+                pickInfo.className = `jet-preview-pick-info pick-info-${pick.color}`;
+                pickInfo.textContent = `${pick.username}: ${pick.color.toUpperCase()}`;
+                allPicksInfo.appendChild(pickInfo);
+            });
+            
+            imageNameDisplay.parentNode.appendChild(allPicksInfo);
+        }
 
         // Update the Pick button/indicator
         const colorIndicatorSpan = pickButtonInPreview.querySelector('#jet-preview-pick-color-indicator');
@@ -1362,7 +1424,167 @@ document.addEventListener('DOMContentLoaded', () => {
         return String(a).localeCompare(String(b), undefined, {numeric: true, sensitivity: 'base'});
     }
 
+    // Realtime polling functions
+    function startRealtimePolling() {
+        stopRealtimePolling(); // Clear any existing interval
+        if (currentRawSourceKey && currentRelativePath !== null) {
+            pollingInterval = setInterval(async () => {
+                await updatePicksRealtime();
+            }, POLLING_INTERVAL);
+        }
+    }
+
+    function stopRealtimePolling() {
+        if (pollingInterval) {
+            clearInterval(pollingInterval);
+            pollingInterval = null;
+        }
+    }
+
+    async function updatePicksRealtime() {
+        if (!currentRawSourceKey || currentRelativePath === null) return;
+        
+        try {
+            // Quietly fetch updated image data
+            const updatedImages = await listImagesAPI(currentRawSourceKey, currentRelativePath);
+            
+            // Check if there are any pick changes
+            let hasChanges = false;
+            const currentImageLookup = {};
+            currentGridImages.forEach(img => {
+                const key = `${img.source_key}/${img.path}`;
+                currentImageLookup[key] = img;
+            });
+            
+            updatedImages.forEach(updatedImg => {
+                const key = `${updatedImg.source_key}/${updatedImg.path}`;
+                const currentImg = currentImageLookup[key];
+                
+                if (currentImg) {
+                    // Check for pick_color changes
+                    if (currentImg.pick_color !== updatedImg.pick_color) {
+                        hasChanges = true;
+                        currentImg.pick_color = updatedImg.pick_color;
+                    }
+                    
+                    // Check for all_picks changes
+                    const currentPicksStr = JSON.stringify(currentImg.all_picks || []);
+                    const updatedPicksStr = JSON.stringify(updatedImg.all_picks || []);
+                    if (currentPicksStr !== updatedPicksStr) {
+                        hasChanges = true;
+                        currentImg.all_picks = updatedImg.all_picks;
+                    }
+                }
+            });
+            
+            if (hasChanges) {
+                // Update currentGridImages and re-render
+                currentGridImages = updatedImages;
+                applySortAndFilterAndRender();
+                
+                // If preview is open, update preview too
+                if (isPreviewOpen && currentPreviewImageObject) {
+                    const updatedPreviewImg = updatedImages.find(img => 
+                        img.path === currentPreviewImageObject.path && 
+                        img.source_key === currentPreviewImageObject.source_key
+                    );
+                    if (updatedPreviewImg) {
+                        currentPreviewImageObject = updatedPreviewImg;
+                        updatePreviewImage(currentPreviewImageObject);
+                        renderThumbnailFilmstrip(currentGridImages, currentPreviewIndex);
+                    }
+                }
+                
+                console.log('[Jet Realtime] Pick changes detected and updated');
+            }
+        } catch (error) {
+            console.error('[Jet Realtime] Error updating picks:', error);
+            // Don't show user feedback for polling errors to avoid spam
+        }
+    }
+
+    // Initialize app
     initializeAppLayout();
+    fetchUserInfo();
+
+    // Function to fetch user info
+    async function fetchUserInfo() {
+        try {
+            const response = await fetch('api.php?action=jet_get_user_info');
+            const data = await response.json();
+            
+            console.log('User info response:', data); // Debug log
+            
+            if (data.success) {
+                currentUser = data.user;
+                updateUserInfoDisplay();
+            } else {
+                console.error('Failed to get user info:', data.error);
+                showFeedback('Lỗi khi lấy thông tin người dùng: ' + (data.error || 'Unknown error'), 'error');
+            }
+        } catch (error) {
+            console.error('Failed to fetch user info:', error);
+            showFeedback('Lỗi khi lấy thông tin người dùng', 'error');
+        }
+    }
+
+    // Function to update user info display
+    function updateUserInfoDisplay() {
+        const userInfoElement = document.getElementById('jet-user-info');
+        if (userInfoElement && currentUser) {
+            const roleText = currentUser.role === 'admin' ? 'Admin' : 'Designer';
+            userInfoElement.textContent = `${roleText}: ${currentUser.username}`;
+            
+            // Add visual indicator for admin
+            if (currentUser.role === 'admin') {
+                userInfoElement.style.fontWeight = 'bold';
+                userInfoElement.style.color = '#dc3545';
+                userInfoElement.title = 'Admin có thể thấy picks của tất cả designers';
+            }
+        }
+    }
+
+    // Update pick status
+    async function updatePickStatus(sourceKey, imagePath, pickColor) {
+        try {
+            const formData = new FormData();
+            formData.append('source_key', sourceKey);
+            formData.append('image_path', imagePath);
+            formData.append('pick_color', pickColor);
+
+            const response = await fetch('api.php?action=jet_update_pick_status', {
+                method: 'POST',
+                body: formData
+            });
+
+            const data = await response.json();
+            if (!data.success) {
+                throw new Error(data.error || 'Lỗi khi cập nhật trạng thái');
+            }
+
+            // Update local state
+            const imageIndex = currentGridImages.findIndex(img => 
+                img.source_key === sourceKey && img.path === imagePath
+            );
+            if (imageIndex !== -1) {
+                currentGridImages[imageIndex].pick_color = pickColor;
+            }
+
+            // Update UI
+            const imageElement = document.querySelector(`[data-source-key="${sourceKey}"][data-image-path="${imagePath}"]`);
+            if (imageElement) {
+                imageElement.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                if (pickColor) {
+                    imageElement.classList.add(`picked-${pickColor}`);
+                }
+            }
+
+            showFeedback('Đã cập nhật trạng thái', 'success');
+        } catch (error) {
+            console.error('Failed to update pick status:', error);
+            showFeedback(error.message, 'error');
+        }
+    }
 });
 
 // TODO:

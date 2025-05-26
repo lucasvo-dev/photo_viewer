@@ -12,35 +12,38 @@ return [
 
     // --- Admin Credentials ---
     'admin_username' => 'admin',
-    'admin_password_hash' => '$2y$10$.lWLpmOjLY6pun9c62z9iOo9/in5RA/UQKTMd513rR2QhlB34Vvu2', // Default: "password". CHANGE THIS!
+    'admin_password_hash' => '$2y$10$9PS7RkGuPIXkMtSA2QWL8O8DW5838jGueBkPrr/fTI8cbevzdA1YO', // Default: "@Floha123". CHANGE THIS!
 
     // --- Image & Thumbnail Settings ---
     'image_sources' => [
         'main' => [
-            'path' => realpath(__DIR__ . '/images'), // Use realpath here for consistency
-            // 'name' => 'Thư mục chính' 
+            'path' => __DIR__ . '/images', // Use __DIR__ instead of realpath
+            'name' => 'Thư mục chính' 
         ],
         'extra_drive' => [
             'path' => 'G:\\2020',
-            // 'name' => 'Ổ G 2020'
+            'name' => 'Ổ G 2020'
         ],
         'guu_ssd' => [
             'path' => 'D:\\2020',
-            // 'name' => 'SSD Guu 2020'
+            'name' => 'SSD Guu 2020'
         ],
         'guu_2025' => [
             'path' => 'D:\\2025',
-            // 'name' => 'SSD Guu 2020'
+            'name' => 'SSD Guu 2025'
         ],
         'guu_2025_e' => [
             'path' => 'E:\\2025',
+            'name' => 'E Drive 2025'
         ]
     ],
      // --- RAW Image Sources for Jet Culling App ---
      'raw_image_sources' => [
-        'my_raw_drive_g' => ['path' => 'G:\\RAW'], // Key can be anything descriptive
-        // You can add other sources later if needed:
-        // 'another_raw_source' => ['path' => 'D:\\Path\\To\\Other\\RAWs'],
+        'my_raw_drive_g' => [
+            'path' => 'G:\\RAW',
+            'name' => 'G Drive RAW'
+        ],
+        // Remove test configurations since we want to use the real RAW drive
     ],
     'cache_thumb_root' => __DIR__ . '/cache/thumbnails', // Use __DIR__ here, db_connect will resolve realpath
     'allowed_extensions' => ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp', 'mp4', 'mov', 'avi', 'mkv', 'webm'],

@@ -193,6 +193,61 @@ body.jet-app-active {
     padding: 0 2px;
 }
 
+/* All picks indicator for admin */
+.jet-app-active .all-picks-indicator {
+    position: absolute;
+    top: 5px;
+    left: 5px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    z-index: 10;
+    background: rgba(0, 0, 0, 0.8);
+    padding: 4px 6px;
+    border-radius: 4px;
+    min-width: 80px;
+}
+
+.jet-app-active .pick-row {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin-bottom: 1px;
+}
+
+.jet-app-active .pick-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.8);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+    flex-shrink: 0;
+}
+
+.jet-app-active .pick-text {
+    font-size: 0.7rem;
+    color: #fff;
+    font-weight: 500;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
+    white-space: nowrap;
+}
+
+.jet-app-active .pick-dot-red {
+    background-color: var(--jet-color-picked-red);
+}
+
+.jet-app-active .pick-dot-green {
+    background-color: var(--jet-color-picked-green);
+}
+
+.jet-app-active .pick-dot-blue {
+    background-color: var(--jet-color-picked-blue);
+}
+
+.jet-app-active .pick-dot-grey {
+    background-color: var(--jet-color-picked-grey-flag);
+}
+
 /* Styles for the container when there is a preview error */
 .jet-app-active .jet-image-item-container.preview-error {
     align-items: center;
@@ -471,6 +526,40 @@ body.jet-app-active {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+/* All picks info in preview */
+.jet-preview-all-picks-info {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 4px;
+    font-size: 0.8em;
+}
+
+.jet-preview-pick-info {
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: 500;
+    color: white;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
+}
+
+.jet-preview-pick-info.pick-info-red {
+    background-color: var(--jet-color-picked-red);
+}
+
+.jet-preview-pick-info.pick-info-green {
+    background-color: var(--jet-color-picked-green);
+}
+
+.jet-preview-pick-info.pick-info-blue {
+    background-color: var(--jet-color-picked-blue);
+}
+
+.jet-preview-pick-info.pick-info-grey {
+    background-color: var(--jet-color-picked-grey-indicator);
+    color: black;
 }
 
 .jet-preview-pick-button-base {
