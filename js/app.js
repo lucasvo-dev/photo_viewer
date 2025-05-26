@@ -25,7 +25,8 @@ import {
     zipProgressStatsTextEl, setZipProgressStatsTextEl,
     generalModalOverlay, setGeneralModalOverlay,
     zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements,
-    preloadedImages, setPreloadedImages
+    preloadedImages, setPreloadedImages,
+    isCurrentlyPreloading, setIsCurrentlyPreloading
 } from './state.js';
 
 // Import utils
@@ -80,9 +81,6 @@ let isProcessingNavigation = false; // New flag for preventing concurrent folder
 // ========================================
 // === GLOBAL HELPER FUNCTIONS        ===
 // ========================================
-
-// Add a new module-level variable for preloading state
-let isCurrentlyPreloading = false;
 
 export function getCurrentFolderInfo() {
     const path = currentFolder; // READ from state
@@ -433,7 +431,7 @@ async function preloadNextBatch() {
         console.log('[app.js] preloadNextBatch: All known images loaded, skipping.');
         return;
     }
-    isCurrentlyPreloading = true;
+    setIsCurrentlyPreloading(true);
     const pageToPreload = currentPage + 1;
     console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
     try {
@@ -458,7 +456,7 @@ async function preloadNextBatch() {
         console.error(`[app.js] preloadNextBatch: Error preloading page ${pageToPreload}:`, error);
         setPreloadedImages([]);
     } finally {
-        isCurrentlyPreloading = false;
+        setIsCurrentlyPreloading(false);
     }
 }
 
