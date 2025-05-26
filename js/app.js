@@ -27,7 +27,8 @@ import {
     zipJobsPanelContainerEl, zipJobsListEl, setZipJobPanelDOMElements,
     preloadedImages, setPreloadedImages,
     isCurrentlyPreloading, setIsCurrentlyPreloading,
-    pageCurrentlyFetching, setPageCurrentlyFetching
+    pageCurrentlyFetching, setPageCurrentlyFetching,
+    paginationAbortController, setPaginationAbortController
 } from './state.js';
 
 // Import utils
@@ -267,22 +268,37 @@ async function loadSubItems(folderPath) {
     }
     if (isLoadingMore) {
         console.log('[app.js] loadSubItems: isLoadingMore is true, returning.');
-        return;
+        if (paginationAbortController) {
+             console.log('[app.js] loadSubItems: Aborting pending pagination fetch due to folder navigation.');
+             paginationAbortController.abort();
+             setPaginationAbortController(null);
+             setPageCurrentlyFetching(null);
+             setIsLoadingMore(false);
+        }
+        if (isProcessingNavigation) return;
     }
+
     isProcessingNavigation = true;
     showLoadingIndicator(); 
     setCurrentFolder(folderPath);
     setCurrentPage(1);
     setCurrentImageList([]);
     setPreloadedImages([]); 
-    isCurrentlyPreloading = false; 
+    isCurrentlyPreloading = false;
+    setPageCurrentlyFetching(null);
+    setPaginationAbortController(null);
     clearImageGrid();
     const subfolderDisplayArea = document.getElementById('subfolder-display-area');
     if (subfolderDisplayArea) subfolderDisplayArea.innerHTML = '';
     try {
         console.log(`[app.js] loadSubItems: Fetching list_files for path: ${folderPath}`);
+
+        const initialLoadAbortController = new AbortController();
+        const signal = initialLoadAbortController.signal;
+
         const responseData = await fetchDataApi('list_files', 
-            { path: folderPath, page: 1, limit: IMAGES_PER_PAGE }
+            { path: folderPath, page: 1, limit: IMAGES_PER_PAGE },
+            { signal }
         );
         console.log(`[app.js] loadSubItems: API response for ${folderPath}:`, responseData);
         if (responseData.status === 'password_required') {
@@ -351,16 +367,23 @@ async function loadSubItems(folderPath) {
         }
     } catch (error) {
         console.error('[app.js] Error in loadSubItems (catch block):', error);
-        showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải nội dung thư mục: ${error.message}</p>`, true);
+        if (error.name === 'AbortError') {
+            console.log('[app.js] loadSubItems fetch aborted.');
+        } else {
+            showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải nội dung thư mục: ${error.message}</p>`, true);
+        }
     } finally {
         hideLoadingIndicator();
         isProcessingNavigation = false;
+        setPageCurrentlyFetching(null);
+        setPaginationAbortController(null);
+        setIsLoadingMore(false);
     }
 }
 
 // --- Load More Images ---
 async function loadMoreImages() {
-    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'totalImages:', totalImages, 'currentImageList.length:', currentImageList.length, 'preloadedImages.length:', preloadedImages.length, 'pageCurrentlyFetching:', pageCurrentlyFetching);
+    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'totalImages:', totalImages, 'currentImageList.length:', currentImageList.length, 'preloadedImages.length:', preloadedImages.length, 'pageCurrentlyFetching:', pageCurrentlyFetching, 'paginationAbortController:', paginationAbortController);
 
     // Prevent concurrent calls and stop if all images are loaded.
     if (isLoadingMore || (currentImageList.length >= totalImages && totalImages > 0)) {
@@ -370,10 +393,10 @@ async function loadMoreImages() {
 
     const pageToFetch = currentPage + 1; // Determine the page number to potentially fetch
 
-    // Check if a request for this specific page is already in flight
-    if (pageCurrentlyFetching === pageToFetch) {
-        console.log(`[app.js] loadMoreImages: Skipping fetch for page ${pageToFetch} as a request is already in flight.`);
-        return;
+    // Strict check: Only proceed if no page is currently being fetched.
+    if (pageCurrentlyFetching !== null) {
+         console.log(`[app.js] loadMoreImages: Skipping fetch for page ${pageToFetch} because page ${pageCurrentlyFetching} is currently being fetched.`);
+         return;
     }
 
     // Add a check based on the current list length vs total images to prevent over-fetching
@@ -386,11 +409,29 @@ async function loadMoreImages() {
     setIsLoadingMore(true); // Set immediately upon starting the loading process
     toggleInfiniteScrollSpinner(true); // Show spinner as we are about to load/process
 
+    // Set the pageCurrentlyFetching state before the API call
+    setPageCurrentlyFetching(pageToFetch);
+
+    // Abort any previous pagination fetch request before starting a new one
+    // (This might be redundant with the pageCurrentlyFetching check, but kept for safety)
+    if (paginationAbortController) {
+        console.log('[app.js] loadMoreImages: Aborting previous pagination fetch.');
+        paginationAbortController.abort();
+    }
+    const newAbortController = new AbortController();
+    setPaginationAbortController(newAbortController); // Store the new controller
+    const signal = newAbortController.signal;
+
     try {
         let imagesWereAdded = false;
 
         // Prioritize using preloaded images if available
+        // NOTE: If using preloaded images, we should NOT set pageCurrentlyFetching here
+        // as the actual *fetch* for that page is already done. This path should consume preloaded data.
         if (preloadedImages.length > 0) {
+             // Reset pageCurrentlyFetching as we are processing preloaded data, not fetching a new page
+             setPageCurrentlyFetching(null); // <<< Reset here if processing preloaded
+
             console.log('[app.js] loadMoreImages: Using preloaded images.');
             const imagesToRender = [...preloadedImages];
             setPreloadedImages([]); // Consume preloaded images
@@ -406,19 +447,19 @@ async function loadMoreImages() {
             // Only increment currentPage if images were actually rendered from preload
              if (imagesToRender.length > 0) {
                 setCurrentPage(currentPage + 1); // Increment currentPage after successfully rendering the batch (which was preloaded for the *next* page)
-                // preloadNextBatch(); // Preloading will be handled explicitly after the main fetch logic
+                preloadNextBatch(); // Trigger preloading the batch after the one just rendered
              }
 
         } else {
             // No preloaded images available, fetch the next page from the API
             console.log(`[app.js] loadMoreImages: No preloaded images, fetching page ${pageToFetch} for folder ${currentFolder}`);
             
-            // Set the pageCurrentlyFetching state before the API call
-            setPageCurrentlyFetching(pageToFetch);
+            // pageCurrentlyFetching is already set to pageToFetch before the try block
 
             try {
                 const responseData = await fetchDataApi('list_files', 
-                    { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
+                    { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }, // Pass the page number
+                    { signal } // Pass the abort signal
                 );
                 console.log(`[app.js] loadMoreImages: API response for page ${pageToFetch}:`, responseData);
                 
@@ -474,8 +515,8 @@ async function loadMoreImages() {
                      showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
                  }
             } finally {
-                 // Reset the pageCurrentlyFetching state after the fetch attempt completes
-                 setPageCurrentlyFetching(null);
+                 // Always clear the pagination abort controller regardless of success or failure
+                 setPaginationAbortController(null); // <<< Clear here after API attempt
             }
         }
 
@@ -484,6 +525,8 @@ async function loadMoreImages() {
 
     } finally {
         setIsLoadingMore(false); // Allow new loadMoreImages calls after this one finishes
+        // Reset pageCurrentlyFetching in the main finally block too, to cover cases where preloaded images were used
+        setPageCurrentlyFetching(null); // <<< Reset here after loadMoreImages completes
         toggleInfiniteScrollSpinner(false); // Hide spinner
         console.log('[app.js] loadMoreImages: EXIT, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'currentImageList.length:', currentImageList.length);
     }
@@ -491,7 +534,7 @@ async function loadMoreImages() {
 
 // --- NEW: Preload Next Batch Function ---
 async function preloadNextBatch() {
-    console.log('[app.js] preloadNextBatch: ENTRY, isCurrentlyPreloading:', isCurrentlyPreloading, 'preloadedImages.length:', preloadedImages.length, 'currentPage:', currentPage, 'totalImages:', totalImages, 'pageCurrentlyFetching:', pageCurrentlyFetching);
+    console.log('[app.js] preloadNextBatch: ENTRY, isCurrentlyPreloading:', isCurrentlyPreloading, 'preloadedImages.length:', preloadedImages.length, 'currentPage:', currentPage, 'totalImages:', totalImages, 'pageCurrentlyFetching:', pageCurrentlyFetching, 'paginationAbortController:', paginationAbortController);
 
     // Prevent concurrent preloading and skip if we already have preloaded images or loaded all.
     if (isCurrentlyPreloading || preloadedImages.length > 0 || (currentImageList.length >= totalImages && totalImages > 0)) {
@@ -510,22 +553,33 @@ async function preloadNextBatch() {
          return; // No more pages to preload
     }
 
-    // Add a check to prevent preloading if a request for this page is already in flight (either load or preload)
-    if (pageCurrentlyFetching === pageToPreload) {
-         console.log(`[app.js] preloadNextBatch: Skipping preload for page ${pageToPreload} as a request is already in flight.`);
+    // Strict check: Only proceed if no page is currently being fetched or preloaded.
+     if (pageCurrentlyFetching !== null) {
+         console.log(`[app.js] preloadNextBatch: Skipping preload for page ${pageToPreload} because page ${pageCurrentlyFetching} is currently being handled.`);
          return;
-    }
+     }
 
     setIsCurrentlyPreloading(true); // Set immediately
-    // Set the pageCurrentlyFetching state before the API call
-    setPageCurrentlyFetching(pageToPreload);
+
+     // Set the pageCurrentlyFetching state before the API call
+     setPageCurrentlyFetching(pageToPreload); // <<< Set here for preloading too
+
+     // Abort any previous pagination fetch request before starting a new preload
+     if (paginationAbortController) {
+        console.log('[app.js] preloadNextBatch: Aborting previous pagination fetch.');
+        paginationAbortController.abort();
+    }
+    const newAbortController = new AbortController();
+    setPaginationAbortController(newAbortController); // Store the new controller
+    const signal = newAbortController.signal;
 
     try {
         console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
 
         try {
             const responseData = await fetchDataApi('list_files', 
-                { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }
+                { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }, // Pass the page number
+                { signal } // Pass the abort signal
             );
             
             if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
@@ -551,8 +605,10 @@ async function preloadNextBatch() {
                 setPreloadedImages([]); // Clear preloaded images on error
              }
         } finally {
-             // Reset the pageCurrentlyFetching state after the fetch attempt completes
-             setPageCurrentlyFetching(null);
+             // Always clear the pagination abort controller regardless of success or failure
+             setPaginationAbortController(null); // <<< Clear here after API attempt
+             // Reset pageCurrentlyFetching in the inner finally block too, as the fetch attempt is concluded
+             setPageCurrentlyFetching(null); // <<< Reset here after preload fetch attempt
         }
 
     } finally {

@@ -101,4 +101,11 @@ export function setIsCurrentlyPreloading(val) {
 
 // === PAGINATION & LOADING STATE ===
 export let pageCurrentlyFetching = null;
-export function setPageCurrentlyFetching(value) { pageCurrentlyFetching = value; } 
+export function setPageCurrentlyFetching(value) { pageCurrentlyFetching = value; }
+
+// NEW: AbortController for ongoing pagination fetch requests
+export let paginationAbortController = null;
+export function setPaginationAbortController(controller) { paginationAbortController = controller; }
+
+// === PRELOADING STATE ===
+// ... existing code ... 
