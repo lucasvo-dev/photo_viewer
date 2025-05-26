@@ -995,7 +995,7 @@ document.addEventListener('DOMContentLoaded', () => {
                         
                         const pickText = document.createElement('span');
                         pickText.classList.add('pick-text');
-                        pickText.textContent = (pick.username || 'Unknown').substring(0, 6); // Truncate username
+                        pickText.textContent = (pick.username || 'Unknown'); // Removed .substring(0, 6)
                         pickText.style.color = 'white';
                         pickText.style.fontSize = '0.5rem';
                         pickText.style.lineHeight = '1';
@@ -1125,7 +1125,7 @@ document.addEventListener('DOMContentLoaded', () => {
                             
                             const pickText = document.createElement('span');
                             pickText.classList.add('pick-text');
-                            pickText.textContent = (pick.username || 'Unknown').substring(0, 6);
+                            pickText.textContent = (pick.username || 'Unknown'); // Removed .substring(0, 6)
                             pickText.style.color = 'white';
                             pickText.style.fontSize = '0.5rem';
                             pickText.style.lineHeight = '1';

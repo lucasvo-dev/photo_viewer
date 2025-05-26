@@ -205,7 +205,6 @@ body.jet-app-active {
     background: rgba(0, 0, 0, 0.8);
     padding: 4px 6px;
     border-radius: 4px;
-    min-width: 80px;
 }
 
 .jet-app-active .pick-row {
@@ -229,7 +228,7 @@ body.jet-app-active {
     color: #fff;
     font-weight: 500;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .jet-app-active .pick-dot-red {
@@ -889,7 +888,6 @@ body.jet-app-active {
     .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
         font-size: 0.45rem;
         padding: 1px 2px;
-        max-width: 80px;
     }
     
     .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
