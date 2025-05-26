@@ -367,6 +367,18 @@ async function loadMoreImages() {
         return; 
     }
 
+    // Add a check to prevent requesting the same page again immediately
+    const nextPageExpected = currentPage + 1;
+    // We can use a simple global or state variable to track the page number for which a request is currently in flight
+    // For simplicity with current state structure, let's rely on preloadedImages as an indicator of a future page being prepared
+    // Or, introduce a new state variable like `pageRequestInFlight`
+    // Let's add a simple check based on the current list length vs total images to prevent over-fetching
+    if (currentImageList.length >= totalImages && totalImages > 0) {
+         console.log('[app.js] loadMoreImages: Already have all known images, skipping fetch.');
+         toggleInfiniteScrollSpinner(false); // Ensure spinner is off if we determine we have all images
+         return;
+    }
+
     setIsLoadingMore(true); // Set immediately upon starting the loading process
     toggleInfiniteScrollSpinner(true); // Show spinner as we are about to load/process
 
@@ -387,14 +399,23 @@ async function loadMoreImages() {
 
             // Since we used preloaded images, we have effectively displayed the 'next' page.
             // Now immediately try to preload the *subsequent* batch.
-            setCurrentPage(currentPage + 1); // Increment currentPage after successfully rendering the batch (which was preloaded for the *next* page)
-            preloadNextBatch(); // Trigger preloading the batch after the one just rendered
+            // Only increment currentPage if images were actually rendered from preload
+             if (imagesToRender.length > 0) {
+                setCurrentPage(currentPage + 1); // Increment currentPage after successfully rendering the batch (which was preloaded for the *next* page)
+                preloadNextBatch(); // Trigger preloading the batch after the one just rendered
+             }
 
         } else {
             // No preloaded images available, fetch the next page from the API
             const pageToFetch = currentPage + 1; // Request the next page based on the current state
             console.log(`[app.js] loadMoreImages: No preloaded images, fetching page ${pageToFetch} for folder ${currentFolder}`);
             
+            // Add an extra check here before fetching: if we just loaded this page, don't refetch
+            // This requires tracking the *last successfully loaded page* which isn't explicitly done.
+            // The currentPage state should ideally reflect this, but rapid events might cause it to lag.
+            // Let's rely on the totalImages and currentImageList.length comparison as the primary guard for fetching.
+            // The check at the start of the function `currentImageList.length >= totalImages` should handle this.
+
             try {
                 const responseData = await fetchDataApi('list_files', 
                     { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
@@ -409,19 +430,49 @@ async function loadMoreImages() {
                     // A more robust check might involve tracking expected file names or using sequence numbers if the API supported them.
                     // For now, rely on the API returning files for the requested page number.
 
-                    setCurrentPage(pageToFetch); // Commit the page update only on successful fetch of that page
-                    setCurrentImageList(currentImageList.concat(newImagesMetadata));
-                    renderImageItemsToGrid(newImagesMetadata, true);
-                    setupPhotoSwipeIfNeeded();
-                    imagesWereAdded = true;
+                    // Only commit the page update and render if this response is for the page we expected
+                    // A more complex state might track `fetchingPage` and compare.
+                    // Given the logs show page N being requested multiple times, the issue might be that subsequent scroll events
+                    // re-trigger loadMoreImages, calculate pageToFetch as N+1, but the previous request for N+1 hasn't finished or updated state yet.
 
-                    // Update total images if the API provides a new total
-                    if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
-                        setTotalImages(responseData.data.pagination.total_items);
+                    // Let's add a check to ensure we only process the response if it's for the page we are currently trying to fetch *and* that page hasn't been fully added to the list yet.
+                    // This is difficult with just `currentPage`. A dedicated `pageCurrentlyFetching` state variable would be better.
+                    // For now, let's proceed assuming the primary `isLoadingMore` guard is the key.
+
+                    // Let's add console logs to clearly see which page is being processed AFTER fetch.
+                     console.log(`[app.js] loadMoreImages: Processing successful response for page ${pageToFetch}`);
+
+                    // Check if these files actually add new items beyond what's currently in currentImageList
+                    // This might happen if a previous request for this page partially succeeded or if state is out of sync
+                    const currentPaths = new Set(currentImageList.map(item => item.source_path));
+                    const trulyNewImages = newImagesMetadata.filter(item => !currentPaths.has(item.source_path));
+
+                    if (trulyNewImages.length > 0) {
+                        setCurrentPage(pageToFetch); // Commit the page update only on successful fetch and if new images are found
+                        setCurrentImageList(currentImageList.concat(trulyNewImages));
+                        renderImageItemsToGrid(trulyNewImages, true); // Render only the truly new ones
+                        setupPhotoSwipeIfNeeded();
+                        imagesWereAdded = true;
+
+                         console.log(`[app.js] loadMoreImages: Added ${trulyNewImages.length} new images from page ${pageToFetch}. currentImageList.length: ${currentImageList.length}`);
+
+                        // Update total images if the API provides a new total
+                        if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
+                            setTotalImages(responseData.data.pagination.total_items);
+                        }
+
+                        // After successfully loading and rendering a page, try to preload the next one
+                         // Only preload if there are potentially more images to load
+                         if (currentImageList.length < totalImages) {
+                             preloadNextBatch();
+                         }
+
+                    } else {
+                         console.log(`[app.js] loadMoreImages: Fetched page ${pageToFetch} but found no truly new images. Likely a duplicate fetch or state sync issue.`);
+                         // This might be where duplicate fetches are happening but no new data is added.
+                         // The `isLoadingMore` check should prevent starting the fetch, but maybe the response is processed multiple times?
+                         // No need to increment currentPage or preload if no new images were added.
                     }
-
-                    // After successfully loading and rendering a page, try to preload the next one
-                    preloadNextBatch();
 
                 } else if (responseData.status === 'success' && (!responseData.data.files || responseData.data.files.length === 0)) {
                     // API returned success but no files, means we've likely reached the end
@@ -443,6 +494,7 @@ async function loadMoreImages() {
 
         // Logic to trigger preloadNextBatch is now integrated within the success blocks above
         // to ensure it's called after images are successfully loaded/rendered from either source.
+        // Also added a check to only preload if there are potentially more images.
 
     } finally {
         setIsLoadingMore(false); // Allow new loadMoreImages calls after this one finishes
