@@ -359,96 +359,142 @@ async function loadSubItems(folderPath) {
 
 // --- Load More Images ---
 async function loadMoreImages() {
-    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore);
-    if (isLoadingMore) {
-        console.log('[app.js] loadMoreImages: Already loading, skipping.');
-        return; // Already processing a load more action
+    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'totalImages:', totalImages, 'currentImageList.length:', currentImageList.length, 'preloadedImages.length:', preloadedImages.length);
+
+    // Prevent concurrent calls and stop if all images are loaded.
+    if (isLoadingMore || (currentImageList.length >= totalImages && totalImages > 0)) {
+        console.log('[app.js] loadMoreImages: Skipping (already loading or all images loaded).');
+        return; 
     }
-    setIsLoadingMore(true); // Set immediately
+
+    setIsLoadingMore(true); // Set immediately upon starting the loading process
+    toggleInfiniteScrollSpinner(true); // Show spinner as we are about to load/process
+
     try {
-        // If all images are loaded according to totalImages AND no preloaded images are waiting to be displayed
-        if (currentImageList.length >= totalImages && totalImages > 0 && preloadedImages.length === 0) {
-            console.log('[app.js] loadMoreImages: All images loaded, skipping.');
-            return;
-        }
         let imagesWereAdded = false;
+
+        // Prioritize using preloaded images if available
         if (preloadedImages.length > 0) {
-            console.log('[app.js] Using preloaded images for loadMoreImages.');
+            console.log('[app.js] loadMoreImages: Using preloaded images.');
             const imagesToRender = [...preloadedImages];
             setPreloadedImages([]); // Consume preloaded images
-            setCurrentPage(currentPage + 1); // Advance page number for the batch just displayed
+
+            // Append to the list and render
             setCurrentImageList(currentImageList.concat(imagesToRender));
             renderImageItemsToGrid(imagesToRender, true);
             setupPhotoSwipeIfNeeded();
             imagesWereAdded = true;
+
+            // Since we used preloaded images, we have effectively displayed the 'next' page.
+            // Now immediately try to preload the *subsequent* batch.
+            setCurrentPage(currentPage + 1); // Increment currentPage after successfully rendering the batch (which was preloaded for the *next* page)
+            preloadNextBatch(); // Trigger preloading the batch after the one just rendered
+
         } else {
-            // Only fetch if more images are expected, or if totalImages is 0 (e.g. initial state before first load completed)
-            const pageToFetch = currentPage + 1; // Determine the page number to fetch
-            toggleInfiniteScrollSpinner(true);
-            console.log(`[app.js] loadMoreImages: Fetching page ${pageToFetch} for folder ${currentFolder}`);
+            // No preloaded images available, fetch the next page from the API
+            const pageToFetch = currentPage + 1; // Request the next page based on the current state
+            console.log(`[app.js] loadMoreImages: No preloaded images, fetching page ${pageToFetch} for folder ${currentFolder}`);
+            
             try {
                 const responseData = await fetchDataApi('list_files', 
                     { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
                 );
                 console.log(`[app.js] loadMoreImages: API response for page ${pageToFetch}:`, responseData);
+                
                 if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
-                    setCurrentPage(pageToFetch); // Commit the page update only on successful fetch
                     const newImagesMetadata = responseData.data.files;
+                    
+                    // Check if the response data corresponds to the *expected* next page
+                    // This is a simple check based on the first item's path relative to the expected offset.
+                    // A more robust check might involve tracking expected file names or using sequence numbers if the API supported them.
+                    // For now, rely on the API returning files for the requested page number.
+
+                    setCurrentPage(pageToFetch); // Commit the page update only on successful fetch of that page
                     setCurrentImageList(currentImageList.concat(newImagesMetadata));
                     renderImageItemsToGrid(newImagesMetadata, true);
                     setupPhotoSwipeIfNeeded();
                     imagesWereAdded = true;
+
+                    // Update total images if the API provides a new total
                     if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
                         setTotalImages(responseData.data.pagination.total_items);
                     }
-                } else if (responseData.status !== 'success') {
+
+                    // After successfully loading and rendering a page, try to preload the next one
+                    preloadNextBatch();
+
+                } else if (responseData.status === 'success' && (!responseData.data.files || responseData.data.files.length === 0)) {
+                    // API returned success but no files, means we've likely reached the end
+                    console.log('[app.js] loadMoreImages: API returned no files for page', pageToFetch, ', likely reached end.');
+                    // No images were added, totalImages should already reflect the correct count
+
+                } else { // API status is not 'success'
                     showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
                 }
             } catch (error) {
                 console.error('[app.js] Error in loadMoreImages (API call):', error);
-                showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
-            } finally {
-                toggleInfiniteScrollSpinner(false);
+                // Only show a modal for critical errors, not just reaching the end of files.
+                // The condition above handles the case where status is success but files are empty.
+                 if (error.name !== 'AbortError') { // Ignore abort errors from search controller
+                     showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
+                 }
             }
         }
-        if (imagesWereAdded && currentImageList.length < totalImages) {
-            preloadNextBatch();
-        } else if (!imagesWereAdded && preloadedImages.length === 0 && currentImageList.length < totalImages) {
-            preloadNextBatch();
-        }
+
+        // Logic to trigger preloadNextBatch is now integrated within the success blocks above
+        // to ensure it's called after images are successfully loaded/rendered from either source.
+
     } finally {
-        setIsLoadingMore(false); // Finished attempting to add more images to the view
-        console.log('[app.js] loadMoreImages: EXIT, isLoadingMore:', isLoadingMore);
+        setIsLoadingMore(false); // Allow new loadMoreImages calls after this one finishes
+        toggleInfiniteScrollSpinner(false); // Hide spinner
+        console.log('[app.js] loadMoreImages: EXIT, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'currentImageList.length:', currentImageList.length);
     }
 }
 
 // --- NEW: Preload Next Batch Function ---
 async function preloadNextBatch() {
-    console.log('[app.js] preloadNextBatch: ENTRY, isCurrentlyPreloading:', isCurrentlyPreloading);
-    if (isCurrentlyPreloading || preloadedImages.length > 0) {
-        console.log('[app.js] preloadNextBatch: Already preloading or preloaded images exist, skipping.');
+    console.log('[app.js] preloadNextBatch: ENTRY, isCurrentlyPreloading:', isCurrentlyPreloading, 'preloadedImages.length:', preloadedImages.length, 'currentPage:', currentPage, 'totalImages:', totalImages);
+
+    // Prevent concurrent preloading and skip if we already have preloaded images or loaded all.
+    if (isCurrentlyPreloading || preloadedImages.length > 0 || (currentImageList.length >= totalImages && totalImages > 0)) {
+        console.log('[app.js] preloadNextBatch: Skipping (already preloading, preloaded images exist, or all images loaded).');
         return; 
     }
+
     setIsCurrentlyPreloading(true); // Set immediately
+
     try {
-        if (currentImageList.length >= totalImages && totalImages > 0) {
-            console.log('[app.js] preloadNextBatch: All known images loaded, skipping.');
-            return;
-        }
+        // Calculate the page number to preload based on the *next* page after the current loaded page.
         const pageToPreload = currentPage + 1;
+
+        // If the page to preload would go beyond the total known pages, or if we are already close to the total
+        // based on the current list size, we might not need to preload.
+        // A more accurate check would be comparing the expected offset of the preload page
+        // with the total number of items. (currentPage * IMAGES_PER_PAGE) < totalImages
+        const expectedOffset = currentPage * IMAGES_PER_PAGE;
+        if (expectedOffset >= totalImages && totalImages > 0) {
+            console.log('[app.js] preloadNextBatch: Calculated offset', expectedOffset, 'is >= totalImages', totalImages, ', skipping preload.');
+             return; // No more pages to preload
+        }
+
         console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
+
         try {
             const responseData = await fetchDataApi('list_files', 
                 { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }
             );
+            
             if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
-                setPreloadedImages(responseData.data.files);
+                setPreloadedImages(responseData.data.files); // Store the fetched batch
                 console.log(`[app.js] preloadNextBatch: Successfully preloaded ${responseData.data.files.length} images for page ${pageToPreload}.`);
+                
+                // Update total images if API provides a new total, even during preload
                 if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
                     setTotalImages(responseData.data.pagination.total_items);
                 }
-            } else {
-                setPreloadedImages([]);
+
+            } else { // API returned success but no files, or not success
+                setPreloadedImages([]); // Clear preloaded images if fetch failed or returned empty
                 if (responseData.status !== 'success') {
                     console.warn(`[app.js] preloadNextBatch: Failed to preload page ${pageToPreload}. Status: ${responseData.status}, Message: ${responseData.message}`);
                 } else {
@@ -457,11 +503,13 @@ async function preloadNextBatch() {
             }
         } catch (error) {
             console.error(`[app.js] preloadNextBatch: Error preloading page ${pageToPreload}:`, error);
-            setPreloadedImages([]);
+             if (error.name !== 'AbortError') { // Ignore abort errors
+                setPreloadedImages([]); // Clear preloaded images on error
+             }
         }
     } finally {
-        setIsCurrentlyPreloading(false);
-        console.log('[app.js] preloadNextBatch: EXIT, isCurrentlyPreloading:', isCurrentlyPreloading);
+        setIsCurrentlyPreloading(false); // Allow new preload calls after this one finishes
+        console.log('[app.js] preloadNextBatch: EXIT, isCurrentlyPreloading:', isCurrentlyPreloading, 'preloadedImages.length:', preloadedImages.length);
     }
 }
 
