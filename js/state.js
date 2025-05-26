@@ -33,8 +33,14 @@ export function setCurrentImageList(value) { currentImageList = value; }
 export function setAllTopLevelDirs(value) { allTopLevelDirs = value; }
 export function setSearchAbortController(value) { searchAbortController = value; }
 export function setPhotoswipeLightbox(value) { photoswipeLightbox = value; }
-export function setIsLoadingMore(value) { isLoadingMore = value; }
-export function setCurrentPage(value) { currentPage = value; }
+export function setIsLoadingMore(val) {
+    isLoadingMore = !!val;
+    console.log('[state.js] isLoadingMore set to:', isLoadingMore);
+}
+export function setCurrentPage(val) {
+    currentPage = Number(val) || 1;
+    console.log('[state.js] currentPage set to:', currentPage);
+}
 export function setTotalImages(value) { totalImages = value; }
 
 export function setZipProgressBarContainerEl(value) { zipProgressBarContainerEl = value; }
@@ -85,4 +91,10 @@ export function updateImageListItem(imagePath, updatedProps) {
     } else {
         console.warn(`[State] Item ${imagePath} not found in currentImageList for update.`);
     }
+}
+
+export let isCurrentlyPreloading = false;
+export function setIsCurrentlyPreloading(val) {
+    isCurrentlyPreloading = !!val;
+    console.log('[state.js] isCurrentlyPreloading set to:', isCurrentlyPreloading);
 } 
