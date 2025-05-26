@@ -135,8 +135,23 @@ switch ($action) {
                     ];
                 }
 
+                // $files_data is already prepared as $paginated_files, just ensure keys match frontend expectation
+                // The structure of $all_file_items already matches what was previously put into $files_data
+                $files_data = $paginated_items; 
+
+                error_log("[list_files DEBUG] For Path: {$subdir_requested}, Requested Page: {$page}, ItemsPerPage: {$items_per_page}");
+                error_log("[list_files DEBUG] Total Files Found (before pagination): " . count($all_subdirs));
+                error_log("[list_files DEBUG] Calculated Offset: {$offset}");
+                error_log("[list_files DEBUG] Files in Paginated Set: " . count($paginated_items));
+                if (!empty($paginated_items)) {
+                    error_log("[list_files DEBUG] First file in paginated set: " . $paginated_items[0]['name']);
+                    error_log("[list_files DEBUG] Last file in paginated set: " . end($paginated_items)['name']);
+                } else {
+                    error_log("[list_files DEBUG] Paginated set is empty.");
+                }
+
                 json_response([
-                    'files' => [],
+                    'files' => $files_data,
                     'folders' => $folders_data,
                     'breadcrumb' => [],
                     'current_dir' => '',
@@ -309,6 +324,17 @@ switch ($action) {
                 // $files_data is already prepared as $paginated_files, just ensure keys match frontend expectation
                 // The structure of $all_file_items already matches what was previously put into $files_data
                 $files_data = $paginated_files; 
+
+                error_log("[list_files DEBUG] For Path: {$current_source_prefixed_path}, Requested Page: {$page}, ItemsPerPage: {$items_per_page}");
+                error_log("[list_files DEBUG] Total Files Found (before pagination): " . count($all_file_items));
+                error_log("[list_files DEBUG] Calculated Offset: {$offset}");
+                error_log("[list_files DEBUG] Files in Paginated Set: " . count($paginated_files));
+                if (!empty($paginated_files)) {
+                    error_log("[list_files DEBUG] First file in paginated set: " . $paginated_files[0]['name']);
+                    error_log("[list_files DEBUG] Last file in paginated set: " . end($paginated_files)['name']);
+                } else {
+                    error_log("[list_files DEBUG] Paginated set is empty.");
+                }
 
                 json_response([
                     'files' => $files_data,
