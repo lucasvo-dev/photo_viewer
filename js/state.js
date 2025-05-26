@@ -97,4 +97,8 @@ export let isCurrentlyPreloading = false;
 export function setIsCurrentlyPreloading(val) {
     isCurrentlyPreloading = !!val;
     console.log('[state.js] isCurrentlyPreloading set to:', isCurrentlyPreloading);
-} 
+}
+
+// === PAGINATION & LOADING STATE ===
+export let pageCurrentlyFetching = null;
+export function setPageCurrentlyFetching(value) { pageCurrentlyFetching = value; } 
