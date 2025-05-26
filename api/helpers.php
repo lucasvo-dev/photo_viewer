@@ -663,6 +663,86 @@ function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path
 }
 
 /**
+ * Adds a RAW image cache job to the jet_cache_jobs queue.
+ * Checks for existing pending/recent jobs to avoid duplicates.
+ *
+ * @param PDO $pdo The PDO database connection object.
+ * @param string $source_key The RAW source key.
+ * @param string $image_relative_path The relative path within the source.
+ * @param int $cache_size The target cache size (e.g., 750 for preview, 120 for filmstrip).
+ * @return bool True if a job was added or already exists, false on DB error.
+ */
+function add_jet_cache_job_to_queue(PDO $pdo, string $source_key, string $image_relative_path, int $cache_size): bool
+{
+    // Check for existing pending or processing job for this exact image and size
+    try {
+        $stmt_check = $pdo->prepare("SELECT status FROM jet_cache_jobs WHERE source_key = ? AND image_relative_path = ? AND cache_size = ? AND status IN ('pending', 'processing') ORDER BY created_at DESC LIMIT 1");
+        $stmt_check->execute([$source_key, $image_relative_path, $cache_size]);
+        if ($stmt_check->fetch()) {
+            error_log("[Jet Cache Job Queue] Job for '{$source_key}/{$image_relative_path}' size {$cache_size} already pending/processing.");
+            return true; // Job already exists or is being processed
+        }
+
+        // Check for recently completed job to avoid re-queueing
+        $stmt_recent = $pdo->prepare("SELECT status, created_at FROM jet_cache_jobs WHERE source_key = ? AND image_relative_path = ? AND cache_size = ? AND created_at > (NOW() - INTERVAL 5 MINUTE) ORDER BY created_at DESC LIMIT 1");
+        $stmt_recent->execute([$source_key, $image_relative_path, $cache_size]);
+        $recent_job = $stmt_recent->fetch(PDO::FETCH_ASSOC);
+        if ($recent_job && $recent_job['status'] === 'completed') {
+            error_log("[Jet Cache Job Queue] Job for '{$source_key}/{$image_relative_path}' size {$cache_size} was completed recently. Skipping duplicate queue.");
+            return true; 
+        }
+
+    } catch (PDOException $e) {
+        error_log("[Jet Cache Job Queue] DB Error checking existing jobs for '{$source_key}/{$image_relative_path}' size {$cache_size}: " . $e->getMessage());
+        return false; // DB error
+    }
+
+    // If no existing/recent relevant job, add a new one
+    try {
+        $raw_file_path = $source_key . '/' . $image_relative_path; // Source-prefixed path
+        $sql = "INSERT INTO jet_cache_jobs (raw_file_path, source_key, image_relative_path, cache_size, status, created_at) VALUES (?, ?, ?, ?, 'pending', NOW())";
+        $stmt = $pdo->prepare($sql);
+        $success = $stmt->execute([$raw_file_path, $source_key, $image_relative_path, $cache_size]);
+        if ($success) {
+            error_log("[Jet Cache Job Queue] Successfully added job for: {$source_key}/{$image_relative_path}, Size: {$cache_size}");
+            return true;
+        } else {
+            error_log("[Jet Cache Job Queue] Failed to add job for: {$source_key}/{$image_relative_path}, Size: {$cache_size} (execute returned false)");
+            return false;
+        }
+    } catch (PDOException $e) {
+        error_log("[Jet Cache Job Queue] DB Error for '{$source_key}/{$image_relative_path}' size {$cache_size}: " . $e->getMessage());
+        return false; // DB error
+    }
+}
+
+/**
+ * Gets the cache path for a RAW image preview using hash-based system (same as regular thumbnails).
+ *
+ * @param string $source_key The RAW source key.
+ * @param string $image_relative_path The relative path within the source.
+ * @param int $cache_size The target cache size.
+ * @return string The absolute path to where the cache should be stored.
+ */
+function get_jet_cache_path(string $source_key, string $image_relative_path, int $cache_size): string
+{
+    // Create source-prefixed path for consistent hashing
+    $source_prefixed_path = $source_key . '/' . $image_relative_path;
+    
+    // Use same hash system as regular thumbnails
+    $cache_hash = sha1($source_prefixed_path);
+    
+    // Filename convention: hash_size_raw.jpg (add _raw to distinguish from regular thumbnails)
+    $cache_filename = $cache_hash . '_' . $cache_size . '_raw.jpg';
+    
+    // Directory structure: JET_PREVIEW_CACHE_ROOT / size_value / filename
+    $cache_dir_for_size = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . $cache_size;
+    
+    // Full absolute path
+    return $cache_dir_for_size . DIRECTORY_SEPARATOR . $cache_filename;
+}
+
+/**
  * Serves a file with appropriate headers.
  *
  * @param string $file_path Absolute path to the file.

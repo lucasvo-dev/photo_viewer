@@ -962,6 +962,37 @@ document.addEventListener('DOMContentLoaded', () => {
                 thumbContainer.classList.add(`picked-${imageObject.pick_color}`);
             }
 
+            // Add all_picks indicator for admin (similar to grid)
+            if (imageObject.all_picks && imageObject.all_picks.length > 0) {
+                const allPicksIndicator = document.createElement('div');
+                allPicksIndicator.classList.add('all-picks-indicator');
+                allPicksIndicator.style.position = 'absolute';
+                allPicksIndicator.style.top = '2px';
+                allPicksIndicator.style.left = '2px';
+                allPicksIndicator.style.fontSize = '0.6rem';
+                allPicksIndicator.style.minWidth = '40px';
+                
+                imageObject.all_picks.forEach(pick => {
+                    const pickRow = document.createElement('div');
+                    pickRow.classList.add('pick-row');
+                    
+                    const pickDot = document.createElement('span');
+                    pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
+                    pickDot.style.width = '6px';
+                    pickDot.style.height = '6px';
+                    
+                    const pickText = document.createElement('span');
+                    pickText.classList.add('pick-text');
+                    pickText.textContent = pick.username || 'Unknown';
+                    
+                    pickRow.appendChild(pickDot);
+                    pickRow.appendChild(pickText);
+                    allPicksIndicator.appendChild(pickRow);
+                });
+                
+                thumbContainer.appendChild(allPicksIndicator);
+            }
+
             // Highlight the current image's thumbnail CONTAINER
             if (index === currentIndex) {
                 thumbContainer.classList.add('active');

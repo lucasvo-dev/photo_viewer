@@ -39,8 +39,9 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
 
         <!-- Admin Tabs -->
         <div class="admin-tabs">
-            <button class="admin-tab active" data-tab="gallery">Quản lý Gallery</button>
-            <button class="admin-tab" data-tab="users">Quản lý Users & RAW</button>
+            <button class="admin-tab active" data-tab="gallery">Quản lý Gallery & Cache</button>
+            <button class="admin-tab" data-tab="jet-cache">Quản lý Cache RAW</button>
+            <button class="admin-tab" data-tab="jet-admin">Dashboard Jet Admin</button>
         </div>
 
         <!-- Cache Count Display REMOVED -->
@@ -53,11 +54,11 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
         <!-- Global Feedback -->
         <div id="admin-feedback" class="feedback-message" style="display: none;"></div>
 
-        <!-- Gallery Management Tab -->
+        <!-- Gallery & Cache Management Tab -->
         <div class="admin-tab-content active" id="gallery-tab">
             <div class="tab-header">
-                <h2>Quản lý Gallery</h2>
-                <p>Quản lý mật khẩu, xem lượt truy cập và lấy link chia sẻ cho các thư mục ảnh.</p>
+                <h2>Quản lý Gallery & Cache</h2>
+                <p>Quản lý mật khẩu, xem lượt truy cập, lấy link chia sẻ và cache cho các thư mục ảnh.</p>
             </div>
 
             <!-- Search Bar for Admin - Styled like homepage -->
@@ -92,11 +93,73 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
             <div id="admin-loading" class="loading-indicator" style="display: none;">Đang tải...</div>
         </div>
 
-        <!-- User & RAW Management Tab -->
-        <div class="admin-tab-content" id="users-tab">
+        <!-- RAW Cache Management Tab -->
+        <div class="admin-tab-content" id="jet-cache-tab">
             <div class="tab-header">
-                <h2>Quản lý Users & RAW</h2>
-                <p>Quản lý tài khoản designer và truy cập Jet Culling Workspace.</p>
+                <h2>Quản lý Cache RAW</h2>
+                <p>Quản lý cache cho ảnh RAW trong Jet app. Cache được tạo với chiều cao cố định 750px.</p>
+            </div>
+
+            <!-- Search Bar for RAW Sources -->
+            <div class="search-container admin-search">
+                <input type="search" id="rawSourceSearchInput" placeholder="Tìm nguồn RAW..." aria-label="Tìm kiếm nguồn RAW">
+            </div>
+
+            <div id="raw-cache-message" class="message" style="display: none;"></div>
+
+            <!-- RAW Cache Statistics -->
+            <div class="admin-section">
+                <div class="cache-stats-grid">
+                    <div class="cache-stat-item">
+                        <span class="stat-label">Đang chờ:</span>
+                        <span class="stat-value" id="pending-jobs">...</span>
+                    </div>
+                    <div class="cache-stat-item">
+                        <span class="stat-label">Đang xử lý:</span>
+                        <span class="stat-value" id="processing-jobs">...</span>
+                    </div>
+                    <div class="cache-stat-item">
+                        <span class="stat-label">Hoàn thành:</span>
+                        <span class="stat-value" id="completed-jobs">...</span>
+                    </div>
+                    <div class="cache-stat-item">
+                        <span class="stat-label">Lỗi:</span>
+                        <span class="stat-value" id="failed-jobs">...</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- RAW Sources Table -->
+            <table>
+                <thead>
+                    <tr>
+                        <th>Nguồn RAW</th>
+                        <th>Số file RAW</th>
+                        <th>Trạng thái Cache</th>
+                        <th>Hành động Cache</th>
+                    </tr>
+                </thead>
+                <tbody id="raw-sources-list-body">
+                    <tr><td colspan="4">Đang tải danh sách thư mục...</td></tr>
+                </tbody>
+            </table>
+
+            <!-- Failed Jobs Section -->
+            <div class="admin-section" id="failed-jobs-section" style="display: none;">
+                <h3>Công việc lỗi gần đây</h3>
+                <div id="failed-jobs-container">
+                    <button id="clear-failed-jobs" class="button button-danger">Xóa tất cả công việc lỗi</button>
+                </div>
+            </div>
+
+            <div id="raw-cache-loading" class="loading-indicator" style="display: none;">Đang tải...</div>
+        </div>
+
+        <!-- Jet Admin Dashboard Tab -->
+        <div class="admin-tab-content" id="jet-admin-tab">
+            <div class="tab-header">
+                <h2>Dashboard Jet Admin</h2>
+                <p>Quản lý tài khoản designer và giám sát hoạt động Jet Culling Workspace.</p>
             </div>
 
             <div class="admin-section">
@@ -151,5 +214,6 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
     <script src="js/admin_users.js"></script>
     <script src="js/admin_tabs.js"></script>
     <script src="js/admin_jet_overview.js"></script>
+    <script src="js/admin_jet_cache.js"></script>
 </body>
 </html>

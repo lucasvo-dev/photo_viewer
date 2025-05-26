@@ -29,6 +29,14 @@ try {
          throw new Exception("CACHE_THUMB_ROOT ('" . (defined('CACHE_THUMB_ROOT') ? CACHE_THUMB_ROOT : 'N/A') . "') is not defined, not a directory, or not writable. Check config and permissions.");
     }
 
+    // Validate JET_PREVIEW_CACHE_ROOT existence for RAW cache cleanup
+    if (!defined('JET_PREVIEW_CACHE_ROOT') || !JET_PREVIEW_CACHE_ROOT || !is_dir(JET_PREVIEW_CACHE_ROOT) || !is_writable(JET_PREVIEW_CACHE_ROOT)) {
+         echo "[Warning] JET_PREVIEW_CACHE_ROOT not properly configured - RAW cache cleanup will be skipped.\n";
+         $jet_cache_available = false;
+    } else {
+         $jet_cache_available = true;
+    }
+
 } catch (Throwable $e) {
     $errorMsg = "CRON FATAL ERROR: Failed setup - " . $e->getMessage();
     error_log($errorMsg);
@@ -104,6 +112,71 @@ function findAllValidSourcePrefixedRelativePaths(): array {
         echo "[Info] Finished scanning source '{$sourceKey}'. Found " . count($validImagePaths) . " valid images so far.\n";
     }
     return $validImagePaths;
+}
+
+/**
+ * Find all valid RAW files recursively across all defined RAW_IMAGE_SOURCES
+ * and return their source-prefixed relative paths.
+ *
+ * @return array List of source-prefixed relative paths of valid RAW files (e.g., 'my_raw_drive_g/folder/image.nef'). Uses '/'.
+ */
+function findAllValidRawSourcePrefixedPaths(): array {
+    $validRawPaths = [];
+
+    // Check if RAW_IMAGE_SOURCES is defined
+    if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES)) {
+        echo "[Info] RAW_IMAGE_SOURCES not defined - no RAW files to scan.\n";
+        return $validRawPaths;
+    }
+
+    if (empty(RAW_IMAGE_SOURCES)) {
+        echo "[Info] RAW_IMAGE_SOURCES is empty - no RAW sources to scan.\n";
+        return $validRawPaths;
+    }
+
+    // Get RAW extensions
+    $raw_extensions = defined('RAW_IMAGE_EXTENSIONS') ? RAW_IMAGE_EXTENSIONS : ['arw', 'nef', 'cr2', 'cr3', 'raf', 'dng', 'orf', 'pef', 'rw2'];
+
+    foreach (RAW_IMAGE_SOURCES as $sourceKey => $sourceConfig) {
+        $sourceBasePath = $sourceConfig['path'];
+        echo "[Info] Scanning RAW source '{$sourceKey}' at path: {$sourceBasePath}\n";
+
+        if (!is_dir($sourceBasePath) || !is_readable($sourceBasePath)) {
+            error_log("[Cron Cleanup] RAW source path for key '{$sourceKey}' is not a directory or not readable: {$sourceBasePath}");
+            echo "[Warning] Skipping RAW source '{$sourceKey}' - path not found or not readable.\n";
+            continue;
+        }
+
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($sourceBasePath, RecursiveDirectoryIterator::SKIP_DOTS | RecursiveDirectoryIterator::FOLLOW_SYMLINKS),
+                RecursiveIteratorIterator::LEAVES_ONLY
+            );
+
+            foreach ($iterator as $fileinfo) {
+                $realPath = $fileinfo->getRealPath();
+                if (!$realPath || strpos($realPath, $sourceBasePath) !== 0) {
+                    error_log("[Cron Cleanup] Warning: RAW file path '{$fileinfo->getPathname()}' seems to be outside its source root '{$sourceBasePath}'. Skipping.");
+                    continue;
+                }
+
+                if ($fileinfo->isFile() && $fileinfo->isReadable()) {
+                    $extension = strtolower($fileinfo->getExtension());
+                    if (in_array($extension, $raw_extensions, true)) {
+                        $relativePath = substr($realPath, strlen($sourceBasePath));
+                        $relativePath = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $relativePath), '/');
+                        $sourcePrefixedPath = $sourceKey . '/' . $relativePath;
+                        $validRawPaths[] = $sourcePrefixedPath;
+                    }
+                }
+            }
+        } catch (Exception $e) {
+            error_log("[Cron Cleanup] Error scanning RAW source '{$sourceKey}' path {$sourceBasePath}: " . $e->getMessage());
+            echo "[Error] Error scanning RAW source '{$sourceKey}'. Check logs.\n";
+        }
+        echo "[Info] Finished scanning RAW source '{$sourceKey}'. Found " . count($validRawPaths) . " valid RAW files so far.\n";
+    }
+    return $validRawPaths;
 }
 
 /**
@@ -214,10 +287,140 @@ function cleanupOrphanedThumbnails(): void {
     echo "Orphaned thumbnail cleanup finished.\n";
 }
 
+/**
+ * Clean up orphaned RAW cache files in the JET preview cache directory.
+ */
+function cleanupOrphanedRawCache(): void {
+    global $jet_cache_available;
+
+    if (!$jet_cache_available) {
+        echo "Skipping RAW cache cleanup - JET_PREVIEW_CACHE_ROOT not available.\n";
+        return;
+    }
+
+    echo "Starting orphaned RAW cache cleanup...\n";
+    $jetCacheRoot = JET_PREVIEW_CACHE_ROOT;
+
+    // Get all valid RAW source-prefixed relative paths
+    $validRawSourcePrefixedPaths = findAllValidRawSourcePrefixedPaths();
+
+    // Safety check
+    if (empty($validRawSourcePrefixedPaths)) {
+        $errorMsg = "[RAW Cache Cleanup CRITICAL] No valid RAW files found. Aborting cleanup to prevent deleting all RAW cache files. Check RAW_IMAGE_SOURCES configuration, paths, and permissions.";
+        error_log($errorMsg);
+        echo $errorMsg . "\n";
+        echo "Orphaned RAW cache cleanup aborted due to safety check.\n";
+        return;
+    }
+
+    echo "[Info] Found a total of " . count($validRawSourcePrefixedPaths) . " valid RAW files across all sources.\n";
+
+    // Get RAW cache sizes
+    $raw_cache_sizes = [];
+    if (defined('JET_PREVIEW_SIZE')) {
+        $raw_cache_sizes[] = JET_PREVIEW_SIZE;
+    }
+    if (defined('JET_FILMSTRIP_THUMB_SIZE')) {
+        $raw_cache_sizes[] = JET_FILMSTRIP_THUMB_SIZE;
+    }
+    if (empty($raw_cache_sizes)) {
+        $raw_cache_sizes = [750, 120]; // Default fallback
+        echo "[Warning] RAW cache sizes not defined, using defaults: 750, 120\n";
+    }
+
+    $validRawCacheAbsolutePaths = [];
+    foreach ($validRawSourcePrefixedPaths as $sourcePrefixedPath) {
+        // Use the same hash system as the helper function
+        $cacheHash = sha1($sourcePrefixedPath);
+
+        foreach ($raw_cache_sizes as $size) {
+            $sizeDir = $jetCacheRoot . DIRECTORY_SEPARATOR . $size;
+            // Construct filename EXACTLY like get_jet_cache_path does: hash_size_raw.jpg
+            $cacheFilename = $cacheHash . '_' . $size . '_raw.jpg';
+            $cachePath = $sizeDir . DIRECTORY_SEPARATOR . $cacheFilename;
+            $validRawCacheAbsolutePaths[$cachePath] = true;
+        }
+    }
+    echo "[Info] Expecting max " . count($validRawCacheAbsolutePaths) . " potential RAW cache files based on found files and sizes.\n";
+
+    $deletedCount = 0;
+    $scannedCount = 0;
+    try {
+        if (!is_dir($jetCacheRoot)) {
+            echo "[Info] RAW cache directory does not exist: {$jetCacheRoot}\n";
+            return;
+        }
+
+        $cacheIterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($jetCacheRoot, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::LEAVES_ONLY
+        );
+
+        foreach ($cacheIterator as $fileinfo) {
+            if ($fileinfo->isFile() && $fileinfo->isReadable()) {
+                $scannedCount++;
+                $cachedFilePath = $fileinfo->getRealPath();
+                if (!$cachedFilePath) continue;
+
+                // Only process files that match RAW cache pattern: hash_size_raw.jpg
+                $filename = $fileinfo->getFilename();
+                if (!preg_match('/^[a-f0-9]{40}_\d+_raw\.jpg$/', $filename)) {
+                    // Not a RAW cache file, skip
+                    continue;
+                }
+
+                // Check if this cached file corresponds to a valid, existing original RAW file
+                if (!isset($validRawCacheAbsolutePaths[$cachedFilePath])) {
+                    echo "[RAW Cache Cleanup] Deleting orphaned RAW cache: {$cachedFilePath}\n";
+                    if (@unlink($cachedFilePath)) {
+                        $deletedCount++;
+                    } else {
+                        $errorMsg = "[RAW Cache Cleanup] Failed to delete orphaned RAW cache: {$cachedFilePath}";
+                        error_log($errorMsg);
+                        echo $errorMsg . "\n";
+                    }
+                }
+            }
+        }
+    } catch (UnexpectedValueException $e) {
+        $errorMsg = "[RAW Cache Cleanup] Error scanning RAW cache directory (path might have changed): " . $e->getMessage();
+        error_log($errorMsg);
+        echo $errorMsg . "\nCheck logs and cache directory state.\n";
+    } catch (Exception $e) {
+        $errorMsg = "[RAW Cache Cleanup] General error scanning RAW cache directory: " . $e->getMessage();
+        error_log($errorMsg);
+        echo $errorMsg . "\nCheck logs.\n";
+    }
+
+    echo "Scanned {$scannedCount} files in RAW cache. Deleted {$deletedCount} orphaned RAW cache files.\n";
+
+    // Clean up empty RAW cache size directories
+    echo "Checking for empty RAW cache size directories...\n";
+    $deletedDirs = 0;
+    foreach ($raw_cache_sizes as $size) {
+        $sizeDir = $jetCacheRoot . DIRECTORY_SEPARATOR . $size;
+        if (is_dir($sizeDir) && !(new FilesystemIterator($sizeDir))->valid()) {
+            echo "[RAW Cache Cleanup] Deleting empty RAW cache size directory: {$sizeDir}\n";
+            if (@rmdir($sizeDir)) {
+                $deletedDirs++;
+            } else {
+                error_log("[RAW Cache Cleanup] Failed to delete empty RAW cache size directory: {$sizeDir}");
+                echo "[RAW Cache Cleanup] FAILED to delete empty RAW cache size directory: {$sizeDir}\n";
+            }
+        }
+    }
+    echo "Deleted {$deletedDirs} empty RAW cache size directories.\n";
+
+    echo "Orphaned RAW cache cleanup finished.\n";
+}
+
 // --- Main Execution ---
 cleanupOrphanedThumbnails();
 
-echo "\nCron Thumbnail Cleanup finished at: " . date('Y-m-d H:i:s') . "\n";
+// Run RAW cache cleanup
+cleanupOrphanedRawCache();
+
+echo "\nCron Cache Cleanup (Thumbnails + RAW) finished at: " . date('Y-m-d H:i:s') . "\n";
 
 exit(0); // Exit successfully
 ?> 

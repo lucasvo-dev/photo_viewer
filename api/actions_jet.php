@@ -420,9 +420,9 @@ switch ($jet_action) {
             $target_size = JET_FILMSTRIP_THUMB_SIZE; // Use filmstrip size if requested and defined
         }
 
-        $cache_dir_path = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . $target_size . DIRECTORY_SEPARATOR . $source_key . DIRECTORY_SEPARATOR . dirname($clean_image_relative_path);
-        $cache_file_name = basename($clean_image_relative_path, '.' . $raw_extension) . '.jpg';
-        $cached_preview_full_path = rtrim($cache_dir_path, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . $cache_file_name;
+        // Use helper function for consistent cache path generation
+        $cached_preview_full_path = get_jet_cache_path($source_key, $clean_image_relative_path, $target_size);
+        $cache_dir_path = dirname($cached_preview_full_path);
 
         error_log("[JET_GET_RAW_PREVIEW] RAW file: {$full_raw_file_path_realpath}");
         error_log("[JET_GET_RAW_PREVIEW] Cache path: {$cached_preview_full_path}");
@@ -435,6 +435,11 @@ switch ($jet_action) {
             exit;
         }
 
+        // Cache miss - add job to queue for background processing (if not already queued)
+        if (function_exists('add_jet_cache_job_to_queue')) {
+            add_jet_cache_job_to_queue($pdo, $source_key, $clean_image_relative_path, $target_size);
+        }
+
         // Create cache directory if it doesn't exist
         if (!is_dir($cache_dir_path)) {
             if (!@mkdir($cache_dir_path, 0775, true)) {
@@ -445,13 +450,9 @@ switch ($jet_action) {
             }
         }
         
-        // Define the full path to dcraw.exe
-        // IMPORTANT: User confirmed dcraw.exe is in C:\Program Files\dcraw\
-        // Using double backslashes for PHP string literal
-        $dcraw_executable_path = "C:\\Program Files\\dcraw\\dcraw.exe";
-
-        // Define full path to magick.exe
-        $magick_executable_path = "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe";
+        // Define paths to dcraw and ImageMagick (now in exe folder)
+        $dcraw_executable_path = __DIR__ . DIRECTORY_SEPARATOR . ".." . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "dcraw.exe";
+        $magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . ".." . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
         
         $preview_size = JET_PREVIEW_SIZE;
         $escaped_final_cache_path = escapeshellarg($cached_preview_full_path);
@@ -476,9 +477,8 @@ switch ($jet_action) {
         error_log("[JET_GET_RAW_PREVIEW] Step 1 SUCCESS: dcraw created PPM file: {$temp_ppm_filename}. Size: " . filesize($temp_ppm_filename) . ". dcraw output: " . ($trimmed_dcraw_output ?: "EMPTY"));
 
         // Step 2: Convert temporary PPM to final JPG
-        // Using > for resize, not \>
-        // Update resize command to use $target_size
-        $magick_ppm_to_jpg_cmd = "\"{$magick_executable_path}\" convert {$escaped_temp_ppm_path} -resize {$target_size}x{$target_size}> -quality 85 {$escaped_final_cache_path} 2>&1";
+        // Use resize with height as the constraint for consistent height across all images
+        $magick_ppm_to_jpg_cmd = "\"{$magick_executable_path}\" convert {$escaped_temp_ppm_path} -resize x{$target_size} -quality 85 {$escaped_final_cache_path} 2>&1";
         error_log("[JET_GET_RAW_PREVIEW] Executing Step 2 (PPM to JPG). CMD: {$magick_ppm_to_jpg_cmd}");
         $magick_output = shell_exec($magick_ppm_to_jpg_cmd);
         $trimmed_magick_output = is_string($magick_output) ? trim($magick_output) : '';
@@ -869,6 +869,435 @@ switch ($jet_action) {
         } catch (PDOException $e) {
             error_log("Error changing user password: " . $e->getMessage());
             json_error("Lỗi khi thay đổi mật khẩu.");
+        }
+        exit;
+
+    // Queue cache job for RAW image folder (admin only)
+    case 'jet_queue_folder_cache':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $source_key = $_POST['source_key'] ?? null;
+        $folder_path = $_POST['folder_path'] ?? '';
+
+        if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
+            json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
+            exit;
+        }
+
+        try {
+            // Get all RAW images in the folder
+            $source_config = RAW_IMAGE_SOURCES[$source_key];
+            $base_path = rtrim($source_config['path'], '/\\');
+            
+            // Construct full folder path
+            $clean_folder_path = '';
+            if (!empty($folder_path)) {
+                $path_parts = explode('/', str_replace('//', '/', trim($folder_path, '/\\')));
+                $safe_parts = [];
+                foreach ($path_parts as $part) {
+                    if ($part !== '' && $part !== '.' && $part !== '..') {
+                        $safe_parts[] = $part;
+                    }
+                }
+                $clean_folder_path = implode('/', $safe_parts);
+            }
+
+            $full_scan_path = $base_path . (empty($clean_folder_path) ? '' : '/' . $clean_folder_path);
+            $full_scan_path_realpath = realpath($full_scan_path);
+
+            if (!$full_scan_path_realpath || !is_dir($full_scan_path_realpath)) {
+                json_error("Đường dẫn thư mục không hợp lệ hoặc không tồn tại.", 404);
+                exit;
+            }
+
+            // Security check
+            $base_path_realpath = realpath($base_path);
+            if (!$base_path_realpath || strpos($full_scan_path_realpath, $base_path_realpath) !== 0) {
+                json_error("Truy cập đường dẫn bị từ chối.", 403);
+                exit;
+            }
+
+            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+            $queued_count = 0;
+            $existing_count = 0;
+
+            // Scan folder for RAW images
+            try {
+                $iterator = new DirectoryIterator($full_scan_path_realpath);
+                foreach ($iterator as $fileinfo) {
+                    if ($fileinfo->isFile()) {
+                        $extension = strtolower($fileinfo->getExtension());
+                        if (in_array($extension, $raw_extensions)) {
+                            $image_relative_path = (empty($clean_folder_path) ? '' : $clean_folder_path . '/') . $fileinfo->getFilename();
+                            
+                            // Queue jobs for both preview and filmstrip sizes
+                            $preview_queued = add_jet_cache_job_to_queue($pdo, $source_key, $image_relative_path, JET_PREVIEW_SIZE);
+                            $filmstrip_queued = add_jet_cache_job_to_queue($pdo, $source_key, $image_relative_path, JET_FILMSTRIP_THUMB_SIZE);
+                            
+                            if ($preview_queued) $queued_count++;
+                            if ($filmstrip_queued) $queued_count++;
+                        }
+                    }
+                }
+            } catch (Exception $e) {
+                json_error("Lỗi khi quét thư mục: " . $e->getMessage(), 500);
+                exit;
+            }
+
+            json_response([
+                'success' => true,
+                'message' => "Đã thêm {$queued_count} công việc cache vào hàng đợi.",
+                'queued_count' => $queued_count
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[jet_queue_folder_cache] Error: " . $e->getMessage());
+            json_error("Lỗi khi thêm công việc vào hàng đợi: " . $e->getMessage(), 500);
+        }
+        exit;
+
+    // Get cache job statistics (admin only)
+    case 'jet_get_cache_stats':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            // Get cache job counts by status
+            $stats_sql = "SELECT status, COUNT(*) as count FROM jet_cache_jobs GROUP BY status";
+            $stats_stmt = $pdo->prepare($stats_sql);
+            $stats_stmt->execute();
+            $stats = $stats_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get recent failed jobs
+            $failed_sql = "SELECT source_key, image_relative_path, cache_size, result_message, created_at 
+                          FROM jet_cache_jobs 
+                          WHERE status = 'failed' 
+                          ORDER BY created_at DESC 
+                          LIMIT 10";
+            $failed_stmt = $pdo->prepare($failed_sql);
+            $failed_stmt->execute();
+            $recent_failed = $failed_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            // Get processing jobs
+            $processing_sql = "SELECT source_key, image_relative_path, cache_size, worker_id, processed_at 
+                              FROM jet_cache_jobs 
+                              WHERE status = 'processing' 
+                              ORDER BY processed_at ASC";
+            $processing_stmt = $pdo->prepare($processing_sql);
+            $processing_stmt->execute();
+            $processing_jobs = $processing_stmt->fetchAll(PDO::FETCH_ASSOC);
+
+            json_response([
+                'success' => true,
+                'stats' => $stats,
+                'recent_failed' => $recent_failed,
+                'processing_jobs' => $processing_jobs
+            ]);
+
+        } catch (PDOException $e) {
+            error_log("[jet_get_cache_stats] Error: " . $e->getMessage());
+            json_error("Lỗi khi lấy thống kê cache.", 500);
+        }
+        exit;
+
+    // Clear failed cache jobs (admin only)
+    case 'jet_clear_failed_cache_jobs':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            $clear_sql = "DELETE FROM jet_cache_jobs WHERE status = 'failed'";
+            $clear_stmt = $pdo->prepare($clear_sql);
+            $clear_stmt->execute();
+            $cleared_count = $clear_stmt->rowCount();
+
+            json_response([
+                'success' => true,
+                'message' => "Đã xóa {$cleared_count} công việc cache lỗi.",
+                'cleared_count' => $cleared_count
+            ]);
+
+        } catch (PDOException $e) {
+            error_log("[jet_clear_failed_cache_jobs] Error: " . $e->getMessage());
+            json_error("Lỗi khi xóa công việc cache lỗi.", 500);
+        }
+        exit;
+
+    // Get RAW sources with cache statistics (admin only)
+    case 'jet_list_raw_sources_with_cache_stats':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            $sources_with_stats = [];
+
+            foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
+                $source_path = $source_config['path'];
+                $source_name = $source_config['name'] ?? $source_key;
+
+                // Count total RAW files in source
+                $total_raw_files = 0;
+                if (is_dir($source_path) && is_readable($source_path)) {
+                    try {
+                        $iterator = new RecursiveIteratorIterator(
+                            new RecursiveDirectoryIterator($source_path, RecursiveDirectoryIterator::SKIP_DOTS),
+                            RecursiveIteratorIterator::LEAVES_ONLY
+                        );
+
+                        foreach ($iterator as $fileinfo) {
+                            if ($fileinfo->isFile()) {
+                                $extension = strtolower($fileinfo->getExtension());
+                                if (in_array($extension, RAW_IMAGE_EXTENSIONS)) {
+                                    $total_raw_files++;
+                                }
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log("[jet_list_raw_sources] Error scanning source '{$source_key}': " . $e->getMessage());
+                    }
+                }
+
+                // Get cache statistics
+                $cache_stats_sql = "SELECT 
+                    COUNT(*) as total_cache_jobs,
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+                    SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_jobs,
+                    SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
+                    SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
+                    FROM jet_cache_jobs 
+                    WHERE source_key = ?";
+                $cache_stats_stmt = $pdo->prepare($cache_stats_sql);
+                $cache_stats_stmt->execute([$source_key]);
+                $cache_stats = $cache_stats_stmt->fetch(PDO::FETCH_ASSOC);
+
+                $sources_with_stats[] = [
+                    'source_key' => $source_key,
+                    'name' => $source_name,
+                    'path' => $source_path,
+                    'total_raw_files' => $total_raw_files,
+                    'accessible' => is_dir($source_path) && is_readable($source_path),
+                    'cache_stats' => [
+                        'total_jobs' => (int)$cache_stats['total_cache_jobs'],
+                        'completed' => (int)$cache_stats['completed_jobs'],
+                        'pending' => (int)$cache_stats['pending_jobs'],
+                        'processing' => (int)$cache_stats['processing_jobs'],
+                        'failed' => (int)$cache_stats['failed_jobs']
+                    ]
+                ];
+            }
+
+            json_response([
+                'success' => true,
+                'sources' => $sources_with_stats
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[jet_list_raw_sources_with_cache_stats] Error: " . $e->getMessage());
+            json_error("Lỗi khi lấy danh sách nguồn RAW: " . $e->getMessage(), 500);
+        }
+        exit;
+
+    // Queue cache for entire RAW source (admin only)
+    case 'jet_queue_source_cache':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $source_key = $_POST['source_key'] ?? null;
+        if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
+            json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
+            exit;
+        }
+
+        try {
+            $source_config = RAW_IMAGE_SOURCES[$source_key];
+            $source_path = $source_config['path'];
+
+            if (!is_dir($source_path) || !is_readable($source_path)) {
+                json_error("Nguồn RAW không thể truy cập: " . $source_path, 404);
+                exit;
+            }
+
+            $queued_count = 0;
+            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+
+            // Scan entire source for RAW files
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($source_path, RecursiveDirectoryIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::LEAVES_ONLY
+            );
+
+            foreach ($iterator as $fileinfo) {
+                if ($fileinfo->isFile()) {
+                    $extension = strtolower($fileinfo->getExtension());
+                    if (in_array($extension, $raw_extensions)) {
+                        // Calculate relative path
+                        $full_path = $fileinfo->getRealPath();
+                        $relative_path = substr($full_path, strlen(realpath($source_path)) + 1);
+                        $relative_path = str_replace('\\', '/', $relative_path);
+
+                        // Queue jobs for both sizes
+                        $preview_queued = add_jet_cache_job_to_queue($pdo, $source_key, $relative_path, JET_PREVIEW_SIZE);
+                        $filmstrip_queued = add_jet_cache_job_to_queue($pdo, $source_key, $relative_path, JET_FILMSTRIP_THUMB_SIZE);
+
+                        if ($preview_queued) $queued_count++;
+                        if ($filmstrip_queued) $queued_count++;
+                    }
+                }
+            }
+
+            json_response([
+                'success' => true,
+                'message' => "Đã thêm {$queued_count} công việc cache vào hàng đợi cho nguồn {$source_key}.",
+                'queued_count' => $queued_count
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[jet_queue_source_cache] Error: " . $e->getMessage());
+            json_error("Lỗi khi thêm công việc vào hàng đợi: " . $e->getMessage(), 500);
+        }
+        exit;
+
+    // NEW: List RAW folders within sources with cache statistics (admin only)
+    case 'jet_list_raw_folders_with_cache_stats':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            $folders_with_stats = [];
+            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+
+            foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
+                $base_path = $source_config['path'];
+                $source_name = $source_config['name'] ?? $source_key;
+
+                if (!is_dir($base_path) || !is_readable($base_path)) {
+                    // Skip inaccessible sources, but maybe add a note later
+                    continue;
+                }
+
+                try {
+                    $iterator = new DirectoryIterator($base_path);
+                    foreach ($iterator as $fileinfo) {
+                        if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                            continue; // Only list directories at the top level of the source
+                        }
+
+                        $folder_name = $fileinfo->getFilename();
+                        $relative_folder_path = $folder_name; // Path is just the folder name relative to source root
+                        $full_folder_path = $fileinfo->getPathname();
+
+                        // Count total RAW files within this specific folder (and sub-subfolders)
+                        $total_raw_files_in_folder = 0;
+                        try {
+                             $sub_iterator = new RecursiveIteratorIterator(
+                                new RecursiveDirectoryIterator($full_folder_path, RecursiveDirectoryIterator::SKIP_DOTS),
+                                RecursiveIteratorIterator::LEAVES_ONLY
+                            );
+                            foreach ($sub_iterator as $sub_fileinfo) {
+                                if ($sub_fileinfo->isFile()) {
+                                    $extension = strtolower($sub_fileinfo->getExtension());
+                                    if (in_array($extension, $raw_extensions)) {
+                                        $total_raw_files_in_folder++;
+                                    }
+                                }
+                            }
+                        } catch (Exception $e) {
+                             error_log("[jet_list_raw_folders] Error scanning folder '{$full_folder_path}': " . $e->getMessage());
+                        }
+
+                        // Get cache statistics for this specific folder path
+                        // We need to count jobs where image_relative_path STARTS WITH this folder path
+                        $cache_stats_sql = "SELECT
+                            COUNT(*) as total_cache_jobs,
+                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+                            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_jobs,
+                            SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
+                            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
+                            FROM jet_cache_jobs
+                            WHERE source_key = ? AND image_relative_path LIKE ?"; // Use LIKE for subfolders
+                        $cache_stats_stmt = $pdo->prepare($cache_stats_sql);
+                        // The LIKE pattern should be the folder name followed by /% or just the folder name for root files (though we only list dirs)
+                        // Since we are listing top-level dirs, the path is 'foldername'. We want jobs where image_relative_path starts with 'foldername/'
+                        $like_pattern = $relative_folder_path . '/%';
+                        $cache_stats_stmt->execute([$source_key, $like_pattern]);
+                        $cache_stats = $cache_stats_stmt->fetch(PDO::FETCH_ASSOC);
+
+                         // Also count jobs directly in the root of this folder (shouldn't happen based on current logic, but for safety)
+                         $cache_stats_root_sql = "SELECT
+                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
+                            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_jobs,
+                            SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
+                            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
+                            FROM jet_cache_jobs
+                            WHERE source_key = ? AND image_relative_path = ?";
+                         $cache_stats_root_stmt = $pdo->prepare($cache_stats_root_sql);
+                         $cache_stats_root_stmt->execute([$source_key, $relative_folder_path]); // Check for jobs exactly matching the folder name (unlikely)
+                         $cache_stats_root = $cache_stats_root_stmt->fetch(PDO::FETCH_ASSOC);
+
+                         // Combine stats
+                         $combined_stats = [
+                             'total_cache_jobs' => $cache_stats['total_cache_jobs'] + ($cache_stats_root ? $cache_stats_root['completed_jobs'] + $cache_stats_root['pending_jobs'] + $cache_stats_root['processing_jobs'] + $cache_stats_root['failed_jobs'] : 0),
+                             'completed_jobs' => $cache_stats['completed_jobs'] + ($cache_stats_root ? $cache_stats_root['completed_jobs'] : 0),
+                             'pending_jobs' => $cache_stats['pending_jobs'] + ($cache_stats_root ? $cache_stats_root['pending_jobs'] : 0),
+                             'processing_jobs' => $cache_stats['processing_jobs'] + ($cache_stats_root ? $cache_stats_root['processing_jobs'] : 0),
+                             'failed_jobs' => $cache_stats['failed_jobs'] + ($cache_stats_root ? $cache_stats_root['failed_jobs'] : 0)
+                         ];
+
+
+                        $folders_with_stats[] = [
+                            'source_key' => $source_key,
+                            'source_name' => $source_name,
+                            'folder_name' => $folder_name, // The name of the directory
+                            'relative_path' => $relative_folder_path, // Path relative to source root (just folder name)
+                            'full_path' => $full_folder_path, // Full system path
+                            'total_raw_files' => $total_raw_files_in_folder,
+                             // Note: We calculate total jobs based on LIKE % to include sub-subfolders
+                            'cache_stats' => [
+                                'total_jobs' => (int)$combined_stats['total_cache_jobs'],
+                                'completed' => (int)$combined_stats['completed_jobs'],
+                                'pending' => (int)$combined_stats['pending_jobs'],
+                                'processing' => (int)$combined_stats['processing_jobs'],
+                                'failed' => (int)$combined_stats['failed_jobs']
+                            ]
+                        ];
+                    }
+                } catch (Exception $e) {
+                     error_log("[jet_list_raw_folders] Error scanning base path '{$base_path}' for key '{$source_key}': " . $e->getMessage());
+                     // Continue to next source even if one fails
+                }
+            }
+
+             // Sort results by source name then folder name
+            usort($folders_with_stats, function($a, $b) {
+                $cmp_source = strnatcasecmp($a['source_name'], $b['source_name']);
+                if ($cmp_source !== 0) {
+                    return $cmp_source;
+                }
+                return strnatcasecmp($a['folder_name'], $b['folder_name']);
+            });
+
+
+            json_response([
+                'success' => true,
+                'folders' => $folders_with_stats
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[jet_list_raw_folders_with_cache_stats] Error: " . $e->getMessage());
+            json_error("Lỗi khi lấy danh sách thư mục RAW: " . $e->getMessage(), 500);
         }
         exit;
 

@@ -166,3 +166,114 @@
 .admin-table-container {
     margin-top: 20px;
 }
+
+/* RAW Cache Management Styles */
+.cache-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.cache-stat-item {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 8px;
+    border: 1px solid #e9ecef;
+    text-align: center;
+}
+
+.stat-label {
+    display: block;
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin-bottom: 0.5rem;
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: bold;
+    color: #495057;
+}
+
+.stat-value.stat-error {
+    color: #dc3545;
+}
+
+.stat-value.stat-processing {
+    color: #fd7e14;
+}
+
+.cache-actions {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.cache-folder-form {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.form-select, .form-input {
+    padding: 0.5rem;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.9rem;
+}
+
+.form-select {
+    min-width: 200px;
+}
+
+.form-input {
+    flex: 1;
+    min-width: 250px;
+}
+
+.help-text {
+    font-size: 0.9rem;
+    color: #6c757d;
+    margin: 0;
+}
+
+.path-cell {
+    max-width: 300px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.worker-cell {
+    font-family: monospace;
+    font-size: 0.8rem;
+}
+
+.error-cell {
+    max-width: 200px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    color: #dc3545;
+    cursor: help;
+}
+
+@media (max-width: 768px) {
+    .cache-folder-form {
+        flex-direction: column;
+        align-items: stretch;
+    }
+    
+    .form-select, .form-input {
+        min-width: auto;
+        width: 100%;
+    }
+    
+    .cache-actions {
+        flex-direction: column;
+    }
+}

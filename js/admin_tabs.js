@@ -38,7 +38,13 @@ function handleTabSwitch(tabName) {
                 loadFolders();
             }
             break;
-        case 'users':
+        case 'jet-cache':
+            // Load RAW cache management data
+            if (typeof loadJetCacheStats === 'function') {
+                loadJetCacheStats();
+            }
+            break;
+        case 'jet-admin':
             // Load user data if needed
             if (typeof loadDesigners === 'function') {
                 loadDesigners();

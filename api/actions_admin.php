@@ -501,9 +501,113 @@ switch ($action) {
         }
         break;
 
+    case 'admin_update_jet_cache':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Method Not Allowed', 405);
+        }
 
+        // Ensure RAW_IMAGE_SOURCES and RAW_FILE_EXTENSIONS are defined
+        if (!defined('RAW_IMAGE_SOURCES') || !is_array(RAW_IMAGE_SOURCES)) {
+             json_error('Server configuration error: RAW_IMAGE_SOURCES not defined.', 500);
+        }
+         if (!defined('RAW_FILE_EXTENSIONS') || !is_array(RAW_FILE_EXTENSIONS)) {
+             json_error('Server configuration error: RAW_FILE_EXTENSIONS not defined.', 500);
+        }
 
+        $raw_image_sources = RAW_IMAGE_SOURCES;
+        $raw_file_extensions = RAW_FILE_EXTENSIONS;
+        $jobs_added_count = 0;
 
+        try {
+            // Iterate through RAW_IMAGE_SOURCES
+            foreach ($raw_image_sources as $source_key => $source_config) {
+                if (!is_array($source_config) || !isset($source_config['path'])) continue;
+                $source_base_path = $source_config['path'];
+                $resolved_source_base_path = realpath($source_base_path);
+
+                if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
+                    error_log("[admin_update_jet_cache] Skipping RAW source '{$source_key}': Path invalid or not readable.");
+                    continue;
+                }
+
+                // Recursively find all RAW files in the source directory
+                $iterator = new RecursiveIteratorIterator(
+                    new RecursiveDirectoryIterator($resolved_source_base_path, RecursiveDirectoryIterator::SKIP_DOTS),
+                    RecursiveIteratorIterator::LEAVES_ONLY
+                );
+
+                foreach ($iterator as $fileinfo) {
+                    if (!$fileinfo->isFile() || !$fileinfo->isReadable()) {
+                        continue;
+                    }
+
+                    $file_path = $fileinfo->getPathname();
+                    $extension = strtolower($fileinfo->getExtension());
+
+                    // Check if the file extension is in the allowed RAW extensions
+                    if (in_array($extension, $raw_file_extensions)) {
+                        // Get the relative path from the source base path
+                        $relative_path = str_replace($resolved_source_base_path . DIRECTORY_SEPARATOR, '', $file_path);
+                        $source_prefixed_path = $source_key . '/' . str_replace('\\', '/', $relative_path); // Use forward slashes
+
+                        // Add job to jet_cache_jobs table (check for duplicates)
+                        // We need to add jobs for both JET_PREVIEW_SIZE and JET_FILMSTRIP_THUMB_SIZE
+                        $target_sizes = [];
+                        if (defined('JET_PREVIEW_SIZE')) $target_sizes[] = JET_PREVIEW_SIZE;
+                        if (defined('JET_FILMSTRIP_THUMB_SIZE')) $target_sizes[] = JET_FILMSTRIP_THUMB_SIZE;
+
+                        foreach ($target_sizes as $size) {
+                            // Check for existing pending or processing job for this file and size
+                            $sql_check = "SELECT id FROM jet_cache_jobs WHERE source_prefixed_path = ? AND cache_size = ? AND status IN ('pending', 'processing') LIMIT 1";
+                            $stmt_check = $pdo->prepare($sql_check);
+                            $stmt_check->execute([$source_prefixed_path, $size]);
+                            $existing_job = $stmt_check->fetch();
+
+                            if (!$existing_job) {
+                                // Insert new job
+                                $sql_insert = "INSERT INTO jet_cache_jobs (source_prefixed_path, cache_size, status, created_at) VALUES (?, ?, ?, ?)";
+                                $stmt_insert = $pdo->prepare($sql_insert);
+                                $current_time = time();
+                                if ($stmt_insert->execute([$source_prefixed_path, $size, 'pending', $current_time])) {
+                                    $jobs_added_count++;
+                                } else {
+                                    error_log("[admin_update_jet_cache] Failed to insert job for {$source_prefixed_path} size {$size}");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            json_response(['success' => true, 'message' => "Đã thêm {$jobs_added_count} công việc tạo cache JET vào hàng đợi.", 'jobs_added' => $jobs_added_count]);
+
+        } catch (Throwable $e) {
+            error_log("FATAL ERROR in admin_update_jet_cache: " . $e->getMessage() . "\nStack Trace:\n" . $e->getTraceAsString());
+            json_error("Không thể cập nhật cache JET. Lỗi: " . $e->getMessage(), 500);
+        }
+        break;
+
+    case 'admin_delete_cache_job':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+        $job_id = $_POST['job_id'] ?? null;
+        if ($job_id === null) {
+            json_error('Thiếu thông tin ID công việc.', 400);
+        }
+
+        try {
+            $sql = "DELETE FROM cache_jobs WHERE id = ?";
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$job_id]);
+            $affected_rows = $stmt->rowCount();
+
+            json_response(['success' => true, 'message' => "Đã xóa công việc cache với ID: {$job_id}. Bị ảnh hưởng: {$affected_rows} dòng."]);
+        } catch (Throwable $e) {
+            error_log("[admin_delete_cache_job] FATAL ERROR for job ID: {$job_id}: " . $e->getMessage());
+            json_error('Lỗi server khi xóa công việc cache: ' . $e->getMessage(), 500);
+        }
+        break;
 
     // Default case for unknown admin actions
     default:

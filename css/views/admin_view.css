@@ -171,13 +171,17 @@
 .status-failed {
     color: #f85149; /* Red */
 }
+.status-partial {
+    color: #d29922; /* Yellow/Orange for partial completion */
+}
 .status-warning { /* General one, also used in cache column */
     color: #d29922; /* Yellow/Orange */
     font-size: 0.9em; /* Ensure consistency if used outside cache context */
     margin-top: 3px;
     display: block;
 }
-.status-never {
+.status-never,
+.status-none {
      color: #888;
 }
 

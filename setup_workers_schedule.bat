@@ -11,6 +11,14 @@ schtasks /create /tn "Guu Cache Worker" ^
     /ru "SYSTEM" ^
     /f
 
+:: Create RAW Cache Worker Task (NEW)
+echo Creating/Updating Guu_RAW Cache Worker task...
+schtasks /create /tn "Guu RAW Cache Worker" ^
+    /tr "D:\xampp\php\php.exe -f D:\xampp\htdocs\worker_jet_cache.php" ^
+    /sc minute /mo 1 ^
+    /ru "SYSTEM" ^
+    /f
+
 :: Create ZIP Worker Task
 echo Creating/Updating Guu_ZIP Worker task...
 schtasks /create /tn "Guu ZIP Worker" ^
@@ -48,10 +56,24 @@ schtasks /create /tn "Guu Log Cleanup Cron" ^
 :: --- Verify tasks were created ---
 echo Verifying all Guu_ prefixed tasks...
 schtasks /query /tn "Guu Cache Worker"
+schtasks /query /tn "Guu RAW Cache Worker"
 schtasks /query /tn "Guu ZIP Worker"
 schtasks /query /tn "Guu ZIP Cleanup Cron"
 schtasks /query /tn "Guu Cache Cleanup Cron"
 schtasks /query /tn "Guu Log Cleanup Cron"
 
+echo.
+echo === Manual Start Commands (for testing) ===
+echo To start workers manually for testing:
+echo   php worker_cache.php
+echo   php worker_jet_cache.php
+echo   php worker_zip.php
+echo.
+echo To test RAW processing setup:
+echo   php test_raw_processing.php
+echo.
+echo To run cache cleanup manually:
+echo   php cron_cache_cleanup.php
+echo.
 echo All Guu_ prefixed schedule setups completed. Press any key to exit...
 pause >nul

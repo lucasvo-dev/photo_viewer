@@ -186,7 +186,9 @@ try {
 
 // --- Jet App Preview Cache Configuration ---
 $jet_preview_size = $config['jet_preview_size'] ?? 750;
+$jet_filmstrip_thumb_size = $config['jet_filmstrip_thumb_size'] ?? 120;
 define('JET_PREVIEW_SIZE', $jet_preview_size);
+define('JET_FILMSTRIP_THUMB_SIZE', $jet_filmstrip_thumb_size);
 
 try {
     $jet_cache_root_path = $config['jet_preview_cache_root'] ?? (__DIR__ . '/cache/jet_previews');
@@ -204,11 +206,14 @@ try {
     }
     define('JET_PREVIEW_CACHE_ROOT', $resolved_jet_cache_path);
 
-    // Pre-create size directory for Jet previews if it doesn't exist
-    $jet_size_dir = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . JET_PREVIEW_SIZE;
+    // Pre-create size directories for Jet previews if they don't exist
+    $jet_preview_sizes = [JET_PREVIEW_SIZE, JET_FILMSTRIP_THUMB_SIZE];
+    foreach ($jet_preview_sizes as $size) {
+        $jet_size_dir = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . $size;
     if (!is_dir($jet_size_dir)) {
         if (!@mkdir($jet_size_dir, 0775, true)) {
             error_log("Warning: Failed to automatically create Jet preview size directory: {$jet_size_dir}");
+            }
         }
     }
 
@@ -344,6 +349,29 @@ try {
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
             UNIQUE KEY unique_pick (user_id, source_key, image_relative_path)
         )");
+
+        // Create jet_cache_jobs table for RAW image preview caching
+        $pdo->exec("CREATE TABLE IF NOT EXISTS jet_cache_jobs (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            raw_file_path VARCHAR(1024) NOT NULL, -- Stores the source-prefixed path to the RAW file
+            source_key VARCHAR(50) NOT NULL,
+            image_relative_path VARCHAR(255) NOT NULL,
+            cache_size INT NOT NULL, -- Target cache size (e.g., 750 for preview, 120 for filmstrip)
+            status VARCHAR(50) NOT NULL DEFAULT 'pending', -- pending, processing, completed, failed
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            processed_at BIGINT NULL,
+            completed_at BIGINT NULL,
+            result_message TEXT NULL,
+            worker_id VARCHAR(255) NULL DEFAULT NULL,
+            final_cache_path VARCHAR(1024) NULL, -- Path to the generated cache file
+            original_width INT DEFAULT NULL,
+            original_height INT DEFAULT NULL,
+            INDEX idx_jet_cache_jobs_status (status),
+            INDEX idx_jet_cache_jobs_source_key (source_key),
+            INDEX idx_jet_cache_jobs_path (image_relative_path(255)),
+            INDEX idx_jet_cache_jobs_created_at (created_at),
+            UNIQUE KEY unique_cache_job (source_key, image_relative_path, cache_size)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
 
         // Alter jet_image_picks table if it has the old structure
         if (column_exists($pdo, 'jet_image_picks', 'is_picked')) {
