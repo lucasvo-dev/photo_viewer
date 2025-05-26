@@ -802,7 +802,7 @@ function initializeAppEventListeners() {
                 loadMoreImages();
             }
         }
-    }, 250)); // Debounce by 250ms
+    }, 500)); // Increased debounce time to 500ms to prevent rapid duplicate requests
 
     // Handle popstate for back/forward navigation
     window.addEventListener('popstate', (event) => {
