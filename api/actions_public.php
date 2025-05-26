@@ -806,19 +806,26 @@ switch ($action) {
                 if ($is_image) {
                     if ($size_param == THUMBNAIL_JOB_SIZE_LARGE) {
                         // ADD DIAGNOSTIC LOGGING
-                
+                        error_log("[DEBUG GetThumbnail 750px REQUEST] Path Param: " . $image_path_param);
+                        error_log("[DEBUG GetThumbnail 750px REQUEST] Validated File Details: " . print_r($file_details, true));
+                        error_log("[DEBUG GetThumbnail 750px REQUEST] Source Absolute Path for ops: " . $source_absolute_path);
                         // END DIAGNOSTIC LOGGING
 
                         // Requested 750px image thumbnail is not cached, queue job and serve 150px.
                         add_thumbnail_job_to_queue($pdo, $source_prefixed_path_for_hash, THUMBNAIL_JOB_SIZE_LARGE, 'image');
                         
                         // Attempt to serve/create 150px thumbnail as fallback
-                        error_log("[GetThumbnail INFO] Serving 150px as fallback for 750px: {$source_prefixed_path_for_hash}");
+                        error_log("[DEBUG GetThumbnail 750px FALLBACK] Attempting 150px fallback for: {$source_prefixed_path_for_hash}");
                         $thumbnail_cache_path_150 = get_thumbnail_cache_path($source_prefixed_path_for_hash, THUMBNAIL_JOB_SIZE_STANDARD, $is_video);
+                        error_log("[DEBUG GetThumbnail 750px FALLBACK] Fallback 150px cache path: " . $thumbnail_cache_path_150);
+                        error_log("[DEBUG GetThumbnail 750px FALLBACK] Fallback 150px file_exists before create: " . (file_exists($thumbnail_cache_path_150) ? 'Exists' : 'Not Exists'));
+
                         if (!file_exists($thumbnail_cache_path_150)) {
+                            error_log("[DEBUG GetThumbnail 750px FALLBACK] Creating 150px fallback. Source: {$source_absolute_path}, Dest: {$thumbnail_cache_path_150}");
                             $created_150 = $is_video ? 
                                 create_video_thumbnail($source_absolute_path, $thumbnail_cache_path_150, THUMBNAIL_JOB_SIZE_STANDARD, $config['ffmpeg_path'] ?? 'ffmpeg') :
                                 create_thumbnail($source_absolute_path, $thumbnail_cache_path_150, THUMBNAIL_JOB_SIZE_STANDARD);
+                            error_log("[DEBUG GetThumbnail 750px FALLBACK] Creation result for 150px: " . ($created_150 ? 'Success' : 'Failed'));
                             if (!$created_150) {
                                 json_error("Không thể tạo ảnh thumbnail 150px dự phòng.", 500);
                             }
