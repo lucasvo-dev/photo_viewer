@@ -292,7 +292,6 @@ async function loadSubItems(folderPath) {
     setCurrentPage(1);
     setCurrentImageList([]);
     setPreloadedImages([]); 
-    isCurrentlyPreloading = false;
     setPageCurrentlyFetching(null);
     setPaginationAbortController(null);
     setPreloadAbortController(null);
@@ -613,7 +612,9 @@ async function preloadNextBatch() {
 // --- Navigate Function (handles hash update) ---
 function navigateToFolder(folderPath) {
     console.log(`[app.js] navigateToFolder called with path: ${folderPath}`);
+    console.log('[app.js] navigateToFolder: Attempting to set location.hash');
     location.hash = `#?folder=${encodeURIComponent(folderPath)}`;
+    console.log('[app.js] navigateToFolder: location.hash set to', location.hash);
 }
 
 // --- Back button --- 
@@ -624,7 +625,7 @@ document.getElementById('backButton').onclick = () => {
 
 // --- Hash Handling ---
 async function handleUrlHash() { // Make function async
-    console.log("[app.js] handleUrlHash: Hash changed to:", location.hash);
+    console.log("[app.js] handleUrlHash: ENTRY. Current hash:", location.hash);
     showGlobalLoadingOverlay(); // Show global overlay at the start
 
     try {
