@@ -551,10 +551,9 @@ switch ($action) {
                         $source_prefixed_path = $source_key . '/' . str_replace('\\', '/', $relative_path); // Use forward slashes
 
                         // Add job to jet_cache_jobs table (check for duplicates)
-                        // We need to add jobs for both JET_PREVIEW_SIZE and JET_FILMSTRIP_THUMB_SIZE
+                        // SIMPLIFIED: Only create 750px jobs since we're using CSS for resizing
                         $target_sizes = [];
                         if (defined('JET_PREVIEW_SIZE')) $target_sizes[] = JET_PREVIEW_SIZE;
-                        if (defined('JET_FILMSTRIP_THUMB_SIZE')) $target_sizes[] = JET_FILMSTRIP_THUMB_SIZE;
 
                         foreach ($target_sizes as $size) {
                             // Check for existing pending or processing job for this file and size

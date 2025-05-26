@@ -98,6 +98,9 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
             <div class="tab-header">
                 <h2>Quản lý Cache RAW</h2>
                 <p>Quản lý cache cho ảnh RAW trong Jet app. Cache được tạo với chiều cao cố định 750px.</p>
+                <div class="tab-actions">
+                    <button id="refresh-jet-cache-data" class="button">🔄 Làm mới dữ liệu</button>
+                </div>
             </div>
 
             <!-- Search Bar for RAW Sources -->

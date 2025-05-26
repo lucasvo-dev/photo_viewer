@@ -72,6 +72,18 @@
     font-size: 0.9rem;
 }
 
+.tab-actions {
+    margin-top: 15px;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+}
+
+.tab-actions .button {
+    font-size: 0.9rem;
+    padding: 8px 16px;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
     .admin-tabs {

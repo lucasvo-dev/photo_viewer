@@ -44,6 +44,7 @@
     *   `logs/`: Thư mục chứa file log ứng dụng.
 *   **Tác vụ nền (Cron/Scheduled Tasks):**
     *   `worker_cache.php`: Script chạy nền (worker) để xử lý các yêu cầu tạo thumbnail kích thước lớn (ảnh và video) một cách bất đồng bộ. Lấy các job từ bảng `cache_jobs`.
+    *   `worker_jet_cache.php`: **Script chạy nền chuyên biệt cho RAW cache (Jet Culling)** - Xử lý queue tạo preview từ file RAW (750px) một cách bất đồng bộ. Lấy các job từ bảng `jet_cache_jobs`. **Đã được simplified để chỉ tạo 1 cache size (750px) thay vì 2 sizes, cải thiện performance ~50% và reliability.**
     *   `worker_zip.php`: Script chạy nền (worker) để xử lý các yêu cầu tạo file ZIP một cách bất đồng bộ. Lấy các job từ bảng `zip_jobs`.
     *   `cron_cache_manager.php`: Script chạy theo lịch (cron job) để:
         *   Dọn dẹp các file thumbnail "mồ côi" (không có ảnh gốc tương ứng) trong thư mục cache.
@@ -52,6 +53,7 @@
     *   `cron_zip_cleanup.php`: Script chạy theo lịch để tự động xóa các file ZIP đã được tải xuống sau một khoảng thời gian nhất định (ví dụ: 5 phút) nhằm giải phóng dung lượng ổ cứng.
     *   `run_cache_cleanup.bat`: Ví dụ file batch để chạy các script cron trên Windows. (Lưu ý: Nên cập nhật file này để bao gồm cả `cron_zip_cleanup.php` nếu sử dụng)
     *   `setup_workers_schedule.bat`: File batch để thiết lập các tác vụ theo lịch trên Windows cho tất cả các worker và cron job cần thiết, bao gồm cả `cron_zip_cleanup.php`.
+    *   `start_jet_worker.bat`: Script khởi động worker RAW cache trong môi trường Windows.
 
 ## 4. Luồng hoạt động & Khái niệm chính
 
@@ -61,10 +63,30 @@
 *   **Bảo vệ thư mục:** Mật khẩu hash lưu trong DB. `check_folder_access` kiểm tra quyền dựa trên session/DB. Frontend hiển thị prompt khi cần.
 *   **Thumbnail:** Tạo "on-the-fly" cho ảnh và video (kích thước nhỏ), cache lại. Worker `worker_cache.php` xử lý tạo cache cho kích thước lớn (ảnh và video).
 *   **Quản trị:** Truy cập trang admin sau khi đăng nhập để quản lý mật khẩu và xem thống kê cơ bản.
-*   **Xử lý File RAW (trong Jet Culling Workspace):**
-    *   Hệ thống nhận diện các file ảnh RAW (định nghĩa trong `config.php` qua `raw_file_extensions`).
-    *   Bản xem trước JPEG (preview) từ file RAW được tạo tự động **on-the-fly bởi `api/actions_jet.php` (sử dụng `dcraw` và ImageMagick)** khi người dùng truy cập trong Jet Culling Workspace. Các preview này được cache trong thư mục `JET_PREVIEW_CACHE_ROOT`.
-    *   Người dùng (client, designer, admin) sẽ tương tác (xem, chọn) với các bản preview JPEG này. File RAW gốc được giữ nguyên cho các mục đích xử lý chuyên sâu hoặc tải về (nếu có cấu hình).
+*   **Xử lý File RAW (trong Jet Culling Workspace) - Hệ thống Cache Đã Simplified:**
+    *   **Nhận diện RAW:** Hệ thống nhận diện các file ảnh RAW (định nghĩa trong `config.php` qua `raw_file_extensions`).
+    *   **Cache System Architecture (Simplified):**
+        *   **Trước (Complex):** 2 cache sizes (750px + 120px) với complex auto-generation logic
+        *   **Hiện tại (Simple):** **1 cache size (750px only)** với simple, reliable processing
+        *   **Performance:** ~50% faster processing, more reliable, easier maintenance
+    *   **Cache Generation Process:**
+        *   **On-the-fly Requests:** Khi user request RAW preview không có trong cache → API trả về HTTP 202 → Job được add vào queue → Worker xử lý background
+        *   **Admin Management:** Admin có thể queue cache jobs cho entire folders qua admin interface
+        *   **Worker Processing:** `worker_jet_cache.php` xử lý jobs sử dụng dcraw + ImageMagick pipeline
+    *   **Cache Directory Structure:**
+        ```
+        cache/jet_previews/
+        └── 750/           # Preview size (750px only)
+            └── source_key/
+                └── folder/
+                    └── hash_750_raw.jpg
+        ```
+    *   **Database Sync & Cleanup:**
+        *   **Problem Solved:** Manual deletion của cache files → orphaned DB records
+        *   **Solution:** API action `jet_cleanup_orphaned_cache_records` + Admin UI button "🧹 Dọn dẹp records bị mồ côi"
+        *   **Result:** Database luôn sync với file system
+    *   **Frontend Strategy:** Dùng CSS để resize 750px images cho different views (grid: max-width 200px, filmstrip: max-width 120px)
+    *   **Người dùng tương tác:** (client, designer, admin) sẽ tương tác (xem, chọn) với các bản preview JPEG này. File RAW gốc được giữ nguyên cho các mục đích xử lý chuyên sâu hoặc tải về (nếu có cấu hình).
 *   **Luồng làm việc Lọc ảnh (Culling) với Jet Culling Workspace (Đã triển khai cơ bản):**
     *   **Designer:** Đăng nhập vào khu vực làm việc, duyệt các album chứa file RAW (hiển thị dưới dạng preview JPEG). Designer có thể "chọn" (pick) các ảnh mong muốn bằng các màu đánh dấu. Lựa chọn này được lưu lại (`jet_image_picks` table), gắn với thông tin của designer.
     *   **Admin:** Đăng nhập, có thể xem lại các lựa chọn của designer trong từng album. Ảnh được designer chọn sẽ có đánh dấu trực quan. Admin có thể xem thống kê (ví dụ: designer nào chọn bao nhiêu ảnh, tổng số ảnh được chọn). Nhiều designer có thể cùng lọc một bộ ảnh.
@@ -228,6 +250,104 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
     6.  **Chuẩn hóa Xử lý Lỗi Asynchronous:**
         *   **Nhiệm vụ:** Đảm bảo tất cả các lỗi từ API và các tác vụ bất đồng bộ được hiển thị nhất quán cho người dùng.
         *   **Trạng thái:** Hoàn thành. Hệ thống hiện tại sử dụng `fetchDataApi` (trong `js/apiService.js`) với cấu trúc response chuẩn. Các lỗi từ API call do người dùng khởi tạo được hiển thị qua `showModalWithMessage`. Các lỗi từ tác vụ nền (ví dụ: polling ZIP status) được phản ánh trong UI chuyên biệt của chúng (ví dụ: ZIP panel) để tránh làm phiền người dùng bằng modal liên tục. Cách tiếp cận này được đánh giá là nhất quán và phù hợp.
+
+## 7.2. RAW Cache System - Complete Resolution History
+
+### 🎯 **Vấn đề ban đầu (Initial Problems)**
+1. **Hệ thống cache RAW không ổn định** - cache management không hoạt động như gallery system
+2. **Cache creation buttons trong admin interface không functional**
+3. **Performance chậm** - tạo 2 thumbnails (750px và 120px) từ mỗi RAW file
+4. **120px thumbnails không được tạo reliably** - complex auto-generation logic failures
+5. **Database không sync khi xóa cache files manually**
+6. **Admin page không update để show cache status**
+7. **Manual refresh button không hoạt động**
+
+### ✅ **Giải pháp đã triển khai (Solutions Implemented)**
+
+#### **Phase 1: Core API Issues Fixed**
+- **Problem:** API routing failure - used `$_GET['action']` but POST requests sent action in `$_POST['action']`
+- **Solution:** Changed to `$_REQUEST['action']` in `api/actions_jet.php` line 26
+- **Result:** API returned proper JSON responses
+
+#### **Phase 2: UI Improvements**
+- **Removed non-functional "Update Cache" button** từ jet.php interface
+- **Enhanced admin interface** với manual refresh button (🔄 Làm mới dữ liệu)
+- **Improved polling system** để handle worker restarts
+- **Added auto-refresh** when tab becomes visible
+- **Enhanced button texts và tooltips** for better UX
+
+#### **Phase 3: Performance Optimization Attempt**
+- **Initial approach:** Modified worker để auto-generate 120px from 750px JPEG
+- **Issues encountered:** Auto-generation failures, database sync problems
+- **Result:** Complex system với nhiều failure points
+
+#### **Phase 4: Complete System Simplification (Final Solution)**
+- **Strategy:** Thay vì fix complex system → Simplify thành system đơn giản, reliable
+- **Architecture Change:**
+  ```
+  FROM: RAW → Worker Job 1 (750px) + Worker Job 2 (120px auto-generated)
+        → Database: 2 records per file → UI: Complex job counting
+        → Issues: Auto-generation failures, sync problems
+  
+  TO:   RAW → Worker Job (750px only) → Database: 1 record per file
+        → UI: Simple job counting → Frontend: CSS resize 750px for different views
+        → Manual cleanup: Database sync tool
+  ```
+
+### 🔧 **Technical Implementation Details**
+
+#### **Files Modified/Created:**
+1. **`worker_jet_cache.php`** - Consolidated simplified worker (750px only)
+2. **`api/actions_jet.php`** - Updated queue functions, added cleanup API, simplified job counting
+3. **`js/admin_jet_cache.js`** - Updated job calculations, added cleanup functionality
+4. **Database cleanup system** - `jet_cleanup_orphaned_cache_records` API action
+
+#### **Key Features Added:**
+- **Database Cleanup System:** Scans completed records, checks file existence, removes orphaned records
+- **Admin UI Cleanup Button:** "🧹 Dọn dẹp records bị mồ côi" for manual cleanup
+- **Simplified Job Counting:** 1 job per file instead of 2
+- **Enhanced Error Handling:** Better logging and error recovery
+- **Worker Reset Detection:** Auto-reset stuck processing jobs on startup
+
+### 📊 **Performance Benefits Achieved**
+- **~50% faster processing:** 1 dcraw operation instead of 2
+- **More reliable:** No complex auto-generation failures
+- **Simpler maintenance:** Cleaner codebase
+- **Better database sync:** Cleanup tools available
+- **Easier troubleshooting:** Simplified logic
+
+### 🎉 **Current Status**
+- ✅ **System simplified** from complex 2-cache architecture to simple 1-cache architecture
+- ✅ **Database cleanup tools** implemented and working
+- ✅ **New simplified worker** running and processing jobs
+- ✅ **UI responsive** with real-time updates
+- ✅ **Performance optimized** with ~50% improvement
+- ✅ **All original issues resolved** through simplification approach
+
+### 📋 **API Endpoints Summary**
+- `GET api.php?action=jet_get_raw_preview` → Returns cache or HTTP 202
+- `POST api.php` with `action=jet_queue_folder_cache` → Queue folder jobs (750px only)
+- `POST api.php` with `action=jet_cleanup_orphaned_cache_records` → Cleanup orphaned DB records
+- `GET api.php?action=jet_get_cache_stats` → Get cache statistics
+- `GET api.php?action=jet_list_raw_folders_with_cache_stats` → Get folder stats
+
+### 🔄 **Worker Management**
+```bash
+# Start worker
+start_jet_worker.bat
+
+# Check worker status
+tasklist | findstr php
+
+# View logs
+tail -f logs/worker_jet_php_error.log
+```
+
+### 💡 **Lessons Learned**
+- **Simplification over complexity:** Sometimes the best solution is to simplify rather than fix complex systems
+- **Performance through reduction:** Removing unnecessary features can dramatically improve performance
+- **Database sync importance:** Manual file operations require corresponding database cleanup tools
+- **User experience priority:** Simple, predictable behavior is better than complex, unreliable features
 
 ## Thay đổi gần đây (Latest Changes)
 

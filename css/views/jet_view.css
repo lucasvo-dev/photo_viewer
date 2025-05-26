@@ -743,34 +743,60 @@ body.jet-app-active {
 
 .jet-filmstrip-thumb-container:hover {
      transform: scale(1.05); /* Slightly enlarge on hover */
+     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); /* Enhanced shadow on hover */
 }
 
 .jet-filmstrip-thumb-container.active {
     border-color: #007bff; /* Highlight color for active thumbnail container */
+    box-shadow: 0 0 12px rgba(0, 123, 255, 0.5); /* Blue glow for active item */
+    transform: scale(1.02); /* Slightly larger for active item */
+}
+
+/* Enhanced hover effects for picked items */
+.jet-filmstrip-thumb-container.picked-red:hover,
+.jet-filmstrip-thumb-container.picked-green:hover,
+.jet-filmstrip-thumb-container.picked-blue:hover,
+.jet-filmstrip-thumb-container.picked-grey:hover {
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); /* Enhanced shadow for picked items on hover */
+    transform: scale(1.08); /* Slightly more enlargement for picked items */
+}
+
+/* Active picked items get combined effects */
+.jet-filmstrip-thumb-container.active.picked-red,
+.jet-filmstrip-thumb-container.active.picked-green,
+.jet-filmstrip-thumb-container.active.picked-blue,
+.jet-filmstrip-thumb-container.active.picked-grey {
+    box-shadow: 0 0 12px rgba(0, 123, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3); /* Combined blue glow and shadow */
 }
 
 /* Style for the actual image inside the container */
 .jet-filmstrip-thumb-container .jet-filmstrip-thumb {
-    display: block; /* Remove extra space below image */
-    max-height: 100%; /* Image takes full height of container */
-    width: auto; /* Maintain aspect ratio */
-    object-fit: contain; /* Ensure image fits within container */
-    border-radius: 2px; /* Match container border radius */
+    display: block;
+    max-width: 100%; /* Ensure image doesn't exceed container width */
+    max-height: 100%; /* Ensure image doesn't exceed container height */
+    object-fit: cover; /* Crop image to cover the container while maintaining aspect ratio */
+    border-radius: 2px;
+    /* Placeholder background */
+    background-color: var(--jet-bg-image-placeholder);
+    /* Add resizing for 750px image */
+    max-width: 120px;
+    height: auto;
 }
 
-/* NEW: Pick color indicator for filmstrip thumbnail CONTAINER */
+/* Enhanced Pick color indicators for filmstrip thumbnail CONTAINER */
 .jet-filmstrip-thumb-container::after {
     content: '';
     position: absolute;
-    bottom: 2px; /* Adjust position as needed */
-    right: 2px; /* Adjust position as needed */
-    width: 8px; /* Smaller size for filmstrip */
-    height: 8px; /* Smaller size for filmstrip */
-    border-radius: 2px; /* Slightly smaller radius */
-    border: 1px solid rgba(0, 0, 0, 0.3); /* Border for visibility */
+    bottom: 3px; /* Adjust position as needed */
+    right: 3px; /* Adjust position as needed */
+    width: 16px; /* Increased size for better visibility */
+    height: 16px; /* Increased size for better visibility */
+    border-radius: 3px; /* Slightly larger radius */
+    border: 2px solid rgba(255, 255, 255, 0.8); /* White border for better contrast */
     box-sizing: border-box;
     display: none; /* Hidden by default */
-    z-index: 2; /* Above the image */
+    z-index: 3; /* Above the image and all_picks indicator */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); /* Shadow for depth */
 }
 
 .jet-filmstrip-thumb-container.picked-red::after,
@@ -786,7 +812,38 @@ body.jet-app-active {
 .jet-filmstrip-thumb-container.picked-blue::after { background-color: var(--jet-color-picked-blue); }
 .jet-filmstrip-thumb-container.picked-grey::after { background-color: var(--jet-color-picked-grey-flag); }
 
-/* Media Query for Mobile Layout of Filters */
+/* Enhanced border for picked filmstrip thumbnails */
+.jet-filmstrip-thumb-container.picked-red,
+.jet-filmstrip-thumb-container.picked-green,
+.jet-filmstrip-thumb-container.picked-blue,
+.jet-filmstrip-thumb-container.picked-grey {
+    border-width: 3px; /* Thicker border for picked items */
+    border-style: solid;
+}
+
+.jet-filmstrip-thumb-container.picked-red { border-color: var(--jet-color-picked-red-border); }
+.jet-filmstrip-thumb-container.picked-green { border-color: var(--jet-color-picked-green-border); }
+.jet-filmstrip-thumb-container.picked-blue { border-color: var(--jet-color-picked-blue-border); }
+.jet-filmstrip-thumb-container.picked-grey { border-color: var(--jet-color-picked-grey-border); }
+
+/* Enhanced styling for filmstrip all_picks indicator */
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
+    backdrop-filter: blur(2px); /* Modern browsers blur effect */
+    border: 1px solid rgba(255, 255, 255, 0.2); /* Subtle border */
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); /* Subtle shadow for depth */
+}
+
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
+    border: 1px solid rgba(255, 255, 255, 0.3); /* Subtle border around dots */
+}
+
+/* Enhance visibility of pick dots in filmstrip */
+.jet-filmstrip-thumb-container .pick-dot-red { background-color: var(--jet-color-picked-red) !important; }
+.jet-filmstrip-thumb-container .pick-dot-green { background-color: var(--jet-color-picked-green) !important; }
+.jet-filmstrip-thumb-container .pick-dot-blue { background-color: var(--jet-color-picked-blue) !important; }
+.jet-filmstrip-thumb-container .pick-dot-grey { background-color: var(--jet-color-picked-grey-flag) !important; }
+
+/* Media Query for Mobile Layout of Filters and Filmstrip */
 @media (max-width: 768px) {
     .jet-app-active #jet-filter-controls {
         flex-direction: column;
@@ -803,6 +860,42 @@ body.jet-app-active {
     .jet-app-active .filter-group-colors {
         justify-content: flex-start;
         width: 100%;
+    }
+
+    /* Mobile optimizations for filmstrip */
+    #jet-thumbnail-filmstrip {
+        height: 100px; /* Reduced height on mobile */
+        padding: 3px 0;
+    }
+    
+    .jet-filmstrip-thumb-container {
+        height: 90px; /* Reduced container height on mobile */
+        margin: 0 2px; /* Reduced spacing on mobile */
+    }
+    
+    .jet-filmstrip-thumb-container .jet-filmstrip-thumb {
+        max-width: 90px; /* Smaller thumbnails on mobile */
+    }
+    
+    /* Adjust pick color indicators for mobile */
+    .jet-filmstrip-thumb-container::after {
+        width: 12px; /* Smaller indicator on mobile */
+        height: 12px;
+        bottom: 2px;
+        right: 2px;
+    }
+    
+    /* Simplified all_picks indicator for mobile */
+    .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
+        font-size: 0.45rem;
+        padding: 1px 2px;
+        max-width: 80px;
+    }
+    
+    .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
+        width: 4px;
+        height: 4px;
+        margin-right: 2px;
     }
 
     /* Optional: if buttons themselves should take more width on mobile */

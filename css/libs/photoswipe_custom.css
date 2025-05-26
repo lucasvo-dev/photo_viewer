@@ -26,3 +26,49 @@
     max-height: 100%;
     object-fit: contain; 
 }
+
+/* PhotoSwipe 5 Filmstrip Thumbnails */
+.pswp__thumbs {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    align-items: center;
+    padding: 10px;
+    z-index: 1050;
+}
+
+.pswp__thumb {
+    width: 60px;
+    height: 60px;
+    margin-right: 10px;
+    cursor: pointer;
+    border: 2px solid transparent;
+    border-radius: 4px;
+    overflow: hidden;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.pswp__thumb:hover {
+    border-color: rgba(255, 255, 255, 0.5);
+}
+
+.pswp__thumb--active {
+    border-color: #007bff !important;
+}
+
+.pswp__thumb img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: cover;
+    border-radius: 2px;
+}

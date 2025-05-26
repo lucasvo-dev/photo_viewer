@@ -5,11 +5,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Auto-load when the jet cache tab is active
     loadRawCacheData();
     
-    // Add event listener for the main 'Update Cache' button
-    const updateCacheButton = document.getElementById('jet-update-cache-button');
-    if (updateCacheButton) {
-        updateCacheButton.addEventListener('click', handleUpdateJetCache);
-    }
+    // Note: Main 'Update Cache' button removed from Jet app UI
 
     // Search functionality
     const searchInput = document.getElementById('rawSourceSearchInput');
@@ -19,10 +15,22 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Clear failed jobs button and folder cache buttons
+    // Manual refresh button
+    const refreshButton = document.getElementById('refresh-jet-cache-data');
+    if (refreshButton) {
+        refreshButton.addEventListener('click', () => {
+            console.log('Manual refresh triggered');
+            Object.keys(activePollers).forEach(key => stopJetCachePolling(key));
+            loadRawCacheData();
+        });
+    }
+
+    // Clear failed jobs button, cleanup orphaned records button, and folder cache buttons
     document.addEventListener('click', (e) => {
         if (e.target.id === 'clear-failed-jobs') {
             clearFailedJetCacheJobs();
+        } else if (e.target.id === 'cleanup-orphaned-records') {
+            cleanupOrphanedCacheRecords();
         } else if (e.target.classList.contains('queue-folder-cache')) {
             console.log('Button with queue-folder-cache class clicked.');
             const button = e.target;
@@ -82,7 +90,7 @@ function showJetFeedback(message, type = 'success') {
 
 // Main function to update cache button state - matches gallery updateCacheButtonState
 function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFiles) {
-    const totalPossibleJobs = totalFiles * 2; // 2 jobs per file (preview + filmstrip)
+    const totalPossibleJobs = totalFiles; // SIMPLIFIED: 1 job per file (750px only)
     const isActive = stats.pending > 0 || stats.processing > 0;
     
     let buttonText = '';
@@ -109,7 +117,7 @@ function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFi
             icon = '🔄';
         } else if (stats.completed > 0) {
             buttonText = 'Cập nhật Cache';
-            buttonTitle = `Đã cache ${stats.completed}/${totalPossibleJobs} ảnh. Click để tiếp tục cache.`;
+            buttonTitle = `Đã cache ${stats.completed}/${totalPossibleJobs} file RAW. Click để tiếp tục cache.`;
             isDisabled = false;
             icon = '🔄';
         } else if (totalFiles === 0) {
@@ -119,7 +127,7 @@ function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFi
             icon = '❌';
         } else {
             buttonText = 'Tạo Cache RAW';
-            buttonTitle = 'Tạo cache preview và filmstrip cho tất cả file RAW trong thư mục.';
+            buttonTitle = 'Tạo cache 750px cho tất cả file RAW trong thư mục.';
             isDisabled = false;
             icon = '➕';
         }
@@ -133,7 +141,7 @@ function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFi
 // Function to render cache status - enhanced to match gallery renderCacheStatusCell
 function renderJetCacheStatus(folder) {
     const stats = folder.cache_stats;
-    const totalPossibleJobs = folder.total_raw_files * 2; // 2 jobs per file
+    const totalPossibleJobs = folder.total_raw_files; // SIMPLIFIED: 1 job per file (750px only)
     const sourceKey = folder.source_key;
     const folderPath = folder.relative_path;
     
@@ -572,6 +580,7 @@ function updateFailedJobsSection(failedJobs) {
 
     html += '</tbody></table></div>';
     html += '<button id="clear-failed-jobs" class="button button-danger">Xóa tất cả công việc lỗi</button>';
+    html += '<button id="cleanup-orphaned-records" class="button button-warning" style="margin-left: 10px;">🧹 Dọn dẹp records bị mồ côi</button>';
     
     container.innerHTML = html;
 }
@@ -622,6 +631,38 @@ async function clearFailedJetCacheJobs() {
     }
 }
 
+async function cleanupOrphanedCacheRecords() {
+    if (!confirm('Bạn có chắc muốn dọn dẹp các records database bị mồ côi (file cache đã bị xóa)? Thao tác này sẽ kiểm tra và xóa các records trong database mà file tương ứng không còn tồn tại.')) {
+        return;
+    }
+
+    showJetLoading('Đang kiểm tra và dọn dẹp records bị mồ côi...');
+
+    try {
+        const formData = new FormData();
+        formData.append('action', 'jet_cleanup_orphaned_cache_records');
+
+        const response = await fetch('api.php', {
+            method: 'POST',
+            body: formData
+        });
+
+        const result = await response.json();
+
+        if (result.success) {
+            showJetFeedback(result.message, 'success');
+            loadRawCacheData(); // Refresh all data
+        } else {
+            showJetFeedback(result.error || 'Lỗi dọn dẹp records bị mồ côi', 'error');
+        }
+    } catch (error) {
+        console.error('Error cleaning up orphaned records:', error);
+        showJetFeedback('Lỗi kết nối khi dọn dẹp records bị mồ côi', 'error');
+    } finally {
+        hideJetLoading();
+    }
+}
+
 function showRawCacheMessage(message, type = 'info') {
     // Use global feedback function if available
     if (typeof showFeedback === 'function') {
@@ -661,47 +702,24 @@ setInterval(() => {
     }
 }, 30000);
 
+// Force refresh when tab becomes visible (worker might have restarted)
+document.addEventListener('visibilitychange', () => {
+    if (!document.hidden) {
+        const jetCacheTabContent = document.getElementById('jet-cache-tab');
+        if (jetCacheTabContent && jetCacheTabContent.classList.contains('active')) {
+            console.log("Tab became visible - force refreshing cache data...");
+            // Stop all pollers and refresh data
+            Object.keys(activePollers).forEach(key => stopJetCachePolling(key));
+            loadRawCacheData();
+        }
+    }
+});
+
 // Make functions globally available
 window.loadJetCacheStats = loadRawCacheData; // For tab switching compatibility
 window.loadRawCacheData = loadRawCacheData;
 window.handleRawCacheSource = handleRawCacheFolder; // Rename function for clarity
 window.clearFailedJetCacheJobs = clearFailedJetCacheJobs;
 
-// Add new function to handle the main 'Update Cache' button click
-async function handleUpdateJetCache() {
-    const button = document.getElementById('jet-update-cache-button');
-    if (!button || button.disabled) {
-        return;
-    }
-
-    button.disabled = true;
-    button.textContent = 'Updating Cache...';
-    showJetFeedback('Đang gửi yêu cầu cập nhật cache JET...', 'info');
-
-    try {
-        const formData = new FormData();
-        formData.append('action', 'admin_update_jet_cache'); // Use the new API action
-
-        const response = await fetch('api.php', {
-            method: 'POST',
-            body: formData
-        });
-
-        const result = await response.json();
-
-        if (result.success) {
-            showJetFeedback(result.message, 'success');
-            // Optionally, reload the data or start polling for all folders
-            // For simplicity, let's just reload the data after a short delay
-            setTimeout(loadRawCacheData, 2000); // Reload after 2 seconds
-        } else {
-            showJetFeedback(result.error || 'Lỗi khi gửi yêu cầu cập nhật cache JET', 'error');
-        }
-    } catch (error) {
-        console.error('Error updating JET cache:', error);
-        showJetFeedback('Lỗi kết nối khi gửi yêu cầu cập nhật cache JET', 'error');
-    } finally {
-        button.disabled = false;
-        button.textContent = 'Update Cache';
-    }
-} 
+// Main 'Update Cache' button functionality removed
+// Cache management now handled only through individual folder buttons 

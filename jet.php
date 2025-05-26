@@ -42,10 +42,6 @@ if (!defined('RAW_IMAGE_SOURCES')) {
             <h1>Jet - Photo Culling Workspace</h1>
             <div class="user-info">
                 <span id="jet-user-info"><?php echo ($_SESSION['user_role'] === 'admin' ? 'Admin' : 'Designer') . ': ' . $username; ?></span>
-                <!-- Add Update Cache button for Admin -->
-                <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin'): ?>
-                    <button id="jet-update-cache-button" class="button">Update Cache</button>
-                <?php endif; ?>
                 <a href="jet.php?action=logout" class="button logout-link">Đăng xuất</a>
             </div>
         </div>

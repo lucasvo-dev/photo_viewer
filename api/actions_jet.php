@@ -26,7 +26,7 @@ if (!function_exists('json_error')) {
 }
 
 
-$jet_action = $_GET['action'] ?? null;
+$jet_action = $_REQUEST['action'] ?? null;
 
 
 
@@ -435,71 +435,37 @@ switch ($jet_action) {
             exit;
         }
 
-        // Cache miss - add job to queue for background processing (if not already queued)
-        if (function_exists('add_jet_cache_job_to_queue')) {
-            add_jet_cache_job_to_queue($pdo, $source_key, $clean_image_relative_path, $target_size);
-        }
-
-        // Create cache directory if it doesn't exist
-        if (!is_dir($cache_dir_path)) {
-            if (!@mkdir($cache_dir_path, 0775, true)) {
-                error_log("[JET_GET_RAW_PREVIEW] CRITICAL: Failed to create cache directory: {$cache_dir_path}");
-                http_response_code(500);
-                echo "Server error: Could not create cache directory.";
+        // NEW: Fallback for filmstrip - if 120px doesn't exist, try serving 750px
+        if ($requested_size === 'filmstrip') {
+            $fallback_750_path = get_jet_cache_path($source_key, $clean_image_relative_path, JET_PREVIEW_SIZE);
+            if (file_exists($fallback_750_path) && filesize($fallback_750_path) > 0) {
+                error_log("[JET_GET_RAW_PREVIEW] Filmstrip fallback: Serving 750px instead of 120px: {$fallback_750_path}");
+                header('Content-Type: image/jpeg');
+                readfile($fallback_750_path);
                 exit;
             }
         }
-        
-        // Define paths to dcraw and ImageMagick (now in exe folder)
-        $dcraw_executable_path = __DIR__ . DIRECTORY_SEPARATOR . ".." . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "dcraw.exe";
-        $magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . ".." . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
-        
-        $preview_size = JET_PREVIEW_SIZE;
-        $escaped_final_cache_path = escapeshellarg($cached_preview_full_path);
 
-        // --- Two-step conversion using a temporary PPM file --- (This is now the primary method)
-        $temp_ppm_filename = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jet_raw_temp_' . uniqid() . '.ppm';
-        $escaped_temp_ppm_path = escapeshellarg($temp_ppm_filename);
-
-        // Step 1: Convert RAW to temporary PPM file
-        $dcraw_to_ppm_cmd = "\"{$dcraw_executable_path}\" -c \"{$full_raw_file_path_realpath}\" > {$escaped_temp_ppm_path} 2>&1";
-        error_log("[JET_GET_RAW_PREVIEW] Executing Step 1 (dcraw to PPM). CMD: {$dcraw_to_ppm_cmd}");
-        $dcraw_output = shell_exec($dcraw_to_ppm_cmd);
-        $trimmed_dcraw_output = is_string($dcraw_output) ? trim($dcraw_output) : '';
-
-        if (!file_exists($temp_ppm_filename) || filesize($temp_ppm_filename) === 0) {
-            error_log("[JET_GET_RAW_PREVIEW] Step 1 FAILED: dcraw did not create PPM file or PPM is empty. Temp PPM: {$temp_ppm_filename}. dcraw output: " . ($trimmed_dcraw_output ?: "EMPTY"));
-            if (file_exists($temp_ppm_filename)) { @unlink($temp_ppm_filename); }
-            http_response_code(500);
-            echo "Server error: RAW processing step 1 failed (dcraw). Output: " . htmlspecialchars($trimmed_dcraw_output ?: "No output");
-            exit;
-        }
-        error_log("[JET_GET_RAW_PREVIEW] Step 1 SUCCESS: dcraw created PPM file: {$temp_ppm_filename}. Size: " . filesize($temp_ppm_filename) . ". dcraw output: " . ($trimmed_dcraw_output ?: "EMPTY"));
-
-        // Step 2: Convert temporary PPM to final JPG
-        // Use resize with height as the constraint for consistent height across all images
-        $magick_ppm_to_jpg_cmd = "\"{$magick_executable_path}\" convert {$escaped_temp_ppm_path} -resize x{$target_size} -quality 85 {$escaped_final_cache_path} 2>&1";
-        error_log("[JET_GET_RAW_PREVIEW] Executing Step 2 (PPM to JPG). CMD: {$magick_ppm_to_jpg_cmd}");
-        $magick_output = shell_exec($magick_ppm_to_jpg_cmd);
-        $trimmed_magick_output = is_string($magick_output) ? trim($magick_output) : '';
-
-        // Clean up temporary PPM file immediately
-        if (file_exists($temp_ppm_filename)) {
-            @unlink($temp_ppm_filename);
-            error_log("[JET_GET_RAW_PREVIEW] Temporary PPM file {$temp_ppm_filename} deleted.");
+        // Cache miss - add job to queue for background processing
+        // SIMPLIFIED: Always queue 750px job (only size we generate)
+        if (function_exists('add_jet_cache_job_to_queue')) {
+            $job_size_to_queue = JET_PREVIEW_SIZE; // Always queue 750px job
+            $job_added = add_jet_cache_job_to_queue($pdo, $source_key, $clean_image_relative_path, $job_size_to_queue);
+            if ($job_added) {
+                error_log("[JET_GET_RAW_PREVIEW] Job added to queue for background processing: {$source_key}/{$clean_image_relative_path} size {$job_size_to_queue}");
+            } else {
+                error_log("[JET_GET_RAW_PREVIEW] Job already exists in queue for: {$source_key}/{$clean_image_relative_path} size {$job_size_to_queue}");
+            }
         }
 
-        if (!file_exists($cached_preview_full_path) || filesize($cached_preview_full_path) === 0) {
-            error_log("[JET_GET_RAW_PREVIEW] Step 2 FAILED: ImageMagick did not create final JPG or JPG is empty. Final JPG: {$cached_preview_full_path}. Magick output: " . ($trimmed_magick_output ?: "EMPTY"));
-            http_response_code(500);
-            echo "Server error: RAW processing step 2 failed (ImageMagick). Output: " . htmlspecialchars($trimmed_magick_output ?: "No output");
-            exit;
-        }
-        
-        error_log("[JET_GET_RAW_PREVIEW] Step 2 SUCCESS: ImageMagick created final JPG: {$cached_preview_full_path}. Magick output: " . ($trimmed_magick_output ?: "EMPTY"));
-        error_log("[JET_GET_RAW_PREVIEW] Preview generated and cached: {$cached_preview_full_path}");
-        header('Content-Type: image/jpeg');
-        readfile($cached_preview_full_path);
+        // Return placeholder image or 202 status to indicate processing
+        http_response_code(202); // 202 Accepted - processing in background
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'processing',
+            'message' => 'RAW image is being processed in background. Please retry in a few moments.',
+            'retry_after' => 5 // Suggest client to retry after 5 seconds
+        ]);
         exit;
         // --- End of two-step conversion ---
 
@@ -874,15 +840,20 @@ switch ($jet_action) {
 
     // Queue cache job for RAW image folder (admin only)
     case 'jet_queue_folder_cache':
-        if ($_SESSION['user_role'] !== 'admin') {
+        error_log("[jet_queue_folder_cache] API action called");
+        error_log("[jet_queue_folder_cache] Session data: " . print_r($_SESSION, true));
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            error_log("[jet_queue_folder_cache] Access denied: user role is " . ($_SESSION['user_role'] ?? 'null'));
             json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
             exit;
         }
 
         $source_key = $_POST['source_key'] ?? null;
         $folder_path = $_POST['folder_path'] ?? '';
+        error_log("[jet_queue_folder_cache] Parameters - source_key: " . ($source_key ?? 'null') . ", folder_path: " . $folder_path);
 
         if (!$source_key || !isset(RAW_IMAGE_SOURCES[$source_key])) {
+            error_log("[jet_queue_folder_cache] Invalid source key: " . ($source_key ?? 'null'));
             json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
             exit;
         }
@@ -891,6 +862,7 @@ switch ($jet_action) {
             // Get all RAW images in the folder
             $source_config = RAW_IMAGE_SOURCES[$source_key];
             $base_path = rtrim($source_config['path'], '/\\');
+            error_log("[jet_queue_folder_cache] Base path: " . $base_path);
             
             // Construct full folder path
             $clean_folder_path = '';
@@ -907,8 +879,10 @@ switch ($jet_action) {
 
             $full_scan_path = $base_path . (empty($clean_folder_path) ? '' : '/' . $clean_folder_path);
             $full_scan_path_realpath = realpath($full_scan_path);
+            error_log("[jet_queue_folder_cache] Full scan path: " . $full_scan_path . " -> realpath: " . ($full_scan_path_realpath ?: 'false'));
 
             if (!$full_scan_path_realpath || !is_dir($full_scan_path_realpath)) {
+                error_log("[jet_queue_folder_cache] Path validation failed - not a directory or doesn't exist");
                 json_error("Đường dẫn thư mục không hợp lệ hoặc không tồn tại.", 404);
                 exit;
             }
@@ -933,12 +907,12 @@ switch ($jet_action) {
                         if (in_array($extension, $raw_extensions)) {
                             $image_relative_path = (empty($clean_folder_path) ? '' : $clean_folder_path . '/') . $fileinfo->getFilename();
                             
-                            // Queue jobs for both preview and filmstrip sizes
+                            // SIMPLIFIED: Only queue 750px job, no 120px
                             $preview_queued = add_jet_cache_job_to_queue($pdo, $source_key, $image_relative_path, JET_PREVIEW_SIZE);
-                            $filmstrip_queued = add_jet_cache_job_to_queue($pdo, $source_key, $image_relative_path, JET_FILMSTRIP_THUMB_SIZE);
                             
-                            if ($preview_queued) $queued_count++;
-                            if ($filmstrip_queued) $queued_count++;
+                            if ($preview_queued) {
+                                $queued_count++;
+                            }
                         }
                     }
                 }
@@ -947,10 +921,12 @@ switch ($jet_action) {
                 exit;
             }
 
+            error_log("[jet_queue_folder_cache] Success - queued {$queued_count} jobs for {$source_key}/{$folder_path}");
             json_response([
                 'success' => true,
                 'message' => "Đã thêm {$queued_count} công việc cache vào hàng đợi.",
-                'queued_count' => $queued_count
+                'queued_count' => $queued_count,
+                'status' => $queued_count > 0 ? 'queued' : 'no_new_jobs'
             ]);
 
         } catch (Exception $e) {
@@ -1027,6 +1003,62 @@ switch ($jet_action) {
         } catch (PDOException $e) {
             error_log("[jet_clear_failed_cache_jobs] Error: " . $e->getMessage());
             json_error("Lỗi khi xóa công việc cache lỗi.", 500);
+        }
+        exit;
+
+    // NEW: Cleanup orphaned cache records (admin only)
+    case 'jet_cleanup_orphaned_cache_records':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        try {
+            // Get all completed records with file paths
+            $sql_get_completed = "SELECT id, source_key, image_relative_path, cache_size, final_cache_path 
+                                 FROM jet_cache_jobs 
+                                 WHERE status = 'completed' AND final_cache_path IS NOT NULL";
+            $stmt_get = $pdo->prepare($sql_get_completed);
+            $stmt_get->execute();
+            $completed_records = $stmt_get->fetchAll(PDO::FETCH_ASSOC);
+
+            $orphaned_count = 0;
+            $checked_count = 0;
+            $orphaned_ids = [];
+
+            foreach ($completed_records as $record) {
+                $checked_count++;
+                
+                // Check if file exists
+                if (!file_exists($record['final_cache_path']) || filesize($record['final_cache_path']) === 0) {
+                    $orphaned_ids[] = $record['id'];
+                    $orphaned_count++;
+                    error_log("[jet_cleanup_orphaned] Found orphaned record ID {$record['id']}: {$record['final_cache_path']}");
+                }
+            }
+
+            // Delete orphaned records if any found
+            if ($orphaned_count > 0) {
+                $placeholders = str_repeat('?,', count($orphaned_ids) - 1) . '?';
+                $delete_sql = "DELETE FROM jet_cache_jobs WHERE id IN ({$placeholders})";
+                $delete_stmt = $pdo->prepare($delete_sql);
+                $delete_stmt->execute($orphaned_ids);
+                $deleted_count = $delete_stmt->rowCount();
+            } else {
+                $deleted_count = 0;
+            }
+
+            json_response([
+                'success' => true,
+                'message' => "Đã kiểm tra {$checked_count} records. Xóa {$deleted_count} records bị mồ côi.",
+                'checked_count' => $checked_count,
+                'orphaned_count' => $orphaned_count,
+                'deleted_count' => $deleted_count
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[jet_cleanup_orphaned_cache_records] Error: " . $e->getMessage());
+            json_error("Lỗi khi cleanup records bị mồ côi: " . $e->getMessage(), 500);
         }
         exit;
 
@@ -1146,12 +1178,12 @@ switch ($jet_action) {
                         $relative_path = substr($full_path, strlen(realpath($source_path)) + 1);
                         $relative_path = str_replace('\\', '/', $relative_path);
 
-                        // Queue jobs for both sizes
+                        // SIMPLIFIED: Only queue 750px job, no 120px
                         $preview_queued = add_jet_cache_job_to_queue($pdo, $source_key, $relative_path, JET_PREVIEW_SIZE);
-                        $filmstrip_queued = add_jet_cache_job_to_queue($pdo, $source_key, $relative_path, JET_FILMSTRIP_THUMB_SIZE);
 
-                        if ($preview_queued) $queued_count++;
-                        if ($filmstrip_queued) $queued_count++;
+                        if ($preview_queued) {
+                            $queued_count++;
+                        }
                     }
                 }
             }

@@ -954,7 +954,8 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create the image element
             const thumbElement = document.createElement('img');
             thumbElement.classList.add('jet-filmstrip-thumb'); // Class for the image styling
-            thumbElement.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=filmstrip`;
+            // Use preview size (750px) instead of filmstrip - CSS will handle resizing to 120px max-width
+            thumbElement.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=preview`;
             thumbElement.alt = `Thumbnail of ${imageObject.name}`;
 
             // Add pick color class to the CONTAINER if image is picked
@@ -962,33 +963,61 @@ document.addEventListener('DOMContentLoaded', () => {
                 thumbContainer.classList.add(`picked-${imageObject.pick_color}`);
             }
 
-            // Add all_picks indicator for admin (similar to grid)
+            // Enhanced all_picks indicator for admin (filmstrip version)
             if (imageObject.all_picks && imageObject.all_picks.length > 0) {
                 const allPicksIndicator = document.createElement('div');
-                allPicksIndicator.classList.add('all-picks-indicator');
+                allPicksIndicator.classList.add('all-picks-indicator', 'filmstrip-picks');
                 allPicksIndicator.style.position = 'absolute';
-                allPicksIndicator.style.top = '2px';
-                allPicksIndicator.style.left = '2px';
-                allPicksIndicator.style.fontSize = '0.6rem';
-                allPicksIndicator.style.minWidth = '40px';
+                allPicksIndicator.style.top = '3px';
+                allPicksIndicator.style.left = '3px';
+                allPicksIndicator.style.fontSize = '0.5rem';
+                allPicksIndicator.style.maxWidth = '110px'; // Limit width to fit in filmstrip
+                allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.75)'; // Dark background for contrast
+                allPicksIndicator.style.borderRadius = '3px';
+                allPicksIndicator.style.padding = '2px 3px';
+                allPicksIndicator.style.zIndex = '2'; // Below color indicator but above image
                 
-                imageObject.all_picks.forEach(pick => {
-                    const pickRow = document.createElement('div');
-                    pickRow.classList.add('pick-row');
-                    
-                    const pickDot = document.createElement('span');
-                    pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
-                    pickDot.style.width = '6px';
-                    pickDot.style.height = '6px';
-                    
-                    const pickText = document.createElement('span');
-                    pickText.classList.add('pick-text');
-                    pickText.textContent = pick.username || 'Unknown';
-                    
-                    pickRow.appendChild(pickDot);
-                    pickRow.appendChild(pickText);
-                    allPicksIndicator.appendChild(pickRow);
+                imageObject.all_picks.forEach((pick, index) => {
+                    if (index < 3) { // Limit to 3 picks for space reasons
+                        const pickRow = document.createElement('div');
+                        pickRow.classList.add('pick-row');
+                        pickRow.style.display = 'flex';
+                        pickRow.style.alignItems = 'center';
+                        pickRow.style.marginBottom = '1px';
+                        
+                        const pickDot = document.createElement('span');
+                        pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
+                        pickDot.style.width = '5px';
+                        pickDot.style.height = '5px';
+                        pickDot.style.borderRadius = '50%';
+                        pickDot.style.marginRight = '3px';
+                        pickDot.style.flexShrink = '0';
+                        
+                        const pickText = document.createElement('span');
+                        pickText.classList.add('pick-text');
+                        pickText.textContent = (pick.username || 'Unknown').substring(0, 6); // Truncate username
+                        pickText.style.color = 'white';
+                        pickText.style.fontSize = '0.5rem';
+                        pickText.style.lineHeight = '1';
+                        pickText.style.overflow = 'hidden';
+                        pickText.style.textOverflow = 'ellipsis';
+                        pickText.style.whiteSpace = 'nowrap';
+                        
+                        pickRow.appendChild(pickDot);
+                        pickRow.appendChild(pickText);
+                        allPicksIndicator.appendChild(pickRow);
+                    }
                 });
+                
+                // Add overflow indicator if more than 3 picks
+                if (imageObject.all_picks.length > 3) {
+                    const moreIndicator = document.createElement('div');
+                    moreIndicator.style.color = 'white';
+                    moreIndicator.style.fontSize = '0.45rem';
+                    moreIndicator.style.textAlign = 'center';
+                    moreIndicator.textContent = `+${imageObject.all_picks.length - 3}`;
+                    allPicksIndicator.appendChild(moreIndicator);
+                }
                 
                 thumbContainer.appendChild(allPicksIndicator);
             }
@@ -1038,6 +1067,91 @@ document.addEventListener('DOMContentLoaded', () => {
                 inline: 'center' // Scroll horizontally to center the thumbnail
             });
         }
+    }
+
+    // Function to efficiently update pick colors in filmstrip without full re-render
+    function updateFilmstripPickColors(images) {
+        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+        if (!filmstripContainer) return;
+
+        const thumbContainers = filmstripContainer.querySelectorAll('.jet-filmstrip-thumb-container');
+        
+        thumbContainers.forEach((thumbContainer, index) => {
+            if (images[index]) {
+                const imageObject = images[index];
+                
+                // Update pick color classes
+                thumbContainer.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                if (imageObject.pick_color) {
+                    thumbContainer.classList.add(`picked-${imageObject.pick_color}`);
+                }
+                
+                // Update all_picks indicator if it exists
+                const allPicksIndicator = thumbContainer.querySelector('.all-picks-indicator.filmstrip-picks');
+                if (allPicksIndicator) {
+                    // Remove and recreate all_picks indicator with updated data
+                    allPicksIndicator.remove();
+                }
+                
+                // Recreate all_picks indicator if needed
+                if (imageObject.all_picks && imageObject.all_picks.length > 0) {
+                    const allPicksIndicator = document.createElement('div');
+                    allPicksIndicator.classList.add('all-picks-indicator', 'filmstrip-picks');
+                    allPicksIndicator.style.position = 'absolute';
+                    allPicksIndicator.style.top = '3px';
+                    allPicksIndicator.style.left = '3px';
+                    allPicksIndicator.style.fontSize = '0.5rem';
+                    allPicksIndicator.style.maxWidth = '110px';
+                    allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
+                    allPicksIndicator.style.borderRadius = '3px';
+                    allPicksIndicator.style.padding = '2px 3px';
+                    allPicksIndicator.style.zIndex = '2';
+                    
+                    imageObject.all_picks.forEach((pick, pickIndex) => {
+                        if (pickIndex < 3) {
+                            const pickRow = document.createElement('div');
+                            pickRow.classList.add('pick-row');
+                            pickRow.style.display = 'flex';
+                            pickRow.style.alignItems = 'center';
+                            pickRow.style.marginBottom = '1px';
+                            
+                            const pickDot = document.createElement('span');
+                            pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
+                            pickDot.style.width = '5px';
+                            pickDot.style.height = '5px';
+                            pickDot.style.borderRadius = '50%';
+                            pickDot.style.marginRight = '3px';
+                            pickDot.style.flexShrink = '0';
+                            
+                            const pickText = document.createElement('span');
+                            pickText.classList.add('pick-text');
+                            pickText.textContent = (pick.username || 'Unknown').substring(0, 6);
+                            pickText.style.color = 'white';
+                            pickText.style.fontSize = '0.5rem';
+                            pickText.style.lineHeight = '1';
+                            pickText.style.overflow = 'hidden';
+                            pickText.style.textOverflow = 'ellipsis';
+                            pickText.style.whiteSpace = 'nowrap';
+                            
+                            pickRow.appendChild(pickDot);
+                            pickRow.appendChild(pickText);
+                            allPicksIndicator.appendChild(pickRow);
+                        }
+                    });
+                    
+                    if (imageObject.all_picks.length > 3) {
+                        const moreIndicator = document.createElement('div');
+                        moreIndicator.style.color = 'white';
+                        moreIndicator.style.fontSize = '0.45rem';
+                        moreIndicator.style.textAlign = 'center';
+                        moreIndicator.textContent = `+${imageObject.all_picks.length - 3}`;
+                        allPicksIndicator.appendChild(moreIndicator);
+                    }
+                    
+                    thumbContainer.appendChild(allPicksIndicator);
+                }
+            }
+        });
     }
 
     function navigatePreviewNext() {
@@ -1425,14 +1539,20 @@ document.addEventListener('DOMContentLoaded', () => {
 
                 // NEW: Update the corresponding thumbnail in the filmstrip
                 const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
-                if (filmstripContainer && currentPreviewIndex !== -1) {
-                     const currentThumbContainer = filmstripContainer.querySelector(`.jet-filmstrip-thumb-container[data-index="${currentPreviewIndex}"]`);
-                     if (currentThumbContainer) {
-                        currentThumbContainer.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey'); // Clear all color classes
-                         if (data.pick_color) {
-                             currentThumbContainer.classList.add(`picked-${data.pick_color}`);
-                         }
-                     }
+                if (filmstripContainer) {
+                    // Find the matching thumbnail by image path and source key instead of relying on currentPreviewIndex
+                    const allThumbContainers = filmstripContainer.querySelectorAll('.jet-filmstrip-thumb-container');
+                    allThumbContainers.forEach((thumbContainer, index) => {
+                        // Check if this thumbnail corresponds to the updated image
+                        if (currentGridImages[index] && 
+                            currentGridImages[index].path === imageObject.path && 
+                            currentGridImages[index].source_key === imageObject.source_key) {
+                            thumbContainer.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                            if (data.pick_color) {
+                                thumbContainer.classList.add(`picked-${data.pick_color}`);
+                            }
+                        }
+                    });
                 }
 
             } else {
@@ -1522,7 +1642,8 @@ document.addEventListener('DOMContentLoaded', () => {
                     if (updatedPreviewImg) {
                         currentPreviewImageObject = updatedPreviewImg;
                         updatePreviewImage(currentPreviewImageObject);
-                        renderThumbnailFilmstrip(currentGridImages, currentPreviewIndex);
+                        // Update filmstrip picks without full re-render for better performance
+                        updateFilmstripPickColors(currentGridImages);
                     }
                 }
                 

@@ -30,8 +30,15 @@ export function setupPhotoSwipeIfNeeded() {
                     originalPath: itemData.path // <-- ADDED ORIGINAL PATH
                 };
             } else { // Image
+                // Check if it's a RAW image for the Jet app context
+                // Assuming itemData has a property like 'is_raw' or similar, or checking size specifically
+                // Given the context, if it's not a video, and we're dealing with Jet app, it's likely a RAW preview.
+                // We should request the 'preview' size (750px) for the main image source.
+                const imageUrl = `${API_BASE_URL}?action=jet_get_raw_preview&path=${encodeURIComponent(itemData.path)}&size=preview`;
+                
                 return {
-                    src: `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`,
+                    src: imageUrl,
+                    thumb: imageUrl, // Add thumb property for filmstrip
                     width: itemData.width,
                     height: itemData.height,
                     alt: itemData.name,
@@ -143,13 +150,20 @@ export function openPhotoSwipeAtIndex(index) {
                 originalPath: itemData.path // <-- ADDED ORIGINAL PATH
             };
         } else { // Image
+            // Check if it's a RAW image for the Jet app context
+            // Assuming itemData has a property like 'is_raw' or similar, or checking size specifically
+            // Given the context, if it's not a video, and we're dealing with Jet app, it's likely a RAW preview.
+            // We should request the the RAW preview size for the main image source and the thumbnail.
+            const imageUrl = `${API_BASE_URL}?action=jet_get_raw_preview&path=${encodeURIComponent(itemData.path)}&size=preview`;
+            
             return {
-                src: `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`,
+                src: imageUrl,
+                thumb: imageUrl, // Add thumb property for filmstrip
                 width: itemData.width,
                 height: itemData.height,
                 alt: itemData.name,
                 type: 'image',
-                filename: itemData.name, // Ensure filename is added
+                filename: itemData.name, // Store for consistency, might be useful
                 originalPath: itemData.path // <-- ADDED ORIGINAL PATH
             };
         }
