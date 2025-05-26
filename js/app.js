@@ -359,104 +359,109 @@ async function loadSubItems(folderPath) {
 
 // --- Load More Images ---
 async function loadMoreImages() {
+    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore);
     if (isLoadingMore) {
         console.log('[app.js] loadMoreImages: Already loading, skipping.');
         return; // Already processing a load more action
     }
-    // If all images are loaded according to totalImages AND no preloaded images are waiting to be displayed
-    if (currentImageList.length >= totalImages && totalImages > 0 && preloadedImages.length === 0) {
-        console.log('[app.js] loadMoreImages: All images loaded, skipping.');
-        return;
-    }
-
-    setIsLoadingMore(true); // Indicate that we are starting to add more images
-    let imagesWereAdded = false;
-
-    if (preloadedImages.length > 0) {
-        console.log('[app.js] Using preloaded images for loadMoreImages.');
-        const imagesToRender = [...preloadedImages];
-        setPreloadedImages([]); // Consume preloaded images
-
-        setCurrentPage(currentPage + 1); // Advance page number for the batch just displayed
-        setCurrentImageList(currentImageList.concat(imagesToRender));
-        renderImageItemsToGrid(imagesToRender, true);
-        setupPhotoSwipeIfNeeded();
-        imagesWereAdded = true;
-    } else {
-        // Only fetch if more images are expected, or if totalImages is 0 (e.g. initial state before first load completed)
-        const pageToFetch = currentPage + 1; // Determine the page number to fetch
-        toggleInfiniteScrollSpinner(true);
-        console.log(`[app.js] loadMoreImages: Fetching page ${pageToFetch} for folder ${currentFolder}`);
-        try {
-            const responseData = await fetchDataApi('list_files', 
-                { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
-            );
-            console.log(`[app.js] loadMoreImages: API response for page ${pageToFetch}:`, responseData);
-            if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
-                setCurrentPage(pageToFetch); // Commit the page update only on successful fetch
-                const newImagesMetadata = responseData.data.files;
-                setCurrentImageList(currentImageList.concat(newImagesMetadata));
-                renderImageItemsToGrid(newImagesMetadata, true);
-                setupPhotoSwipeIfNeeded();
-                imagesWereAdded = true;
-                if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
-                    setTotalImages(responseData.data.pagination.total_items);
-                }
-            } else if (responseData.status !== 'success') {
-                showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
-            }
-        } catch (error) {
-            console.error('[app.js] Error in loadMoreImages (API call):', error);
-            showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
-        } finally {
-            toggleInfiniteScrollSpinner(false);
+    setIsLoadingMore(true); // Set immediately
+    try {
+        // If all images are loaded according to totalImages AND no preloaded images are waiting to be displayed
+        if (currentImageList.length >= totalImages && totalImages > 0 && preloadedImages.length === 0) {
+            console.log('[app.js] loadMoreImages: All images loaded, skipping.');
+            return;
         }
-    }
-
-    setIsLoadingMore(false); // Finished attempting to add more images to the view
-    if (imagesWereAdded && currentImageList.length < totalImages) {
-        preloadNextBatch();
-    } else if (!imagesWereAdded && preloadedImages.length === 0 && currentImageList.length < totalImages) {
-        preloadNextBatch();
+        let imagesWereAdded = false;
+        if (preloadedImages.length > 0) {
+            console.log('[app.js] Using preloaded images for loadMoreImages.');
+            const imagesToRender = [...preloadedImages];
+            setPreloadedImages([]); // Consume preloaded images
+            setCurrentPage(currentPage + 1); // Advance page number for the batch just displayed
+            setCurrentImageList(currentImageList.concat(imagesToRender));
+            renderImageItemsToGrid(imagesToRender, true);
+            setupPhotoSwipeIfNeeded();
+            imagesWereAdded = true;
+        } else {
+            // Only fetch if more images are expected, or if totalImages is 0 (e.g. initial state before first load completed)
+            const pageToFetch = currentPage + 1; // Determine the page number to fetch
+            toggleInfiniteScrollSpinner(true);
+            console.log(`[app.js] loadMoreImages: Fetching page ${pageToFetch} for folder ${currentFolder}`);
+            try {
+                const responseData = await fetchDataApi('list_files', 
+                    { path: currentFolder, page: pageToFetch, limit: IMAGES_PER_PAGE }
+                );
+                console.log(`[app.js] loadMoreImages: API response for page ${pageToFetch}:`, responseData);
+                if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+                    setCurrentPage(pageToFetch); // Commit the page update only on successful fetch
+                    const newImagesMetadata = responseData.data.files;
+                    setCurrentImageList(currentImageList.concat(newImagesMetadata));
+                    renderImageItemsToGrid(newImagesMetadata, true);
+                    setupPhotoSwipeIfNeeded();
+                    imagesWereAdded = true;
+                    if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
+                        setTotalImages(responseData.data.pagination.total_items);
+                    }
+                } else if (responseData.status !== 'success') {
+                    showModalWithMessage('Lỗi tải thêm ảnh', `<p>${responseData.message || 'Không rõ lỗi'}</p>`, true);
+                }
+            } catch (error) {
+                console.error('[app.js] Error in loadMoreImages (API call):', error);
+                showModalWithMessage('Lỗi nghiêm trọng', `<p>Đã có lỗi xảy ra khi tải thêm ảnh: ${error.message}</p>`, true);
+            } finally {
+                toggleInfiniteScrollSpinner(false);
+            }
+        }
+        if (imagesWereAdded && currentImageList.length < totalImages) {
+            preloadNextBatch();
+        } else if (!imagesWereAdded && preloadedImages.length === 0 && currentImageList.length < totalImages) {
+            preloadNextBatch();
+        }
+    } finally {
+        setIsLoadingMore(false); // Finished attempting to add more images to the view
+        console.log('[app.js] loadMoreImages: EXIT, isLoadingMore:', isLoadingMore);
     }
 }
 
 // --- NEW: Preload Next Batch Function ---
 async function preloadNextBatch() {
+    console.log('[app.js] preloadNextBatch: ENTRY, isCurrentlyPreloading:', isCurrentlyPreloading);
     if (isCurrentlyPreloading || preloadedImages.length > 0) {
         console.log('[app.js] preloadNextBatch: Already preloading or preloaded images exist, skipping.');
         return; 
     }
-    if (currentImageList.length >= totalImages && totalImages > 0) {
-        console.log('[app.js] preloadNextBatch: All known images loaded, skipping.');
-        return;
-    }
-    setIsCurrentlyPreloading(true);
-    const pageToPreload = currentPage + 1;
-    console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
+    setIsCurrentlyPreloading(true); // Set immediately
     try {
-        const responseData = await fetchDataApi('list_files', 
-            { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }
-        );
-        if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
-            setPreloadedImages(responseData.data.files);
-            console.log(`[app.js] preloadNextBatch: Successfully preloaded ${responseData.data.files.length} images for page ${pageToPreload}.`);
-            if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
-                setTotalImages(responseData.data.pagination.total_items);
-            }
-        } else {
-            setPreloadedImages([]);
-            if (responseData.status !== 'success') {
-                console.warn(`[app.js] preloadNextBatch: Failed to preload page ${pageToPreload}. Status: ${responseData.status}, Message: ${responseData.message}`);
-            } else {
-                console.log(`[app.js] preloadNextBatch: No more images to preload for page ${pageToPreload} (API returned success but no files).`);
-            }
+        if (currentImageList.length >= totalImages && totalImages > 0) {
+            console.log('[app.js] preloadNextBatch: All known images loaded, skipping.');
+            return;
         }
-    } catch (error) {
-        console.error(`[app.js] preloadNextBatch: Error preloading page ${pageToPreload}:`, error);
-        setPreloadedImages([]);
+        const pageToPreload = currentPage + 1;
+        console.log(`[app.js] preloadNextBatch: Attempting to preload page ${pageToPreload} for folder ${currentFolder}`);
+        try {
+            const responseData = await fetchDataApi('list_files', 
+                { path: currentFolder, page: pageToPreload, limit: IMAGES_PER_PAGE }
+            );
+            if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+                setPreloadedImages(responseData.data.files);
+                console.log(`[app.js] preloadNextBatch: Successfully preloaded ${responseData.data.files.length} images for page ${pageToPreload}.`);
+                if (responseData.data.pagination && responseData.data.pagination.total_items && responseData.data.pagination.total_items !== totalImages) {
+                    setTotalImages(responseData.data.pagination.total_items);
+                }
+            } else {
+                setPreloadedImages([]);
+                if (responseData.status !== 'success') {
+                    console.warn(`[app.js] preloadNextBatch: Failed to preload page ${pageToPreload}. Status: ${responseData.status}, Message: ${responseData.message}`);
+                } else {
+                    console.log(`[app.js] preloadNextBatch: No more images to preload for page ${pageToPreload} (API returned success but no files).`);
+                }
+            }
+        } catch (error) {
+            console.error(`[app.js] preloadNextBatch: Error preloading page ${pageToPreload}:`, error);
+            setPreloadedImages([]);
+        }
     } finally {
         setIsCurrentlyPreloading(false);
+        console.log('[app.js] preloadNextBatch: EXIT, isCurrentlyPreloading:', isCurrentlyPreloading);
     }
 }
 
@@ -793,11 +798,11 @@ function initializeAppEventListeners() {
             // Make the threshold larger to trigger sooner, e.g., 1.5 times viewport height
             const threshold = window.innerHeight * 2.5; 
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
-                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
+                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (2.5x viewport)`);
                 loadMoreImages();
             }
         }
-    }, 100)); // Debounce by 100ms
+    }, 250)); // Debounce by 250ms
 
     // Handle popstate for back/forward navigation
     window.addEventListener('popstate', (event) => {
