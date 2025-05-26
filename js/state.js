@@ -107,5 +107,27 @@ export function setPageCurrentlyFetching(value) { pageCurrentlyFetching = value;
 export let paginationAbortController = null;
 export function setPaginationAbortController(controller) { paginationAbortController = controller; }
 
+// NEW: Separate state for preloading to avoid conflicts
+export let preloadAbortController = null;
+export function setPreloadAbortController(controller) { preloadAbortController = controller; }
+
+// NEW: Request deduplication - track active requests by page number
+export let activePageRequests = new Set();
+export function addActivePageRequest(page) { 
+    activePageRequests.add(page); 
+    console.log('[state.js] Active page requests:', Array.from(activePageRequests));
+}
+export function removeActivePageRequest(page) { 
+    activePageRequests.delete(page); 
+    console.log('[state.js] Active page requests after removal:', Array.from(activePageRequests));
+}
+export function isPageRequestActive(page) { 
+    return activePageRequests.has(page); 
+}
+export function clearAllActivePageRequests() { 
+    activePageRequests.clear(); 
+    console.log('[state.js] All active page requests cleared');
+}
+
 // === PRELOADING STATE ===
 // ... existing code ... 
