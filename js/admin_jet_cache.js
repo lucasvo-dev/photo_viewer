@@ -915,17 +915,20 @@ function showRawCacheLoading(show) {
 
 // escapeHTML function is now defined at the top of the file
 
-// Auto-refresh every 30 seconds (only if no active pollers)
+// Auto-refresh every 15 seconds (more responsive for manual cache deletions)
 setInterval(() => {
     // Only load if the jet cache tab is currently active
     const jetCacheTabContent = document.getElementById('jet-cache-tab');
     if (jetCacheTabContent && jetCacheTabContent.classList.contains('active')) {
         if (Object.keys(activePollers).length === 0) {
-            console.log("Auto-refreshing RAW cache data...");
-            loadRawCacheData();
+            console.log("Auto-refreshing RAW cache data with auto-cleanup...");
+            // Auto-refresh includes auto-cleanup to detect manually deleted cache files
+            loadRawCacheData(); // This API call includes auto-cleanup logic
+        } else {
+            console.log("Skipping auto-refresh - active pollers:", Object.keys(activePollers).length);
         }
     }
-}, 30000);
+}, 15000);
 
 // Force refresh when tab becomes visible (worker might have restarted)
 document.addEventListener('visibilitychange', () => {
@@ -961,6 +964,17 @@ window.loadJetCacheStats = loadRawCacheData; // For tab switching compatibility
 window.loadRawCacheData = loadRawCacheData;
 window.handleRawCacheSource = handleRawCacheFolder; // Rename function for clarity
 window.clearFailedJetCacheJobs = clearFailedJetCacheJobs;
+
+// Add tab click listener for immediate refresh with auto-cleanup
+document.addEventListener('click', (e) => {
+    // Check if user clicked on the Jet Cache tab
+    if (e.target.closest('[data-tab="jet-cache"]')) {
+        console.log("Jet Cache tab clicked - force refreshing with auto-cleanup...");
+        // Stop all pollers and force refresh to ensure auto-cleanup runs
+        Object.keys(activePollers).forEach(key => stopJetCachePolling(key));
+        setTimeout(() => loadRawCacheData(), 100); // Small delay to ensure tab is active
+    }
+});
 
 // Main 'Update Cache' button functionality removed
 // Cache management now handled only through individual folder buttons 

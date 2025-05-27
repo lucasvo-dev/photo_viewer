@@ -590,11 +590,11 @@ while ($running) {
                         if (file_exists($proc_info['output_path']) && filesize($proc_info['output_path']) > 0) {
                             echo "[{$timestamp}] [Job {$proc_info['job_id']}] SUCCESS: Completed in {$processing_time}ms\n";
                             
-                            // Update job status to completed
+                            // Update job status to completed with final_cache_path
                             try {
-                                $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = 'Parallel dcraw processing completed' WHERE id = ?";
+                                $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = 'Parallel dcraw processing completed', final_cache_path = ? WHERE id = ?";
                                 $stmt_finish = $pdo->prepare($sql_finish);
-                                $stmt_finish->execute([time(), $proc_info['job_id']]);
+                                $stmt_finish->execute([time(), $proc_info['output_path'], $proc_info['job_id']]);
                             } catch (Exception $db_e) {
                                 error_log("[{$timestamp}] [Job {$proc_info['job_id']}] DB update warning: " . $db_e->getMessage());
                             }
