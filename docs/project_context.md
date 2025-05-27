@@ -61,114 +61,25 @@
 *   **Đường dẫn có tiền tố nguồn:** Định dạng `source_key/relative/path` (ví dụ: `main/album1`, `extra_drive/photos/img.jpg`) được dùng làm định danh nhất quán trong toàn bộ ứng dụng (API, DB, URL hash).
 *   **Xác thực đường dẫn:** API luôn kiểm tra tính hợp lệ và giới hạn truy cập trong các nguồn được định nghĩa để chống path traversal.
 *   **Bảo vệ thư mục:** Mật khẩu hash lưu trong DB. `check_folder_access` kiểm tra quyền dựa trên session/DB. Frontend hiển thị prompt khi cần.
-*   **Thumbnail:** Tạo "on-the-fly" cho ảnh và video (kích thước nhỏ), cache lại. Worker `worker_cache.php` xử lý tạo cache cho kích thước lớn (ảnh và video).
-*   **Quản trị:** Truy cập trang admin sau khi đăng nhập để quản lý mật khẩu và xem thống kê cơ bản.
-*   **Xử lý File RAW (trong Jet Culling Workspace) - Hệ thống Cache Đã Simplified:**
-    *   **Nhận diện RAW:** Hệ thống nhận diện các file ảnh RAW (định nghĩa trong `config.php` qua `raw_file_extensions`).
-    *   **Cache System Architecture (Simplified):**
-        *   **Trước (Complex):** 2 cache sizes (750px + 120px) với complex auto-generation logic
-        *   **Hiện tại (Simple):** **1 cache size (750px only)** với simple, reliable processing
-        *   **Performance:** ~50% faster processing, more reliable, easier maintenance
-    *   **Cache Generation Process:**
-        *   **On-the-fly Requests:** Khi user request RAW preview không có trong cache → API trả về HTTP 202 → Job được add vào queue → Worker xử lý background
-        *   **Admin Management:** Admin có thể queue cache jobs cho entire folders qua admin interface
-        *   **Worker Processing:** `worker_jet_cache.php` xử lý jobs sử dụng dcraw + ImageMagick pipeline
-    *   **Cache Directory Structure:**
-        ```
-        cache/jet_previews/
-        └── 750/           # Preview size (750px only)
-            └── source_key/
-                └── folder/
-                    └── hash_750_raw.jpg
-        ```
-    *   **Database Sync & Cleanup:**
-        *   **Problem Solved:** Manual deletion của cache files → orphaned DB records
-        *   **Solution:** API action `jet_cleanup_orphaned_cache_records` + Admin UI button "🧹 Dọn dẹp records bị mồ côi"
-        *   **Result:** Database luôn sync với file system
-    *   **Frontend Strategy:** Dùng CSS để resize 750px images cho different views (grid: max-width 200px, filmstrip: max-width 120px)
-    *   **Người dùng tương tác:** (client, designer, admin) sẽ tương tác (xem, chọn) với các bản preview JPEG này. File RAW gốc được giữ nguyên cho các mục đích xử lý chuyên sâu hoặc tải về (nếu có cấu hình).
-*   **Luồng làm việc Lọc ảnh (Culling) với Jet Culling Workspace (Đã triển khai cơ bản):**
-    *   **Designer:** Đăng nhập vào khu vực làm việc, duyệt các album chứa file RAW (hiển thị dưới dạng preview JPEG). Designer có thể "chọn" (pick) các ảnh mong muốn bằng các màu đánh dấu. Lựa chọn này được lưu lại (`jet_image_picks` table), gắn với thông tin của designer.
-    *   **Admin:** Đăng nhập, có thể xem lại các lựa chọn của designer trong từng album. Ảnh được designer chọn sẽ có đánh dấu trực quan. Admin có thể xem thống kê (ví dụ: designer nào chọn bao nhiêu ảnh, tổng số ảnh được chọn). Nhiều designer có thể cùng lọc một bộ ảnh.
-*   **(Dự kiến) Quản lý File & Thư mục cho Admin:**
-    *   Admin có quyền upload ảnh/video mới lên các thư mục nguồn đã định nghĩa.
-    *   Admin có quyền xóa file (ảnh/video và thumbnail tương ứng).
-    *   Admin có quyền tạo và xóa thư mục trong các nguồn ảnh.
-*   **Hỗ trợ Video (Đã triển khai):**
-    *   Hệ thống nhận diện các định dạng video phổ biến (MP4, MOV, MKV, WEBM, AVI) được định nghĩa trong `config.php`.
-    *   Thumbnail cho video được tự động tạo bằng FFmpeg (lấy frame từ giữa video) thông qua `worker_cache.php` cho kích thước lớn và "on-the-fly" cho kích thước nhỏ.
-    *   Video được phát trực tiếp trong PhotoSwipe lightbox sử dụng thẻ HTML5 `<video>`, với hỗ trợ streaming (range requests) từ API.
-    *   Người dùng có thể tải video trực tiếp từ giao diện PhotoSwipe hoặc thông qua chức năng chọn nhiều mục.
-*   **Đã triển khai bảng điều khiển (panel) hàng đợi ZIP bất đồng bộ trên giao diện người dùng, cung cấp phản hồi trực quan về nhiều công việc nén ZIP cùng lúc.**
-*   **Đã triển khai cơ chế tự động xóa file ZIP sau khi người dùng tải về được một khoảng thời gian (mặc định 5 phút) để tránh làm đầy ổ cứng, sử dụng script `cron_zip_cleanup.php`.**
-*   **Đã khắc phục các vấn đề CSS và UI (Giao diện Người dùng):**
-    *   **Giao diện Thư viện Ảnh Chính:** Đã giải quyết sự không nhất quán về chiều rộng hiển thị lưới ảnh giữa trang chủ và chế độ xem thư mục con. Hiện tại, trang chủ có giao diện "đóng hộp" (boxed-in) và chế độ xem thư mục con/album có giao diện toàn chiều rộng (full-width) như mong muốn, thông qua việc sử dụng lớp `gallery-view-active` trên `<body>` và CSS điều kiện.
-*   **Tính năng Chọn nhiều ảnh/video để tải về cho Khách hàng (Đã triển khai):**
-    *   (Hoàn thành) Cho phép khách hàng chọn nhiều ảnh/video trong một album thông qua `js/selectionManager.js`.
-    *   (Hoàn thành) Cung cấp nút "Tải về các mục đã chọn" để tạo file ZIP bất đồng bộ (`request_zip`, theo dõi qua `get_zip_status`) chứa các mục đó. Người dùng tải về qua `download_final_zip`.
-    *   (Hoàn thành) Các file ZIP được tạo sẽ tự động bị xóa sau một khoảng thời gian nhất định sau khi được tải xuống để tiết kiệm dung lượng lưu trữ.
+*   **Thumbnail & Cache:** Thumbnail kích thước nhỏ được tạo "on-the-fly" cho ảnh và video, và được cache lại. Worker `worker_cache.php` xử lý tạo cache bất đồng bộ cho kích thước lớn hơn (ví dụ: 750px) cho cả ảnh và video, lấy job từ bảng `cache_jobs`. Thumnail nhỏ (150px) vẫn được tạo on-the-fly để đảm bảo hiệu suất tải ban đầu.
+*   **Hỗ trợ Video:** Hệ thống nhận diện các định dạng video phổ biến. Thumbnail video được tạo tự động bằng FFmpeg. API hỗ trợ stream video với range requests. Frontend sử dụng thẻ HTML5 `<video>` trong PhotoSwipe và hiển thị nút tải trực tiếp video.
+*   **Quản trị:** Truy cập trang admin (`admin.php`) sau khi đăng nhập để quản lý mật khẩu thư mục, xem thống kê, và quản lý cache. Giao diện admin bao gồm bảng hiển thị thông tin thư mục với trạng thái cache chi tiết và nút yêu cầu/dọn dẹp cache. Polling nhanh hơn trong frontend giúp cập nhật trạng thái cache gần như tức thì. Bảng quản trị hiển thị tốt trên cả desktop và mobile.
+*   **Hệ thống Hàng đợi Công việc:** Sử dụng các bảng DB (`cache_jobs`, `zip_jobs`, `jet_cache_jobs`) và các worker script nền (`worker_cache.php`, `worker_zip.php`, `worker_jet_cache.php`) để xử lý các tác vụ nặng (tạo cache, tạo ZIP) một cách bất đồng bộ, tránh chặn người dùng.
+*   **Tạo và Tải ZIP (bao gồm Chọn nhiều):** Hệ thống cho phép yêu cầu tạo file ZIP cho toàn bộ thư mục hoặc nhiều tệp được chọn riêng lẻ. Các yêu cầu này được xử lý bất đồng bộ bởi `worker_zip.php`. Người dùng có thể theo dõi trạng thái các công việc ZIP đang chờ/xử lý/hoàn thành qua một bảng điều khiển (panel) trên giao diện người dùng. File ZIP cuối cùng có thể tải về và được tự động xóa sau một khoảng thời gian để giải phóng dung lượng. Logic kiểm tra quyền truy cập đã được điều chỉnh để cho phép tải về các file ZIP tạo từ nhiều tệp được chọn.
+*   **Luồng làm việc Lọc ảnh (Culling) với Jet Culling Workspace:** Cung cấp giao diện (`jet.php`) cho designer để duyệt và chọn lựa ảnh RAW (hiển thị dưới dạng preview JPEG 750px được tạo bởi `worker_jet_cache.php`). Hỗ trợ lọc và sắp xếp ảnh, chế độ xem trước ảnh lớn với điều hướng bàn phím/chuột, và chức năng gán/bỏ gán màu (color picks) được lưu vào CSDL (`jet_image_picks`). Admin có thể xem lại các lựa chọn này.
+*   **Hệ thống Cache RAW Đã Simplified:** Thay vì tạo 2 kích thước cache, hệ thống hiện tại chỉ tạo 1 kích thước (750px) một cách đáng tin cậy hơn (~50% nhanh hơn). Frontend sử dụng CSS để điều chỉnh kích thước hiển thị của ảnh 750px cho các chế độ xem khác nhau (lưới, filmstrip). Hệ thống bao gồm các công cụ dọn dẹp CSDL để đồng bộ trạng thái cache sau khi xóa file vật lý.
 
 ## 5. Tình trạng Hiện tại
 
-*   Các chức năng cốt lõi (duyệt, xem ảnh, tìm kiếm, tải ZIP, bảo vệ mật khẩu) đã hoạt động.
-*   **Đã phân định rõ ràng không gian làm việc:** Khu vực khách hàng (`index.php`), quản trị (`admin.php`), và lọc ảnh (`jet.php`, Jet Culling Workspace) được tách biệt về giao diện và luồng API.
-*   **Đã triển khai hỗ trợ video cơ bản:** Nhận diện, tạo thumbnail, phát lại trong lightbox và tải trực tiếp.
-*   **Đã chuyển đổi cơ sở dữ liệu từ SQLite sang MySQL.**
-*   **API backend (`api.php`) đã được refactor thành cấu trúc module rõ ràng hơn trong thư mục `api/` để dễ bảo trì.**
-*   Đã thực hiện nhiều cải tiến về cấu trúc code frontend (tập trung cấu hình, refactor modal CSS) và sửa lỗi giao diện/logic (hiển thị icon khóa, logic prompt mật khẩu, căn chỉnh, v.v.).
-*   Hiệu ứng làm mờ nền khi hiển thị modal đã được thêm.
-*   Đã thử nghiệm và hoàn nguyên về font chữ hệ thống mặc định.
-*   **Đã sửa lỗi hiển thị thumbnail cho thư mục con.**
-*   **Đã khắc phục lỗi thông báo "Đang tạo ZIP" không tự ẩn và lỗi "Bad Request"/"Unexpected token" khi tải ZIP.**
-*   **Đã sửa lỗi cú pháp JavaScript trong `js/admin.js`.**
-*   **Đã thêm tiêu đề cột 'Cache' còn thiếu vào bảng trong trang admin (`admin.php`).**
-*   **Đã sửa logic tạo đường dẫn cache thumbnail để đảm bảo lưu vào thư mục con theo kích thước (ví dụ: `cache/thumbnails/150/`, `cache/thumbnails/750/`).**
-*   **Đã triển khai cơ chế tạo cache bất đồng bộ bằng hàng đợi công việc (DB table `cache_jobs` và script `worker_cache.php`) để tránh chặn người dùng khi admin tạo cache.**
-*   **Đã cấu hình worker cache chỉ tạo trước thumbnail kích thước lớn nhất (ví dụ: 750px), thumbnail nhỏ (150px) vẫn được tạo on-the-fly.**
-*   **Đã thêm cơ chế tự động làm mới danh sách thư mục trên trang admin để cập nhật trạng thái nút cache sau khi worker xử lý xong.**
-*   **Đã khắc phục lỗi khóa cơ sở dữ liệu (database locked) xảy ra do tranh chấp giữa worker và auto-refresh trang admin bằng cách thêm timeout (PDO::ATTR_TIMEOUT) cho kết nối PDO trong `db_connect.php`.**
-*   **Đã cải thiện UX của nút cache: sử dụng polling nhanh hơn trong `js/admin.js` để cập nhật trạng thái nút (Đang chờ/Đang xử lý/Đã cache) gần như tức thì sau khi bấm nút hoặc worker hoàn thành, thay vì phải chờ auto-refresh toàn cục.**
-*   **Đã sửa lỗi CSS hiển thị bảng quản trị trên mobile:** Thêm `data-label` vào các ô `<td>` trong `js/admin.js` và điều chỉnh CSS trong `css/style.css` để bảng hiển thị đúng dạng khối trên màn hình nhỏ.**
-*   **Đã cải thiện CSS bảng quản trị trên desktop:** Tăng chiều rộng ô input link chia sẻ và loại bỏ giới hạn chiều cao/thanh cuộn cho ô trạng thái cache.**
-*   **Đã sửa lỗi JavaScript trên trang admin:** Thay thế các lời gọi `showMessage` thành `showFeedback`, sửa lỗi đọc thuộc tính `folder.protected` và đảm bảo nút "Xóa MK" được gắn event listener đúng cách.**
-*   **Đã di chuyển và định dạng lại ô thông báo admin:** Di chuyển `div#admin-feedback` trong `admin.php` lên vị trí dễ thấy hơn và cập nhật CSS để có giao diện panel nhất quán.**
-*   **Đã cải thiện hiển thị trạng thái cache:** 
-    *   Trong bảng admin, chỉ hiển thị số lượng ảnh đã cache (thay vì timestamp) và thêm icon thông tin (`ℹ️`).
-    *   Khi click icon `ℹ️`, hiển thị modal chi tiết (tên, đường dẫn, số lượng, timestamp, kết quả job gần nhất).
-    *   Sửa lỗi logic worker (`worker_cache.php`) và API (`api/actions_admin.php`) để lưu và trả về đúng `image_count` và `latest_job_status`.
-    *   Sửa lỗi logic frontend (`js/admin.js`) để modal hiển thị đúng thông tin và cảnh báo lỗi chỉ xuất hiện khi job gần nhất thực sự `failed`.
-    *   Cải thiện UX nút yêu cầu cache để cập nhật trạng thái "Đang chờ xử lý" ngay lập tức.
-*   **Đã triển khai bảng điều khiển (panel) hàng đợi ZIP bất đồng bộ trên giao diện người dùng, cung cấp phản hồi trực quan về nhiều công việc nén ZIP cùng lúc.**
-*   **Đã khắc phục các vấn đề CSS và UI (Giao diện Người dùng):**
-    *   **Giao diện Thư viện Ảnh Chính:** Đã giải quyết sự không nhất quán về chiều rộng hiển thị lưới ảnh giữa trang chủ và chế độ xem thư mục con. Hiện tại, trang chủ có giao diện "đóng hộp" (boxed-in) và chế độ xem thư mục con/album có giao diện toàn chiều rộng (full-width) như mong muốn, thông qua việc sử dụng lớp `gallery-view-active` trên `<body>` và CSS điều kiện.
-    *   **Không gian làm việc Jet (Jet Culling Workspace):** Đã khắc phục lỗi không thể cuộn trang bằng chuột (mouse wheel scroll) và lỗi không thể zoom trang (Ctrl+MouseWheel). Nguyên nhân do `overflow: hidden` trên `body.jet-app-active` đã được sửa thành `overflow: auto` trong `css/views/jet_view.css`.
-*   **Triển khai Giao diện và Chức năng Cơ bản cho Jet Culling Workspace:**
-    *   **Cấu trúc Giao diện và CSS:** Thiết lập giao diện người dùng cơ bản cho không gian làm việc Jet, bao gồm refactor CSS với việc sử dụng Biến tùy chỉnh CSS (CSS Custom Properties) trong `css/views/jet_view.css`.
-    *   **Hiển thị Lưới Ảnh:** Hiển thị danh sách ảnh (preview từ file RAW) dưới dạng lưới trong không gian làm việc.
-    *   **Chức năng Lọc Ảnh (Filtering):**
-        *   Người dùng có thể lọc ảnh theo các tiêu chí: "Tất cả", "Đã chọn (Bất kỳ màu nào)", "Chưa chọn".
-        *   Hỗ trợ lọc theo các màu đã chọn (pick colors): Đỏ (Red), Xanh lá (Green), Xanh dương (Blue), Xám (Grey).
-        *   Các nút lọc màu được hiển thị dưới dạng swatch màu (ô màu vuông).
-    *   **Chức năng Sắp xếp Ảnh (Sorting):**
-        *   Người dùng có thể sắp xếp ảnh theo: Tên file (A-Z, Z-A), Ngày sửa đổi (Mới nhất, Cũ nhất).
-    *   **Giao diện Điều khiển Lọc Linh hoạt (Responsive Filter Controls):**
-        *   HTML trong `js/jet_app.js` được cấu trúc lại với các `div` (`.filter-group-main`, `.filter-group-colors`) để quản lý nhóm nút lọc.
-        *   CSS trong `css/views/jet_view.css` được cập nhật để:
-            *   Trên Desktop: Các nút lọc chính (Tất cả, Đã chọn,...) ở bên trái, các nút lọc màu (swatches) ở bên phải, sử dụng `justify-content: space-between`.
-            *   Trên Mobile (breakpoint 768px): Các nút lọc màu tự động xuống dòng bên dưới các nút lọc chính, sử dụng `flex-direction: column`. Các nút được căn chỉnh `align-items: center` và có kích thước phù hợp cho thiết bị di động.
-    *   **Chế độ Xem trước Ảnh (Image Preview Mode):**
-        *   Khi người dùng nhấp đúp vào một ảnh trong lưới, hoặc chọn ảnh rồi nhấn phím `Space`, một lớp phủ (overlay) hiển thị ảnh đó với kích thước lớn hơn.
-        *   **Điều hướng:**
-            *   Nút "Trước" (Previous) và "Sau" (Next) trên màn hình cho phép duyệt qua các ảnh trong thư mục hiện tại.
-            *   Phím mũi tên Trái (`ArrowLeft`) và Phải (`ArrowRight`) trên bàn phím cũng thực hiện chức năng điều hướng tương tự.
-        *   **Chọn/Bỏ chọn Màu từ Xem trước:**
-            *   Nút chọn màu (hiển thị màu hiện tại) và các phím số (0-3) cho phép người dùng gán hoặc bỏ gán màu (Đỏ, Xanh lá, Xanh dương, Xám/Không màu) cho ảnh đang xem trước.
-            *   Trạng thái chọn màu được cập nhật đồng bộ trên cả nút trong chế độ xem trước và mục ảnh tương ứng trong lưới nền.
-        *   **Đóng Xem trước:**
-            *   Nút "Đóng (Esc)" chuyên dụng trên màn hình.
-            *   Nhấn phím `Space` hoặc phím `Escape` (Esc) trên bàn phím.
-        *   **Hiển thị Trạng thái Chọn Màu (Color Pick Status Display in Grid):**
-            *   Các mục ảnh trong lưới (`image grid`) được chọn màu sẽ hiển thị một cờ màu nhỏ ở góc dưới bên phải của thumbnail.
+*   Các chức năng cốt lõi của thư viện ảnh (duyệt thư mục, xem ảnh/video, tìm kiếm, bảo vệ mật khẩu) đã hoạt động ổn định.
+*   Tính năng tải ZIP cho thư mục và nhiều mục được chọn đã hoạt động hoàn chỉnh, bao gồm xử lý bất đồng bộ, theo dõi trạng thái job và tự động xóa file ZIP đã tải.
+*   Hỗ trợ xem và tải video đã được tích hợp đầy đủ.
+*   Hệ thống cache ảnh và video, đặc biệt là cache RAW cho Jet Culling Workspace, đã được đơn giản hóa và hoạt động đáng tin cậy hơn với các worker xử lý nền.
+*   Giao diện admin cho quản lý mật khẩu và cache đã được cải thiện về UX/UI, hiển thị thông tin chi tiết và hỗ trợ trên mobile.
+*   Cấu trúc backend API đã được refactor thành các module rõ ràng.
+*   Frontend đã được refactor đáng kể theo hướng module hóa (xem chi tiết trong lịch sử refactor), đặc biệt là logic quản lý chọn ảnh và hàng đợi ZIP, cải thiện cấu trúc code và khả năng bảo trì.
+*   Hệ thống cache RAW cho Jet Culling Workspace đã được đơn giản hóa thành công chỉ còn 1 kích thước cache (750px) với hiệu suất và độ tin cậy cao hơn, cùng với các công cụ hỗ trợ đồng bộ hóa CSDL sau khi xóa file vật lý (xem chi tiết trong lịch sử giải quyết vấn đề RAW Cache).
+*   Kiểm thử End-to-End ban đầu với Playwright đã được thiết lập, với các kiểm thử đăng nhập và hiển thị thư mục/admin panel đã PASSED, trong khi kiểm thử hiển thị thumbnail trong thư mục con và mở PhotoSwipe vẫn FAILED và đang tạm dừng gỡ lỗi.
 
 ## 6. Lộ trình Phát triển Tiếp theo (Roadmap & Features Dự kiến)
 
@@ -176,80 +87,34 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
 
 *   **(Tiếp theo) Mở rộng hỗ trợ định dạng RAW:** Liên tục cập nhật danh sách `raw_file_extensions` và kiểm tra khả năng tương thích của `dcraw` với các định dạng RAW mới nếu cần.
 
-*   **Tính năng Lọc ảnh (Culling) cho Designer & Admin (Jet Culling Workspace - Phát triển Tiếp theo):**
+*   **Hoàn thiện Tính năng Lọc ảnh (Culling) cho Designer & Admin (Jet Culling Workspace - Phát triển Tiếp theo):**
     *   **Mục tiêu:** Cung cấp một công cụ mạnh mẽ và hiệu quả cho designer để duyệt và chọn lựa (cull) ảnh từ các bộ ảnh lớn, đặc biệt là ảnh RAW. Admin có thể xem lại và quản lý các lựa chọn này.
-    *   **Các Tính năng Tiếp theo và Nâng cao (Beyond Current MVP):**
+    *   **Các Tính năng Tiếp theo và Nâng cao:**
         *   **Cải thiện Zoom/Pan:** Hoàn thiện các tương tác nâng cao trong chế độ xem trước (ví dụ: zoom chi tiết hơn, pan mượt mà hơn) để kiểm tra độ nét hiệu quả.
-        *   **Hợp tác Đa người dùng Chi tiết hơn:**
-            *   Giao diện cho Admin để dễ dàng xem, so sánh và quản lý các lựa chọn (picks, ratings, colors) từ nhiều designer khác nhau trên cùng một bộ ảnh.
-            *   Cung cấp thống kê chi tiết hơn về lựa chọn của từng designer.
+        *   **Hợp tác Đa người dùng Chi tiết hơn:** Giao diện cho Admin để dễ dàng xem, so sánh và quản lý các lựa chọn (picks, ratings, colors) từ nhiều designer khác nhau trên cùng một bộ ảnh. Cung cấp thống kê chi tiết hơn về lựa chọn của từng designer.
         *   **Tùy chỉnh Giao diện (Tiềm năng):** Nghiên cứu khả năng cho phép người dùng tùy chỉnh siêu dữ liệu hiển thị, kích thước thumbnail trong Jet Culling Workspace.
-        *   **(Lưu ý về Tạo Xem trước):** Hiện tại, các bản xem trước JPEG từ file RAW được tạo on-the-fly bởi `api/actions_jet.php` (sử dụng `dcraw` và ImageMagick). Việc tối ưu hóa (ví dụ: chuyển sang worker để pre-cache) được đề cập ở mục "Hoàn thiện Hỗ trợ File RAW...".
-    *   **(Tham khảo) Các thành phần MVP đã triển khai (chi tiết trong Mục 5):**
-        *   Hiển thị lưới ảnh preview từ RAW, điều hướng bàn phím/chuột trong preview.
-        *   Chức năng chọn màu (Color Labels/Pick status) và lưu vào CSDL.
-        *   Lọc ảnh cơ bản (theo màu đã chọn, trạng thái chọn).
-        *   Sắp xếp ảnh cơ bản (tên file, ngày sửa đổi).
 
 *   **Quản lý File và Thư mục cho Admin (Qua giao diện Web):**
     *   **Upload:** Cho phép admin upload ảnh và video mới vào các thư mục nguồn.
     *   **Delete File:** Cho phép admin xóa file ảnh/video (bao gồm cả thumbnail và các dữ liệu liên quan).
     *   **Create/Delete Folder:** Cho phép admin tạo thư mục mới và xóa thư mục (bao gồm cả nội dung bên trong một cách cẩn trọng).
 
-*   **Tính năng Chọn nhiều ảnh/video để tải về cho Khách hàng (Đã triển khai):**
-    *   (Hoàn thành) Cho phép khách hàng chọn nhiều ảnh/video trong một album thông qua `js/selectionManager.js`.
-    *   (Hoàn thành) Cung cấp nút "Tải về các mục đã chọn" để tạo file ZIP bất đồng bộ (`request_zip`, theo dõi qua `get_zip_status`) chứa các mục đó. Người dùng tải về qua `download_final_zip`.
-    *   (Hoàn thành) Các file ZIP được tạo sẽ tự động bị xóa sau một khoảng thời gian nhất định sau khi được tải xuống để tiết kiệm dung lượng lưu trữ.
+*   **Tối ưu Hiệu suất (Tiếp tục):** Đánh giá và tối ưu hiệu suất cho việc tạo preview RAW, thumbnail video. Tối ưu các truy vấn CSDL liên quan đến tính năng mới.
 
-*   **Tối ưu Hiệu suất (Tiếp tục):**
-    *   Đánh giá và tối ưu hiệu suất cho việc tạo preview RAW, thumbnail video.
-    *   Tối ưu các truy vấn CSDL liên quan đến tính năng mới.
+*   **Cải thiện UX/UI (Tiếp tục):** Đảm bảo giao diện cho các tính năng mới trực quan và dễ sử dụng, đặc biệt là cho việc lọc ảnh và quản lý file.
 
-*   **Cải thiện UX/UI (Tiếp tục):**
-    *   Đảm bảo giao diện cho các tính năng mới trực quan và dễ sử dụng, đặc biệt là cho việc lọc ảnh và quản lý file.
+*   **Chất lượng Mã nguồn & Khả năng Bảo trì (Tiếp tục):** Duy trì cấu trúc code rõ ràng khi thêm các module mới.
 
-*   **Chất lượng Mã nguồn & Khả năng Bảo trì (Tiếp tục):**
-    *   Duy trì cấu trúc code rõ ràng khi thêm các module mới.
+*   **Kiểm thử (Testing):** Kiểm thử kỹ lưỡng các tính năng mới trên nhiều trình duyệt và thiết bị, đặc biệt tập trung vào các phần Playwright đang FAILED.
 
-*   **Kiểm thử (Testing):**
-    *   Kiểm thử kỹ lưỡng các tính năng mới trên nhiều trình duyệt và thiết bị.
+## 7. Lịch sử Phát triển Chi tiết (Detailed Development History)
+
+Phần này ghi lại lịch sử chi tiết về việc giải quyết các vấn đề lớn và các thay đổi quan trọng đã triển khai.
 
 ## 7.1. Kế hoạch Refactor JavaScript (JavaScript Refactoring Plan)
 
 *   **Mục tiêu:** Tối ưu hóa cấu trúc mã JavaScript để tăng tính module, dễ bảo trì và sẵn sàng cho việc mở rộng các tính năng phức tạp trong tương lai.
 *   **Trạng thái chung:** Đã hoàn thành vào 2025-05-16 (AI). Tất cả các mục dưới đây đã được xem xét và triển khai hoặc xác nhận hoàn tất.
-*   **Các bước chính (Ưu tiên):**
-    1.  **Tạo `js/selectionManager.js`:**
-        *   **Nhiệm vụ:** Di chuyển toàn bộ logic và trạng thái liên quan đến chế độ chọn ảnh (multi-select) từ `js/app.js` vào module này.
-        *   **Trạng thái:** Hoàn thành. Module `js/selectionManager.js` đã tồn tại và đảm nhiệm các chức năng này. Các biến trạng thái và DOM caching dư thừa liên quan đến selection đã được gỡ bỏ khỏi `js/app.js`.
-        *   **Bao gồm (đã xác minh trong `selectionManager.js`):** `isSelectModeActive`, `selectedImagePaths`, `toggleImageSelectionMode()`, `handleImageItemSelect()`, `clearAllImageSelections()`, `updateDownloadSelectedButton()`, `handleDownloadSelected()` (thông qua callback).
-        *   `js/app.js` khởi tạo và ủy quyền đúng cách cho module này.
-        *   **Lợi ích:** Giảm kích thước và độ phức tạp của `app.js`, đóng gói logic chọn ảnh, cải thiện SRP.
-    2.  **Refactor `loadSubItems()` trong `js/app.js`:**
-        *   **Nhiệm vụ:** Ủy quyền việc tạo các phần tử DOM cho danh sách thư mục con (subfolder list items) cho một hàm trong `js/uiDirectoryView.js`.
-        *   **Trạng thái:** Hoàn thành. Hàm factory `createDirectoryListItem()` đã được tạo và export từ `js/uiDirectoryView.js`. Cả `renderTopLevelDirectories()` (trong `uiDirectoryView.js`) và `loadSubItems()` (trong `app.js`) đều sử dụng hàm factory này, giúp thống nhất việc render item thư mục.
-        *   **Lợi ích:** Tách biệt hơn nữa việc lấy dữ liệu/điều phối trong `app.js` khỏi các chi tiết render view cụ thể.
-    3.  **Rà soát và áp dụng nguyên tắc DRY (Don't Repeat Yourself):**
-        *   **Nhiệm vụ:** Tìm và loại bỏ các đoạn mã lặp lại, ví dụ như logic render folder item và image item.
-        *   **Trạng thái:** Hoàn thành.
-            *   Logic render folder item đã được giải quyết ở mục 2.
-            *   Logic render image item trong `js/uiImageView.js` cũng đã được refactor để sử dụng hàm factory nội bộ `createImageItemElement()`.
-        *   **Lợi ích:** Giảm sự trùng lặp, dễ bảo trì hơn.
-    4.  **Đánh giá lại việc quản lý State (`state.js`):**
-        *   **Nhiệm vụ:** Đảm bảo tất cả trạng thái ứng dụng chia sẻ thực sự nằm trong `js/state.js` hoặc trong các manager module chuyên biệt của chúng.
-        *   **Trạng thái:** Hoàn thành.
-            *   Trạng thái và logic quản lý `activeZipJobs` (bao gồm các hàm `addOrUpdateZipJob`, `getZipJob`, `getAllZipJobs`, `removeZipJob`, `clearAllZipJobIntervals`) đã được di chuyển từ `js/state.js` vào `js/zipManager.js`.
-            *   Các biến trạng thái ZIP cũ và không còn sử dụng (`zipDownloadTimerId`, `currentZipJobToken`, `zipPollingIntervalId`) đã được gỡ bỏ khỏi `js/state.js` và các file liên quan.
-        *   Các trạng thái chia sẻ khác vẫn nằm trong `state.js`, trong khi trạng thái cụ thể của module (selection, ZIP jobs) nằm trong các manager tương ứng.
-    5.  **Kiểm tra và chuẩn hóa DOM Manipulation & Event Handling:**
-        *   **Nhiệm vụ:** Duy trì sự nhất quán trong cách tạo phần tử DOM và quản lý event listener.
-        *   **Trạng thái:** Hoàn thành.
-            *   Việc tạo DOM cho item thư mục và item ảnh đã được chuẩn hóa bằng các hàm factory (xem mục 2 và 3).
-            *   Event handling trong `js/zipManager.js` cho các action của ZIP job panel đã được refactor để sử dụng event delegation, thay vì gắn listener riêng lẻ cho từng button.
-        *   Các module khác đã được xem xét và sử dụng phương pháp gắn event listener phù hợp với phạm vi của chúng.
-    6.  **Chuẩn hóa Xử lý Lỗi Asynchronous:**
-        *   **Nhiệm vụ:** Đảm bảo tất cả các lỗi từ API và các tác vụ bất đồng bộ được hiển thị nhất quán cho người dùng.
-        *   **Trạng thái:** Hoàn thành. Hệ thống hiện tại sử dụng `fetchDataApi` (trong `js/apiService.js`) với cấu trúc response chuẩn. Các lỗi từ API call do người dùng khởi tạo được hiển thị qua `showModalWithMessage`. Các lỗi từ tác vụ nền (ví dụ: polling ZIP status) được phản ánh trong UI chuyên biệt của chúng (ví dụ: ZIP panel) để tránh làm phiền người dùng bằng modal liên tục. Cách tiếp cận này được đánh giá là nhất quán và phù hợp.
 
 ## 7.2. RAW Cache System - Complete Resolution History
 

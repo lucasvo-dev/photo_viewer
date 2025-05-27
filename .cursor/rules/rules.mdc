@@ -5,12 +5,13 @@ alwaysApply: true
 ---
 rules:
   - id: communication_language
-    description: Giao tiếp với tôi bằng Tiếng anh.
-    prompt: Communicate with me in english.
+    description: Giao tiếp với tôi bằng Tiếng Việt.
+    prompt: Communicate with me in vietnamese.
   - id: commit_language
     description: Luôn viết commit message bằng Tiếng Anh.
     prompt: Always write commit messages in English. Follow conventional commit format if possible.
-
+  - Always try to do as much as possible yourself.
+  - Never stop abruptly without dealing with the problem.
   - rule: Identify core technologies.
     description: |
       The backend is primarily PHP (>=7.4).
