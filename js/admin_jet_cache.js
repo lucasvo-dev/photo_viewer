@@ -452,11 +452,11 @@ function showJetCacheInfoModal(folderData) {
     modalOverlay.className = 'modal-overlay cache-info-modal';
 
     const stats = folderData.cache_stats;
-    const totalPossibleJobs = folderData.total_raw_files * 2;
+    const totalPossibleJobs = folderData.total_raw_files; // Only 750px jobs now
 
     let detailsHTML = '';
     detailsHTML += `<p><strong>Tổng số file RAW:</strong> ${folderData.total_raw_files} file</p>`;
-    detailsHTML += `<p><strong>Tổng công việc cache:</strong> ${totalPossibleJobs} (preview + filmstrip)</p>`;
+    detailsHTML += `<p><strong>Cache jobs (750px only):</strong> ${totalPossibleJobs}</p>`;
     detailsHTML += `<hr style="margin: 15px 0; border-color: #30363d;">`;
     detailsHTML += `<p><strong>Đã hoàn thành:</strong> ${stats.completed} công việc</p>`;
     detailsHTML += `<p><strong>Đang xử lý:</strong> ${stats.processing} công việc</p>`;

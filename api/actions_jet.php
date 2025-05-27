@@ -414,11 +414,8 @@ switch ($jet_action) {
         // Cache path construction
         // JET_PREVIEW_CACHE_ROOT / SIZE / source_key / relative_dir (if any) / filename.jpg
 
-        // Determine target size based on requested_size parameter
-        $target_size = JET_PREVIEW_SIZE; // Default to main preview size
-        if ($requested_size === 'filmstrip' && defined('JET_FILMSTRIP_THUMB_SIZE')) {
-            $target_size = JET_FILMSTRIP_THUMB_SIZE; // Use filmstrip size if requested and defined
-        }
+        // Always use main preview size (750px) - no more 120px generation
+        $target_size = JET_PREVIEW_SIZE;
 
         // Use helper function for consistent cache path generation
         $cached_preview_full_path = get_jet_cache_path($source_key, $clean_image_relative_path, $target_size);
@@ -435,26 +432,15 @@ switch ($jet_action) {
             exit;
         }
 
-        // NEW: Fallback for filmstrip - if 120px doesn't exist, try serving 750px
-        if ($requested_size === 'filmstrip') {
-            $fallback_750_path = get_jet_cache_path($source_key, $clean_image_relative_path, JET_PREVIEW_SIZE);
-            if (file_exists($fallback_750_path) && filesize($fallback_750_path) > 0) {
-                error_log("[JET_GET_RAW_PREVIEW] Filmstrip fallback: Serving 750px instead of 120px: {$fallback_750_path}");
-                header('Content-Type: image/jpeg');
-                readfile($fallback_750_path);
-                exit;
-            }
-        }
+        // Note: Filmstrip and preview now use the same 750px cache files
 
-        // Cache miss - add job to queue for background processing
-        // SIMPLIFIED: Always queue 750px job (only size we generate)
+        // Cache miss - add job to queue for background processing (750px only)
         if (function_exists('add_jet_cache_job_to_queue')) {
-            $job_size_to_queue = JET_PREVIEW_SIZE; // Always queue 750px job
-            $job_added = add_jet_cache_job_to_queue($pdo, $source_key, $clean_image_relative_path, $job_size_to_queue);
+            $job_added = add_jet_cache_job_to_queue($pdo, $source_key, $clean_image_relative_path, JET_PREVIEW_SIZE);
             if ($job_added) {
-                error_log("[JET_GET_RAW_PREVIEW] Job added to queue for background processing: {$source_key}/{$clean_image_relative_path} size {$job_size_to_queue}");
+                error_log("[JET_GET_RAW_PREVIEW] Job added to queue for background processing: {$source_key}/{$clean_image_relative_path} size " . JET_PREVIEW_SIZE);
             } else {
-                error_log("[JET_GET_RAW_PREVIEW] Job already exists in queue for: {$source_key}/{$clean_image_relative_path} size {$job_size_to_queue}");
+                error_log("[JET_GET_RAW_PREVIEW] Job already exists in queue for: {$source_key}/{$clean_image_relative_path} size " . JET_PREVIEW_SIZE);
             }
         }
 
@@ -907,7 +893,7 @@ switch ($jet_action) {
                         if (in_array($extension, $raw_extensions)) {
                             $image_relative_path = (empty($clean_folder_path) ? '' : $clean_folder_path . '/') . $fileinfo->getFilename();
                             
-                            // SIMPLIFIED: Only queue 750px job, no 120px
+                            // Only queue 750px job (no more 120px generation)
                             $preview_queued = add_jet_cache_job_to_queue($pdo, $source_key, $image_relative_path, JET_PREVIEW_SIZE);
                             
                             if ($preview_queued) {

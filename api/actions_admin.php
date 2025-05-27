@@ -551,7 +551,7 @@ switch ($action) {
                         $source_prefixed_path = $source_key . '/' . str_replace('\\', '/', $relative_path); // Use forward slashes
 
                         // Add job to jet_cache_jobs table (check for duplicates)
-                        // SIMPLIFIED: Only create 750px jobs since we're using CSS for resizing
+                        // Only create 750px jobs (no more 120px generation)
                         $target_sizes = [];
                         if (defined('JET_PREVIEW_SIZE')) $target_sizes[] = JET_PREVIEW_SIZE;
 

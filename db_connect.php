@@ -224,14 +224,11 @@ try {
         define('JET_PREVIEW_CACHE_ROOT', $resolved_jet_cache_path);
     }
 
-    // Pre-create size directories for Jet previews if they don't exist
-    $jet_preview_sizes = [JET_PREVIEW_SIZE, JET_FILMSTRIP_THUMB_SIZE];
-    foreach ($jet_preview_sizes as $size) {
-        $jet_size_dir = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . $size;
+    // Pre-create size directory for Jet previews if it doesn't exist (only 750px)
+    $jet_size_dir = JET_PREVIEW_CACHE_ROOT . DIRECTORY_SEPARATOR . JET_PREVIEW_SIZE;
     if (!is_dir($jet_size_dir)) {
         if (!@mkdir($jet_size_dir, 0775, true)) {
             error_log("Warning: Failed to automatically create Jet preview size directory: {$jet_size_dir}");
-            }
         }
     }
 

@@ -315,17 +315,52 @@ function cleanupOrphanedRawCache(): void {
 
     echo "[Info] Found a total of " . count($validRawSourcePrefixedPaths) . " valid RAW files across all sources.\n";
 
-    // Get RAW cache sizes
+    // Get RAW cache sizes (only 750px now)
     $raw_cache_sizes = [];
     if (defined('JET_PREVIEW_SIZE')) {
         $raw_cache_sizes[] = JET_PREVIEW_SIZE;
     }
-    if (defined('JET_FILMSTRIP_THUMB_SIZE')) {
-        $raw_cache_sizes[] = JET_FILMSTRIP_THUMB_SIZE;
-    }
     if (empty($raw_cache_sizes)) {
-        $raw_cache_sizes = [750, 120]; // Default fallback
-        echo "[Warning] RAW cache sizes not defined, using defaults: 750, 120\n";
+        $raw_cache_sizes = [750]; // Default fallback (no more 120px)
+        echo "[Warning] RAW cache sizes not defined, using default: 750\n";
+    }
+    
+    // Clean up legacy 120px cache directory if it exists
+    $legacy_120_dir = $jetCacheRoot . DIRECTORY_SEPARATOR . "120";
+    if (is_dir($legacy_120_dir)) {
+        echo "[Info] Found legacy 120px cache directory, cleaning up...\n";
+        error_log("[RAW Cache Cleanup] Removing legacy 120px cache directory: {$legacy_120_dir}");
+        
+        // Remove all files in 120px directory
+        $deleted_120_files = 0;
+        try {
+            $iterator = new RecursiveIteratorIterator(
+                new RecursiveDirectoryIterator($legacy_120_dir, RecursiveDirectoryIterator::SKIP_DOTS),
+                RecursiveIteratorIterator::CHILD_FIRST
+            );
+            
+            foreach ($iterator as $file) {
+                if ($file->isFile()) {
+                    if (@unlink($file->getRealPath())) {
+                        $deleted_120_files++;
+                    }
+                } elseif ($file->isDir()) {
+                    @rmdir($file->getRealPath());
+                }
+            }
+            
+            // Remove the 120 directory itself
+            if (@rmdir($legacy_120_dir)) {
+                echo "[Info] Successfully removed legacy 120px cache directory and {$deleted_120_files} files.\n";
+                error_log("[RAW Cache Cleanup] Successfully removed legacy 120px cache directory and {$deleted_120_files} files.");
+            } else {
+                echo "[Warning] Failed to remove legacy 120px cache directory.\n";
+                error_log("[RAW Cache Cleanup] Failed to remove legacy 120px cache directory: {$legacy_120_dir}");
+            }
+        } catch (Exception $e) {
+            echo "[Warning] Error cleaning up legacy 120px cache directory: " . $e->getMessage() . "\n";
+            error_log("[RAW Cache Cleanup] Error cleaning up legacy 120px cache directory: " . $e->getMessage());
+        }
     }
 
     $validRawCacheAbsolutePaths = [];
