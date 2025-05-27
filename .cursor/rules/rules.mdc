@@ -11,6 +11,7 @@ rules:
     description: Luôn viết commit message bằng Tiếng Anh.
     prompt: Always write commit messages in English. Follow conventional commit format if possible.
   - Let's me test all by manual
+  - Do not automatically create new test files or new php executables randomly
   - rule: Identify core technologies.
     description: |
       The backend is primarily PHP (>=7.4).
