@@ -99,14 +99,18 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                 <h2>Quản lý Cache RAW</h2>
                 <p>Quản lý cache cho ảnh RAW trong Jet app. Cache được tạo với chiều cao cố định 750px.</p>
                 <div class="tab-actions">
-                    <button id="refresh-jet-cache-data" class="button">🔄 Làm mới dữ liệu</button>
+                    <button id="refresh-jet-cache-data" class="button">🔄 Làm mới & Đồng bộ</button>
                 </div>
             </div>
 
             <!-- Search Bar for RAW Sources -->
             <div class="search-container admin-search">
                 <input type="search" id="rawSourceSearchInput" placeholder="Tìm nguồn RAW..." aria-label="Tìm kiếm nguồn RAW">
+                <button id="clearRawSearch" class="clear-search-button" style="display: none;" aria-label="Xóa tìm kiếm">&times;</button>
             </div>
+            <p id="raw-search-prompt" class="search-prompt admin-prompt" style="display: none; font-size: 0.85em; margin-top: 8px;">
+                Nhập tên nguồn hoặc thư mục để lọc danh sách.
+            </p>
 
             <div id="raw-cache-message" class="message" style="display: none;"></div>
 

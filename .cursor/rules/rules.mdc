@@ -12,6 +12,7 @@ rules:
     prompt: Always write commit messages in English. Follow conventional commit format if possible.
   - Always try to do as much as possible yourself.
   - Never stop abruptly without dealing with the problem.
+  - Clean temporary files created for testing after completion
   - rule: Identify core technologies.
     description: |
       The backend is primarily PHP (>=7.4).

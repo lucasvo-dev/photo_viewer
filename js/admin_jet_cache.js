@@ -9,21 +9,105 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Search functionality
     const searchInput = document.getElementById('rawSourceSearchInput');
+    const clearSearchBtn = document.getElementById('clearRawSearch');
+    const searchPrompt = document.getElementById('raw-search-prompt');
+    
     if (searchInput) {
         searchInput.addEventListener('input', (e) => {
-            filterRawSourcesTable(e.target.value.trim());
+            const searchTerm = e.target.value.trim();
+            filterRawSourcesTable(searchTerm);
+            
+            // Show/hide clear button
+            if (clearSearchBtn) {
+                clearSearchBtn.style.display = searchTerm ? 'block' : 'none';
+            }
+            
+            // Update search prompt
+            if (searchPrompt) {
+                if (searchTerm) {
+                    const visibleRows = document.querySelectorAll('#raw-sources-list-body tr[style=""], #raw-sources-list-body tr:not([style])');
+                    const totalRows = document.querySelectorAll('#raw-sources-list-body tr').length;
+                    searchPrompt.textContent = `Hiển thị ${visibleRows.length}/${totalRows} thư mục khớp với "${searchTerm}"`;
+                    searchPrompt.style.display = 'block';
+                } else {
+                    searchPrompt.style.display = 'none';
+                }
+            }
+        });
+    }
+    
+    // Clear search functionality
+    if (clearSearchBtn) {
+        clearSearchBtn.addEventListener('click', () => {
+            if (searchInput) {
+                searchInput.value = '';
+                searchInput.dispatchEvent(new Event('input')); // Trigger input event to update UI
+                searchInput.focus(); // Focus back to input
+            }
         });
     }
 
-    // Manual refresh button
+    // Enhanced refresh button - combines refresh + auto-sync
     const refreshButton = document.getElementById('refresh-jet-cache-data');
     if (refreshButton) {
-        refreshButton.addEventListener('click', () => {
-            console.log('Manual refresh triggered');
+        refreshButton.addEventListener('click', async () => {
+            console.log('Enhanced refresh triggered - Force reloading with auto-sync');
+            
+            // Stop all active pollers
             Object.keys(activePollers).forEach(key => stopJetCachePolling(key));
-            loadRawCacheData();
+            
+            // Clear cached data
+            rawSourcesData = [];
+            
+            // Visual feedback
+            refreshButton.disabled = true;
+            refreshButton.innerHTML = '🔄 Đang làm mới...';
+            
+            try {
+                // Step 1: Force cleanup orphaned records first
+                console.log('[Enhanced Refresh] Step 1: Cleaning up orphaned records...');
+                refreshButton.innerHTML = '🧹 Đang dọn dẹp database...';
+                
+                const cleanupResponse = await fetch('api.php?action=jet_cleanup_orphaned_cache_records', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const cleanupResult = await cleanupResponse.json();
+                
+                let cleanupMessage = '';
+                if (cleanupResult.success) {
+                    if (cleanupResult.deleted_count > 0) {
+                        console.log(`[Enhanced Refresh] Cleaned up ${cleanupResult.deleted_count} orphaned records`);
+                        cleanupMessage = `🧹 Đã dọn dẹp ${cleanupResult.deleted_count} records bị mồ côi. `;
+                    } else {
+                        console.log('[Enhanced Refresh] No orphaned records found');
+                        cleanupMessage = '✅ Database đã đồng bộ. ';
+                    }
+                } else {
+                    console.warn('[Enhanced Refresh] Cleanup failed:', cleanupResult.error);
+                    cleanupMessage = '⚠️ Cleanup có vấn đề nhưng tiếp tục làm mới. ';
+                }
+                
+                // Step 2: Load fresh data (which will also auto-cleanup any remaining issues)
+                console.log('[Enhanced Refresh] Step 2: Loading fresh data...');
+                refreshButton.innerHTML = '📊 Đang tải dữ liệu mới...';
+                
+                await loadRawCacheData();
+                
+                // Success message with cleanup info
+                showJetFeedback(cleanupMessage + '📊 Dữ liệu đã được làm mới thành công!', 'success');
+                
+            } catch (error) {
+                console.error('[Enhanced Refresh] Error:', error);
+                showJetFeedback('❌ Lỗi khi làm mới dữ liệu: ' + error.message, 'error');
+            } finally {
+                refreshButton.disabled = false;
+                refreshButton.innerHTML = '🔄 Làm mới & Đồng bộ';
+            }
         });
     }
+
+
 
     // Clear failed jobs button, cleanup orphaned records button, and folder cache buttons
     document.addEventListener('click', (e) => {
@@ -98,6 +182,8 @@ function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFi
     let isDisabled = false;
     let icon = '';
 
+    console.log(`[updateJetCacheButtonState] ${sourceKey}/${folderPath}: total=${totalFiles}, completed=${stats.completed}, pending=${stats.pending}, processing=${stats.processing}, failed=${stats.failed}`);
+
     if (stats.processing > 0) {
         buttonText = 'Đang xử lý...';
         buttonTitle = `Đang xử lý ${stats.processing} công việc cache RAW.`;
@@ -108,29 +194,29 @@ function updateJetCacheButtonState(button, sourceKey, folderPath, stats, totalFi
         buttonTitle = `${stats.pending} công việc cache RAW đang chờ xử lý.`;
         isDisabled = true;
         icon = '🕒';
+    } else if (totalFiles === 0) {
+        buttonText = 'Không có file RAW';
+        buttonTitle = 'Không có file RAW nào trong thư mục này.';
+        isDisabled = true;
+        icon = '❌';
+    } else if (stats.completed === totalPossibleJobs && totalPossibleJobs > 0) {
+        // Cache đã hoàn thành 100% - chỉ cho phép refresh/rebuild
+        buttonText = 'Cache hoàn thành';
+        buttonTitle = `Cache đã hoàn thành cho ${stats.completed}/${totalPossibleJobs} ảnh RAW. Click để tạo lại cache.`;
+        isDisabled = false;
+        icon = '✅';
+    } else if (stats.completed > 0) {
+        // Cache một phần - cho phép tiếp tục
+        buttonText = 'Tiếp tục Cache';
+        buttonTitle = `Đã cache ${stats.completed}/${totalPossibleJobs} file RAW. Click để tiếp tục cache.`;
+        isDisabled = false;
+        icon = '🔄';
     } else {
-        // Job is completed, failed, or never run
-        if (stats.completed === totalPossibleJobs && totalPossibleJobs > 0) {
-            buttonText = 'Cập nhật Cache';
-            buttonTitle = `Cache hoàn thành cho ${stats.completed} ảnh. Click để chạy lại quá trình cache.`;
-            isDisabled = false;
-            icon = '🔄';
-        } else if (stats.completed > 0) {
-            buttonText = 'Cập nhật Cache';
-            buttonTitle = `Đã cache ${stats.completed}/${totalPossibleJobs} file RAW. Click để tiếp tục cache.`;
-            isDisabled = false;
-            icon = '🔄';
-        } else if (totalFiles === 0) {
-            buttonText = 'Không có file RAW';
-            buttonTitle = 'Không có file RAW nào trong thư mục này.';
-            isDisabled = true;
-            icon = '❌';
-        } else {
-            buttonText = 'Tạo Cache RAW';
-            buttonTitle = 'Tạo cache 750px cho tất cả file RAW trong thư mục.';
-            isDisabled = false;
-            icon = '➕';
-        }
+        // Chưa có cache nào
+        buttonText = 'Tạo Cache RAW';
+        buttonTitle = 'Tạo cache 750px cho tất cả file RAW trong thư mục.';
+        isDisabled = false;
+        icon = '➕';
     }
     
     button.innerHTML = `${icon} ${buttonText}`.trim();
@@ -149,6 +235,12 @@ function renderJetCacheStatus(folder) {
     let title = '';
     let infoIconHTML = '';
     let progressHTML = '';
+    let warningHTML = '';
+
+    // Check for validation issues
+    if (folder.validation_issues && folder.validation_issues.length > 0) {
+        warningHTML = '<span class="validation-warning" title="Database có thể không đồng bộ với thực tế">⚠️</span>';
+    }
 
     if (stats.processing > 0) {
         const percentage = totalPossibleJobs > 0 ? Math.round(((stats.completed + stats.processing) / totalPossibleJobs) * 100) : 0;
@@ -189,8 +281,14 @@ function renderJetCacheStatus(folder) {
         title = 'Chưa có cache RAW nào được tạo cho thư mục này.';
     }
     
-    // Combine status, progress bar and icon - matches gallery pattern
+    // Add validation warning to title if present
+    if (folder.validation_issues && folder.validation_issues.length > 0) {
+        title += ' ⚠️ Cảnh báo: Database có thể không đồng bộ với thực tế.';
+    }
+    
+    // Combine status, progress bar, warning and icon - matches gallery pattern
     return `<div class="cache-status-wrapper" title="${escapeHTML(title)}">
+                ${warningHTML}
                 ${statusHTML}
                 ${progressHTML}
                 ${infoIconHTML}
@@ -198,38 +296,76 @@ function renderJetCacheStatus(folder) {
 }
 
 async function loadRawCacheData() {
+    console.log('[loadRawCacheData] Starting to load RAW cache data...');
     showJetLoading('Đang tải dữ liệu cache RAW...');
+    
     try {
         // Load both cache stats (overall) and folders data
+        console.log('[loadRawCacheData] Fetching cache stats and folders data...');
+        const timestamp = Date.now(); // Add timestamp to prevent browser caching
         const [statsResponse, foldersResponse] = await Promise.all([
-            fetch('api.php?action=jet_get_cache_stats'), // Keep overall stats
-            fetch('api.php?action=jet_list_raw_folders_with_cache_stats') // New API for folders
+            fetch(`api.php?action=jet_get_cache_stats&_t=${timestamp}`), // Keep overall stats
+            fetch(`api.php?action=jet_list_raw_folders_with_cache_stats&_t=${timestamp}`) // New API for folders
         ]);
 
+        console.log('[loadRawCacheData] Responses received, parsing JSON...');
         const [statsResult, foldersResult] = await Promise.all([
             statsResponse.json(),
             foldersResponse.json()
         ]);
 
+        console.log('[loadRawCacheData] Stats result:', statsResult);
+        console.log('[loadRawCacheData] Folders result:', foldersResult);
+
         if (statsResult.success) {
+            console.log('[loadRawCacheData] Updating cache stats...');
             updateCacheStats(statsResult.stats);
             updateFailedJobsSection(statsResult.recent_failed);
         } else {
-             showJetFeedback(statsResult.error || 'Lỗi tải thống kê cache tổng quan', 'error');
+            console.error('[loadRawCacheData] Stats loading failed:', statsResult.error);
+            showJetFeedback(statsResult.error || 'Lỗi tải thống kê cache tổng quan', 'error');
         }
 
         if (foldersResult.success) {
+            console.log(`[loadRawCacheData] Updating folders data (${foldersResult.folders.length} folders)...`);
             rawSourcesData = foldersResult.folders; // Store folder data
             renderRawSourcesTable(rawSourcesData); // Render using folder data
+            console.log('[loadRawCacheData] Folders table rendered successfully');
+            
+            // Show auto-cleanup message if any records were cleaned
+            if (foldersResult.auto_cleaned && foldersResult.auto_cleaned > 0) {
+                showJetFeedback(
+                    `✨ ${foldersResult.auto_cleanup_message} Database đã được đồng bộ tự động.`, 
+                    'info'
+                );
+                console.log(`[loadRawCacheData] Auto-cleanup: ${foldersResult.auto_cleaned} records removed`);
+            }
+            
+            // Check for validation issues across all folders
+            const foldersWithIssues = foldersResult.folders.filter(f => f.validation_issues && f.validation_issues.length > 0);
+            if (foldersWithIssues.length > 0) {
+                console.log(`[loadRawCacheData] Found ${foldersWithIssues.length} folders with validation issues`);
+                showJetFeedback(
+                    `⚠️ Phát hiện ${foldersWithIssues.length} thư mục có vấn đề đồng bộ. Hệ thống đã tự động xử lý.`, 
+                    'warning'
+                );
+            }
         } else {
+            console.error('[loadRawCacheData] Folders loading failed:', foldersResult.error);
             showJetFeedback(foldersResult.error || 'Lỗi tải danh sách thư mục RAW', 'error');
         }
 
+        console.log('[loadRawCacheData] Data loading completed successfully');
+
+        // Update last refresh time
+        updateLastRefreshTime();
+
     } catch (error) {
-        console.error('Error loading RAW cache data:', error);
+        console.error('[loadRawCacheData] Error loading RAW cache data:', error);
         showJetFeedback('Lỗi kết nối khi tải dữ liệu cache RAW', 'error');
     } finally {
         hideJetLoading();
+        console.log('[loadRawCacheData] Loading process finished');
     }
 }
 
@@ -418,16 +554,47 @@ async function handleRawCacheFolder(button, sourceKey, folderPath) {
         formData.append('source_key', sourceKey);
         formData.append('folder_path', folderPath);
 
-        const response = await fetch('api.php', { method: 'POST', body: formData });
+        console.log(`[handleRawCacheFolder] Sending request with:`, {
+            action: 'jet_queue_folder_cache',
+            source_key: sourceKey,
+            folder_path: folderPath
+        });
+
+        const response = await fetch('api.php', { 
+            method: 'POST', 
+            body: formData,
+            credentials: 'include' // Ensure cookies/session are sent
+        });
+        
+        console.log(`[handleRawCacheFolder] Response status: ${response.status}`);
+        console.log(`[handleRawCacheFolder] Response headers:`, response.headers);
+        
         const result = await response.json();
         console.log('API response received:', result);
 
-        if (!response.ok || result.success !== true) {
-            throw new Error(result.error || result.message || `Lỗi HTTP ${response.status}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${result.error || result.message || 'Unknown error'}`);
+        }
+        
+        if (result.success !== true) {
+            throw new Error(result.error || result.message || 'API returned success=false');
         }
 
         // SUCCESS: Job queued or already running
-        showJetFeedback(result.message || 'Yêu cầu đã được xử lý.', result.status === 'queued' ? 'success' : 'warning'); 
+        const message = result.message || 'Yêu cầu đã được xử lý.';
+        let feedbackType = 'success';
+        
+        if (result.status === 'queued' && result.queued_count > 0) {
+            feedbackType = 'success';
+        } else if (result.status === 'no_new_jobs' || result.queued_count === 0) {
+            feedbackType = 'warning';
+        } else {
+            feedbackType = 'info';
+        }
+        
+        showJetFeedback(message, feedbackType);
+        
+        console.log(`[handleRawCacheFolder] Success: ${message} (status: ${result.status}, queued: ${result.queued_count})`);
         
         // Find folder data and update button state immediately if queued
         const folderData = rawSourcesData.find(f => 
@@ -435,17 +602,27 @@ async function handleRawCacheFolder(button, sourceKey, folderPath) {
         );
         
         const statusCell = button.closest('tr')?.querySelector('td[data-label="Trạng thái Cache"]');
-        if (result.status === 'queued' && folderData) {
+        
+        // Only start polling if new jobs were actually queued
+        if (result.status === 'queued' && result.queued_count > 0 && folderData) {
             // Update local stats to show pending
-            folderData.cache_stats.pending += result.queued_count || 1;
+            folderData.cache_stats.pending += result.queued_count;
             updateJetCacheButtonState(button, sourceKey, folderPath, folderData.cache_stats, folderData.total_raw_files);
-        }
-
-        // *** START POLLING *** 
-        if (statusCell) {
-             startJetCachePolling(button, statusCell, sourceKey, folderPath); 
+            
+            // *** START POLLING *** 
+            if (statusCell) {
+                 startJetCachePolling(button, statusCell, sourceKey, folderPath); 
+            } else {
+                 console.error(`[Cache Request ${pollerKey}] Could not find status cell to start polling.`);
+            }
         } else {
-             console.error(`[Cache Request ${pollerKey}] Could not find status cell to start polling.`);
+            // No new jobs queued - just refresh the data to show current state
+            console.log(`[handleRawCacheFolder] No new jobs queued, refreshing data to show current state`);
+            if (folderData) {
+                updateJetCacheButtonState(button, sourceKey, folderPath, folderData.cache_stats, folderData.total_raw_files);
+            }
+            // Optionally refresh the entire data to get latest state
+            setTimeout(() => loadRawCacheData(), 1000);
         }
 
     } catch (error) {
@@ -460,7 +637,7 @@ async function handleRawCacheFolder(button, sourceKey, folderPath) {
         if (folderData) {
             updateJetCacheButtonState(button, sourceKey, folderPath, folderData.cache_stats, folderData.total_raw_files);
         }
-        stopJetCachePolling(pollerKey); // Ensure no poller is running after failure
+        stopJetCachePolling(pollerKey); // Now pollerKey is defined
     }
 }
 
@@ -471,7 +648,8 @@ async function pollJetCacheStatus(button, statusCell, sourceKey, folderPath) {
     
     try {
         // Fetch updated data
-        const response = await fetch('api.php?action=jet_list_raw_folders_with_cache_stats');
+        const timestamp = Date.now(); // Prevent browser caching
+        const response = await fetch(`api.php?action=jet_list_raw_folders_with_cache_stats&_t=${timestamp}`);
         const result = await response.json();
 
         if (!response.ok || !result.success || !result.folders) {
@@ -632,35 +810,82 @@ async function clearFailedJetCacheJobs() {
 }
 
 async function cleanupOrphanedCacheRecords() {
-    if (!confirm('Bạn có chắc muốn dọn dẹp các records database bị mồ côi (file cache đã bị xóa)? Thao tác này sẽ kiểm tra và xóa các records trong database mà file tương ứng không còn tồn tại.')) {
-        return;
-    }
-
-    showJetLoading('Đang kiểm tra và dọn dẹp records bị mồ côi...');
-
+    showJetLoading('Đang dọn dẹp records bị mồ côi...');
     try {
-        const formData = new FormData();
-        formData.append('action', 'jet_cleanup_orphaned_cache_records');
-
-        const response = await fetch('api.php', {
-            method: 'POST',
-            body: formData
+        const response = await fetch('api.php?action=jet_cleanup_orphaned_cache_records', {
+            method: 'POST'
         });
-
         const result = await response.json();
 
         if (result.success) {
-            showJetFeedback(result.message, 'success');
-            loadRawCacheData(); // Refresh all data
+            const message = `Đã kiểm tra ${result.checked_count} records. Xóa ${result.deleted_count} records bị mồ côi.`;
+            showJetFeedback(message, 'success');
+            
+            // Hiển thị modal chi tiết nếu có records bị xóa
+            if (result.deleted_count > 0) {
+                showOrphanedRecordsDetailsModal(result);
+            }
+            
+            // Làm mới dữ liệu ngay lập tức sau khi dọn dẹp
+            await loadRawCacheData();
         } else {
-            showJetFeedback(result.error || 'Lỗi dọn dẹp records bị mồ côi', 'error');
+            showJetFeedback(result.error || 'Lỗi dọn dẹp records', 'error');
         }
     } catch (error) {
         console.error('Error cleaning up orphaned records:', error);
-        showJetFeedback('Lỗi kết nối khi dọn dẹp records bị mồ côi', 'error');
+        showJetFeedback('Lỗi kết nối khi dọn dẹp records', 'error');
     } finally {
         hideJetLoading();
     }
+}
+
+function showOrphanedRecordsDetailsModal(result) {
+    const modalContent = `
+        <div class="orphaned-records-details">
+            <h3>Chi tiết Dọn dẹp Records Bị Mồ Côi</h3>
+            <p>Tổng số records đã kiểm tra: <strong>${result.checked_count}</strong></p>
+            <p>Số records bị mồ côi: <strong>${result.orphaned_count}</strong></p>
+            <p>Số records đã xóa: <strong>${result.deleted_count}</strong></p>
+            
+            <div class="details-note">
+                <p>⚠️ Các records bị mồ côi là những records cache đã hoàn thành nhưng file vật lý không còn tồn tại.</p>
+                <p>Điều này có thể xảy ra do:</p>
+                <ul>
+                    <li>Xóa file thủ công</li>
+                    <li>Di chuyển/rename thư mục</li>
+                    <li>Lỗi hệ thống</li>
+                </ul>
+            </div>
+        </div>
+    `;
+
+    // Tạo modal động
+    const modal = document.createElement('div');
+    modal.className = 'modal-overlay';
+    modal.innerHTML = `
+        <div class="modal-box">
+            <div class="modal-header">
+                <h2>Dọn dẹp Cache</h2>
+                <button class="modal-close">&times;</button>
+            </div>
+            <div class="modal-content">
+                ${modalContent}
+            </div>
+            <div class="modal-footer">
+                <button class="modal-ok-button">Đóng</button>
+            </div>
+        </div>
+    `;
+
+    // Thêm sự kiện đóng modal
+    const closeButtons = modal.querySelectorAll('.modal-close, .modal-ok-button');
+    closeButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            document.body.removeChild(modal);
+        });
+    });
+
+    document.body.appendChild(modal);
 }
 
 function showRawCacheMessage(message, type = 'info') {
@@ -715,6 +940,22 @@ document.addEventListener('visibilitychange', () => {
     }
 });
 
+// Keyboard shortcuts for refresh
+document.addEventListener('keydown', (e) => {
+    const jetCacheTabContent = document.getElementById('jet-cache-tab');
+    const isJetCacheTabActive = jetCacheTabContent && jetCacheTabContent.classList.contains('active');
+    
+    // F5 or Ctrl+R to refresh (only when jet cache tab is active)
+    if (isJetCacheTabActive && (e.key === 'F5' || (e.ctrlKey && e.key === 'r'))) {
+        e.preventDefault(); // Prevent browser refresh
+        const refreshButton = document.getElementById('refresh-jet-cache-data');
+        if (refreshButton && !refreshButton.disabled) {
+            console.log('Keyboard shortcut triggered refresh');
+            refreshButton.click();
+        }
+    }
+});
+
 // Make functions globally available
 window.loadJetCacheStats = loadRawCacheData; // For tab switching compatibility
 window.loadRawCacheData = loadRawCacheData;
@@ -723,3 +964,30 @@ window.clearFailedJetCacheJobs = clearFailedJetCacheJobs;
 
 // Main 'Update Cache' button functionality removed
 // Cache management now handled only through individual folder buttons 
+
+function updateLastRefreshTime() {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString('vi-VN');
+    const refreshButton = document.getElementById('refresh-jet-cache-data');
+    if (refreshButton) {
+        refreshButton.title = `Làm mới dữ liệu và đồng bộ database. Cập nhật cuối: ${timeString}`;
+    }
+    
+    // Also update any existing last refresh display
+    let lastRefreshDisplay = document.getElementById('last-refresh-time');
+    if (!lastRefreshDisplay) {
+        // Create the display element if it doesn't exist
+        const tabHeader = document.querySelector('#jet-cache-tab .tab-header');
+        if (tabHeader) {
+            lastRefreshDisplay = document.createElement('small');
+            lastRefreshDisplay.id = 'last-refresh-time';
+            lastRefreshDisplay.style.color = '#666';
+            lastRefreshDisplay.style.marginLeft = '10px';
+            tabHeader.appendChild(lastRefreshDisplay);
+        }
+    }
+    
+    if (lastRefreshDisplay) {
+        lastRefreshDisplay.textContent = `Cập nhật cuối: ${timeString}`;
+    }
+} 

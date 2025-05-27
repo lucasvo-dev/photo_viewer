@@ -97,4 +97,94 @@
     .admin-tab:last-child {
         margin-bottom: 0;
     }
+}
+
+/* Admin Search Styling - matches gallery app */
+.admin-search {
+    margin-bottom: 20px;
+    position: relative;
+    display: flex;
+    align-items: center;
+}
+
+.admin-search input[type="search"] {
+    width: 100%;
+    padding: 11px 14px;
+    padding-right: 35px; /* Space for clear button */
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 1em;
+    box-sizing: border-box;
+}
+
+.admin-search input[type="search"]:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: inset 0 0 0 2px rgba(88, 166, 255, 0.25);
+}
+
+.admin-search input[type="search"]::placeholder {
+    color: #8b949e;
+}
+
+.admin-search .clear-search-button {
+    position: absolute;
+    right: 8px;
+    background: none;
+    border: none;
+    color: #7d8590;
+    font-size: 18px;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+}
+
+.admin-search .clear-search-button:hover {
+    color: #e6edf3;
+}
+
+.admin-prompt {
+    color: #7d8590;
+    font-style: italic;
+}
+
+/* Validation Warning Styling */
+.validation-warning {
+    color: #f85149;
+    font-size: 14px;
+    margin-right: 5px;
+    cursor: help;
+}
+
+.cache-status-wrapper .validation-warning {
+    display: inline-block;
+    animation: pulse-warning 2s infinite;
+}
+
+@keyframes pulse-warning {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+/* Search prompt styling */
+.search-prompt.admin-prompt {
+    color: #8b949e;
+    font-style: italic;
+    margin: 8px 0 0 0;
+}
+
+/* Hide browser default clear button for search inputs */
+.admin-search input[type="search"]::-webkit-search-decoration,
+.admin-search input[type="search"]::-webkit-search-cancel-button,
+.admin-search input[type="search"]::-webkit-search-results-button,
+.admin-search input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+}
+
+.admin-search input[type="search"]::-ms-clear {
+    display: none;
+    width: 0;
+    height: 0;
 } 

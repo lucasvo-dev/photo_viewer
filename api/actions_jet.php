@@ -922,11 +922,21 @@ switch ($jet_action) {
             }
 
             error_log("[jet_queue_folder_cache] Success - queued {$queued_count} jobs for {$source_key}/{$folder_path}");
+            
+            // Prepare response message based on result
+            if ($queued_count > 0) {
+                $message = "Đã thêm {$queued_count} công việc cache vào hàng đợi.";
+                $status = 'queued';
+            } else {
+                $message = "Tất cả file RAW trong thư mục này đã có cache. Không có công việc mới nào được tạo.";
+                $status = 'no_new_jobs';
+            }
+            
             json_response([
                 'success' => true,
-                'message' => "Đã thêm {$queued_count} công việc cache vào hàng đợi.",
+                'message' => $message,
                 'queued_count' => $queued_count,
-                'status' => $queued_count > 0 ? 'queued' : 'no_new_jobs'
+                'status' => $status
             ]);
 
         } catch (Exception $e) {
@@ -1210,6 +1220,7 @@ switch ($jet_action) {
         try {
             $folders_with_stats = [];
             $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+            $auto_cleaned_count = 0; // Track auto-cleanup
 
             foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
                 $base_path = $source_config['path'];
@@ -1259,37 +1270,72 @@ switch ($jet_action) {
                             SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
                             SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
                             FROM jet_cache_jobs
-                            WHERE source_key = ? AND image_relative_path LIKE ?"; // Use LIKE for subfolders
+                            WHERE source_key = ? AND (image_relative_path LIKE ? OR image_relative_path = ?)";
                         $cache_stats_stmt = $pdo->prepare($cache_stats_sql);
-                        // The LIKE pattern should be the folder name followed by /% or just the folder name for root files (though we only list dirs)
-                        // Since we are listing top-level dirs, the path is 'foldername'. We want jobs where image_relative_path starts with 'foldername/'
+                        
+                        // Pattern for subfolder files: 'foldername/%'
+                        // Also check for exact folder match (edge case)
                         $like_pattern = $relative_folder_path . '/%';
-                        $cache_stats_stmt->execute([$source_key, $like_pattern]);
+                        $cache_stats_stmt->execute([$source_key, $like_pattern, $relative_folder_path]);
                         $cache_stats = $cache_stats_stmt->fetch(PDO::FETCH_ASSOC);
 
-                         // Also count jobs directly in the root of this folder (shouldn't happen based on current logic, but for safety)
-                         $cache_stats_root_sql = "SELECT
-                            SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed_jobs,
-                            SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_jobs,
-                            SUM(CASE WHEN status = 'processing' THEN 1 ELSE 0 END) as processing_jobs,
-                            SUM(CASE WHEN status = 'failed' THEN 1 ELSE 0 END) as failed_jobs
-                            FROM jet_cache_jobs
-                            WHERE source_key = ? AND image_relative_path = ?";
-                         $cache_stats_root_stmt = $pdo->prepare($cache_stats_root_sql);
-                         $cache_stats_root_stmt->execute([$source_key, $relative_folder_path]); // Check for jobs exactly matching the folder name (unlikely)
-                         $cache_stats_root = $cache_stats_root_stmt->fetch(PDO::FETCH_ASSOC);
+                        // AUTO-CLEANUP: Check for orphaned completed records in this folder
+                        if ($cache_stats['completed_jobs'] > 0) {
+                            $orphaned_cleanup_sql = "SELECT id, final_cache_path FROM jet_cache_jobs 
+                                                   WHERE source_key = ? AND (image_relative_path LIKE ? OR image_relative_path = ?) 
+                                                   AND status = 'completed' AND final_cache_path IS NOT NULL";
+                            $orphaned_stmt = $pdo->prepare($orphaned_cleanup_sql);
+                            $orphaned_stmt->execute([$source_key, $like_pattern, $relative_folder_path]);
+                            $completed_records = $orphaned_stmt->fetchAll(PDO::FETCH_ASSOC);
+                            
+                            $orphaned_ids = [];
+                            foreach ($completed_records as $record) {
+                                if (!file_exists($record['final_cache_path']) || filesize($record['final_cache_path']) === 0) {
+                                    $orphaned_ids[] = $record['id'];
+                                }
+                            }
+                            
+                            // Auto-delete orphaned records for this folder
+                            if (!empty($orphaned_ids)) {
+                                $placeholders = str_repeat('?,', count($orphaned_ids) - 1) . '?';
+                                $delete_sql = "DELETE FROM jet_cache_jobs WHERE id IN ({$placeholders})";
+                                $delete_stmt = $pdo->prepare($delete_sql);
+                                $delete_stmt->execute($orphaned_ids);
+                                $auto_cleaned_count += $delete_stmt->rowCount();
+                                
+                                error_log("[jet_list_raw_folders] Auto-cleaned {$delete_stmt->rowCount()} orphaned records for {$source_key}/{$relative_folder_path}");
+                                
+                                // Re-fetch cache stats after cleanup
+                                $cache_stats_stmt->execute([$source_key, $like_pattern, $relative_folder_path]);
+                                $cache_stats = $cache_stats_stmt->fetch(PDO::FETCH_ASSOC);
+                            }
+                        }
 
-                         // Combine stats
-                         $combined_stats = [
-                             'total_cache_jobs' => $cache_stats['total_cache_jobs'] + ($cache_stats_root ? $cache_stats_root['completed_jobs'] + $cache_stats_root['pending_jobs'] + $cache_stats_root['processing_jobs'] + $cache_stats_root['failed_jobs'] : 0),
-                             'completed_jobs' => $cache_stats['completed_jobs'] + ($cache_stats_root ? $cache_stats_root['completed_jobs'] : 0),
-                             'pending_jobs' => $cache_stats['pending_jobs'] + ($cache_stats_root ? $cache_stats_root['pending_jobs'] : 0),
-                             'processing_jobs' => $cache_stats['processing_jobs'] + ($cache_stats_root ? $cache_stats_root['processing_jobs'] : 0),
-                             'failed_jobs' => $cache_stats['failed_jobs'] + ($cache_stats_root ? $cache_stats_root['failed_jobs'] : 0)
-                         ];
+                        // Ensure we have valid numbers (handle NULL values)
+                        $cache_stats = [
+                            'total_cache_jobs' => (int)($cache_stats['total_cache_jobs'] ?? 0),
+                            'completed' => (int)($cache_stats['completed_jobs'] ?? 0),
+                            'pending' => (int)($cache_stats['pending_jobs'] ?? 0),
+                            'processing' => (int)($cache_stats['processing_jobs'] ?? 0),
+                            'failed' => (int)($cache_stats['failed_jobs'] ?? 0)
+                        ];
 
-
-                        $folders_with_stats[] = [
+                        // SMART VALIDATION: Detect potential inconsistencies
+                        $validation_issues = [];
+                        
+                        // Check if completed jobs exceed total files (impossible scenario)
+                        if ($cache_stats['completed'] > $total_raw_files_in_folder) {
+                            $validation_issues[] = "completed_exceeds_files";
+                        }
+                        
+                        // Check if total cache jobs significantly exceed expected (1 job per file)
+                        $expected_max_jobs = $total_raw_files_in_folder; // SIMPLIFIED: 1 job per file
+                        if ($cache_stats['total_cache_jobs'] > $expected_max_jobs * 1.5) {
+                            $validation_issues[] = "too_many_jobs";
+                        }
+                        
+                        // Add validation info to folder data
+                        $folder_data = [
                             'source_key' => $source_key,
                             'source_name' => $source_name,
                             'folder_name' => $folder_name, // The name of the directory
@@ -1297,14 +1343,16 @@ switch ($jet_action) {
                             'full_path' => $full_folder_path, // Full system path
                             'total_raw_files' => $total_raw_files_in_folder,
                              // Note: We calculate total jobs based on LIKE % to include sub-subfolders
-                            'cache_stats' => [
-                                'total_jobs' => (int)$combined_stats['total_cache_jobs'],
-                                'completed' => (int)$combined_stats['completed_jobs'],
-                                'pending' => (int)$combined_stats['pending_jobs'],
-                                'processing' => (int)$combined_stats['processing_jobs'],
-                                'failed' => (int)$combined_stats['failed_jobs']
-                            ]
+                            'cache_stats' => $cache_stats
                         ];
+                        
+                        // Add validation warnings if any issues detected
+                        if (!empty($validation_issues)) {
+                            $folder_data['validation_issues'] = $validation_issues;
+                            $folder_data['needs_sync'] = true;
+                        }
+
+                        $folders_with_stats[] = $folder_data;
                     }
                 } catch (Exception $e) {
                      error_log("[jet_list_raw_folders] Error scanning base path '{$base_path}' for key '{$source_key}': " . $e->getMessage());
@@ -1321,11 +1369,19 @@ switch ($jet_action) {
                 return strnatcasecmp($a['folder_name'], $b['folder_name']);
             });
 
-
-            json_response([
+            $response = [
                 'success' => true,
                 'folders' => $folders_with_stats
-            ]);
+            ];
+            
+            // Add auto-cleanup info if any records were cleaned
+            if ($auto_cleaned_count > 0) {
+                $response['auto_cleaned'] = $auto_cleaned_count;
+                $response['auto_cleanup_message'] = "Tự động dọn dẹp {$auto_cleaned_count} records bị mồ côi.";
+                error_log("[jet_list_raw_folders] Auto-cleanup completed: {$auto_cleaned_count} records removed");
+            }
+
+            json_response($response);
 
         } catch (Exception $e) {
             error_log("[jet_list_raw_folders_with_cache_stats] Error: " . $e->getMessage());
