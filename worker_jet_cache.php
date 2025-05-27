@@ -9,9 +9,9 @@ ini_set('display_errors', 0);
 ini_set('log_errors', 1);
 ini_set('error_log', __DIR__ . '/logs/worker_jet_php_error.log');
 
-// Increase limits for RAW processing - optimized for 16GB RAM
+// Increase limits for RAW processing - optimized for 5 concurrent processes
 set_time_limit(0);
-ini_set('memory_limit', '4096M'); // 4GB for main process
+ini_set('memory_limit', '2048M'); // 2GB for main process (reduced for 5 processes)
 
 // Include necessary files
 try {
@@ -31,11 +31,11 @@ try {
 const JPEG_QUALITY = 90;  // Slightly lower for speed
 const JPEG_STRIP_METADATA = true;
 
-// Optimized dcraw processing options for speed
-const DCRAW_QUALITY = 2;         // Quality level 0-3 (3=highest, but 2 is faster)
-const DCRAW_USE_EMBEDDED_PROFILE = true;  // Use camera's color profile for accuracy
-const DCRAW_AUTO_WHITE_BALANCE = true;    // Enable automatic white balance
-const DCRAW_FAST_INTERPOLATION = true;    // Use faster but good quality interpolation
+// Balanced speed/quality dcraw processing options (5 processes)
+const DCRAW_QUALITY = 1;         // Quality level 1 = AHD interpolation (good balance)
+const DCRAW_USE_EMBEDDED_PROFILE = true;  // Keep color profile for quality
+const DCRAW_AUTO_WHITE_BALANCE = true;    // Auto white balance for proper colors
+const DCRAW_FAST_INTERPOLATION = true;    // Use good quality interpolation
 
 // File validation constants
 const MIN_RAW_FILE_SIZE = 1024 * 1024;  // 1MB minimum for valid RAW files
@@ -416,8 +416,8 @@ if (!$dcraw_available || !$magick_available) {
     exit(1);
 }
 
-// Worker variables - optimized for Xeon E3-1231v3
-$sleep_interval = 1; // Faster polling for responsive system
+// Worker variables - optimized for 5 concurrent processes
+$sleep_interval = 1; // Polling interval for 5 processes (1 second)
 $running = true;
 $run_once = isset($_ENV['WORKER_RUN_ONCE']) && $_ENV['WORKER_RUN_ONCE'] === '1';
 
@@ -440,24 +440,24 @@ if (function_exists('pcntl_signal')) {
 }
 
 // Main worker loop with parallel processing
-echo "Entering parallel Jet cache worker loop (16 concurrent dcraw processes - Xeon E3-1231v3 optimized)...\n";
+echo "Entering parallel Jet cache worker loop (5 concurrent dcraw processes - optimized for speed)...\n";
 while ($running) {
     $jobs = [];
-    try {
-        ensure_db_connection(); // Ensure DB is connected at the start of each loop iteration
-        // Get next 16 pending jobs for parallel processing (optimized for Xeon E3-1231v3)
-        $sql_get_jobs = "SELECT * FROM jet_cache_jobs 
-                        WHERE status = 'pending' 
-                        ORDER BY created_at ASC 
-                        LIMIT 16";
-        $stmt_get = $pdo->prepare($sql_get_jobs);
-        $jobs = execute_pdo_with_retry($stmt_get, [], false, true); // is_select_fetchall = true
+            try {
+            ensure_db_connection(); // Ensure DB is connected at the start of each loop iteration
+            // Get next 5 pending jobs for parallel processing (reduced for stability)
+            $sql_get_jobs = "SELECT * FROM jet_cache_jobs 
+                            WHERE status = 'pending' 
+                            ORDER BY created_at ASC 
+                            LIMIT 5";
+            $stmt_get = $pdo->prepare($sql_get_jobs);
+            $jobs = execute_pdo_with_retry($stmt_get, [], false, true); // is_select_fetchall = true
 
                 if (!empty($jobs)) {
             $timestamp = date('Y-m-d H:i:s');
             $worker_id = gethostname() . "_" . getmypid();
             $job_count = count($jobs);
-            echo "[{$timestamp}] Starting parallel processing of {$job_count} jobs...\n";
+            echo "[{$timestamp}] Starting parallel processing of {$job_count} jobs (5 concurrent dcraw processes)...\n";
             
             // Update all jobs to processing status first
             $job_ids = [];
@@ -515,15 +515,15 @@ while ($running) {
                     continue;
                 }
                 
-                // Create background dcraw command optimized for Xeon E3-1231v3
-                $cpu_affinity = 0x1 << ($job_index % 8); // Distribute across 8 logical cores (4C/8T)
+                // Create balanced dcraw command with good speed/quality (5 processes)
+                $cpu_affinity = 0x1 << ($job_index % 5); // Distribute across 5 cores for 5 processes
                 $cpu_affinity_hex = dechex($cpu_affinity);
-                $dcraw_cmd = "start /REALTIME /AFFINITY 0x{$cpu_affinity_hex} /B cmd /c \"" . 
-                    "\"{$dcraw_executable_path}\" -q 2 -a -o 1 -w -T -c \"{$full_raw_file_path_realpath}\" | " .
+                $dcraw_cmd = "start /HIGH /AFFINITY 0x{$cpu_affinity_hex} /B cmd /c \"" . 
+                    "\"{$dcraw_executable_path}\" -q 1 -a -o 1 -w -T -c \"{$full_raw_file_path_realpath}\" | " .
                     "\"{$magick_executable_path}\" - -resize x{$cache_size} -quality " . JPEG_QUALITY . " " .
                     "-sampling-factor 4:2:0 -colorspace sRGB -define jpeg:optimize-coding=false " .
-                    "-define jpeg:dct-method=fast -interlace none -filter Lanczos -limit memory 768MB " .
-                    "-limit map 768MB -limit thread 2 -strip \"{$cached_preview_full_path}\"\"";
+                    "-define jpeg:dct-method=fast -interlace none -filter Lanczos -limit memory 800MB " .
+                    "-limit map 800MB -limit thread 1 -strip \"{$cached_preview_full_path}\"\"";
                 
                 $parallel_processes[] = [
                     'job_id' => $job_id,
@@ -532,7 +532,7 @@ while ($running) {
                     'start_time' => microtime(true)
                 ];
                 
-                echo "[{$timestamp}] [Job {$job_id}] Queued for parallel processing (Thread: " . ($job_index % 8) . ")\n";
+                echo "[{$timestamp}] [Job {$job_id}] Queued for parallel processing (Core: " . ($job_index % 5) . ")\n";
             }
             
             // Execute all processes in parallel using Windows background execution
@@ -565,8 +565,8 @@ while ($running) {
                 }
             }
             
-            // Wait for all processes to complete and update status (optimized for Xeon E3-1231v3)
-            $max_wait_time = 180; // 3 minutes max wait (faster CPU)
+            // Wait for all processes to complete and update status (5 processes max)
+            $max_wait_time = 120; // 2 minutes max wait (reduced for 5 processes)
             $start_wait = time();
             
             while (count($process_handles) > 0 && (time() - $start_wait) < $max_wait_time) {
@@ -619,7 +619,7 @@ while ($running) {
                 }
                 
                 if (count($process_handles) > 0) {
-                    usleep(250000); // Wait 0.25 seconds before checking again (fast CPU, more responsive)
+                    usleep(100000); // Wait 0.1 seconds before checking again (more responsive for 5 processes)
                 }
             }
             
@@ -639,7 +639,7 @@ while ($running) {
                 }
                 
                 try {
-                    $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = 'Processing timeout (>3 minutes)' WHERE id = ?";
+                    $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = 'Processing timeout (>2 minutes)' WHERE id = ?";
                     $stmt_fail = $pdo->prepare($sql_fail);
                     $stmt_fail->execute([time(), $proc_info['job_id']]);
                 } catch (Exception $db_e) {
