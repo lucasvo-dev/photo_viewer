@@ -5,14 +5,12 @@ alwaysApply: true
 ---
 rules:
   - id: communication_language
-    description: Giao tiếp với tôi bằng Tiếng Việt.
-    prompt: Communicate with me in vietnamese.
+    description: Giao tiếp với tôi bằng Tiếng Anh.
+    prompt: Communicate with me in english.
   - id: commit_language
     description: Luôn viết commit message bằng Tiếng Anh.
     prompt: Always write commit messages in English. Follow conventional commit format if possible.
-  - Always try to do as much as possible yourself.
-  - Never stop abruptly without dealing with the problem.
-  - Clean temporary files created for testing after completion
+  - Let's me test all by manual
   - rule: Identify core technologies.
     description: |
       The backend is primarily PHP (>=7.4).
@@ -100,10 +98,7 @@ rules:
       - Fix technical debt early
       - Leave code cleaner than you found it
 
-      ## Testing
-      - Write tests before fixing bugs
-      - Keep tests readable and maintainable
-      - Test edge cases and error conditions
+  
 
       ## Version Control
       - Write clear commit messages

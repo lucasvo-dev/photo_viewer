@@ -81,7 +81,9 @@ if (isset($config['image_sources']) && is_array($config['image_sources'])) {
 }
 
 // Define the constant with VALIDATED sources only
-define('IMAGE_SOURCES', $valid_image_sources);
+if (!defined('IMAGE_SOURCES')) {
+    define('IMAGE_SOURCES', $valid_image_sources);
+}
 
 // --- RAW Image Source Configuration (Get from config) ---
 // Validate RAW_IMAGE_SOURCES paths from config
@@ -120,7 +122,9 @@ if (isset($config['raw_image_sources']) && is_array($config['raw_image_sources']
 }
 
 // Define the constant with VALIDATED RAW sources only
-define('RAW_IMAGE_SOURCES', $valid_raw_image_sources);
+if (!defined('RAW_IMAGE_SOURCES')) {
+    define('RAW_IMAGE_SOURCES', $valid_raw_image_sources);
+}
 
 // --- RAW Image Extensions (Get from config) ---
 // Default RAW extensions WITHOUT leading dots
@@ -134,15 +138,21 @@ $processed_raw_extensions = array_map(function($ext) {
     return strtolower(ltrim(trim($ext), '.'));
 }, $loaded_raw_extensions);
 
-define('RAW_IMAGE_EXTENSIONS', $processed_raw_extensions);
+if (!defined('RAW_IMAGE_EXTENSIONS')) {
+    define('RAW_IMAGE_EXTENSIONS', $processed_raw_extensions);
+}
 
 // --- Cache and Thumbnail Configuration (Get from config) ---
 $allowed_extensions = $config['allowed_extensions'] ?? ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'webp'];
 $thumbnail_sizes = $config['thumbnail_sizes'] ?? [150, 750];
 
 // Define constants for use in API etc.
-define('ALLOWED_EXTENSIONS', $allowed_extensions);
-define('THUMBNAIL_SIZES', $thumbnail_sizes);
+if (!defined('ALLOWED_EXTENSIONS')) {
+    define('ALLOWED_EXTENSIONS', $allowed_extensions);
+}
+if (!defined('THUMBNAIL_SIZES')) {
+    define('THUMBNAIL_SIZES', $thumbnail_sizes);
+}
 
 try {
     // Resolve path relative to config file location
@@ -163,7 +173,9 @@ try {
     if (!$resolved_cache_path || !is_dir($resolved_cache_path) || !is_writable($resolved_cache_path)) {
         throw new Exception("Failed to resolve, create, or write to CACHE_THUMB_ROOT path: '" . htmlspecialchars($cache_thumb_root_path) . "'. Check permissions and path in config.php. Resolved to: " . ($resolved_cache_path ?: 'false'));
     }
-    define('CACHE_THUMB_ROOT', $resolved_cache_path);
+    if (!defined('CACHE_THUMB_ROOT')) {
+        define('CACHE_THUMB_ROOT', $resolved_cache_path);
+    }
 
     // Pre-create size directories if they don't exist
     foreach ($thumbnail_sizes as $size) {
@@ -187,8 +199,12 @@ try {
 // --- Jet App Preview Cache Configuration ---
 $jet_preview_size = $config['jet_preview_size'] ?? 750;
 $jet_filmstrip_thumb_size = $config['jet_filmstrip_thumb_size'] ?? 120;
-define('JET_PREVIEW_SIZE', $jet_preview_size);
-define('JET_FILMSTRIP_THUMB_SIZE', $jet_filmstrip_thumb_size);
+if (!defined('JET_PREVIEW_SIZE')) {
+    define('JET_PREVIEW_SIZE', $jet_preview_size);
+}
+if (!defined('JET_FILMSTRIP_THUMB_SIZE')) {
+    define('JET_FILMSTRIP_THUMB_SIZE', $jet_filmstrip_thumb_size);
+}
 
 try {
     $jet_cache_root_path = $config['jet_preview_cache_root'] ?? (__DIR__ . '/cache/jet_previews');
@@ -204,7 +220,9 @@ try {
     if (!$resolved_jet_cache_path || !is_dir($resolved_jet_cache_path) || !is_writable($resolved_jet_cache_path)) {
         throw new Exception("Failed to resolve, create, or write to JET_PREVIEW_CACHE_ROOT path: '" . htmlspecialchars($jet_cache_root_path) . "'. Resolved to: " . ($resolved_jet_cache_path ?: 'false'));
     }
-    define('JET_PREVIEW_CACHE_ROOT', $resolved_jet_cache_path);
+    if (!defined('JET_PREVIEW_CACHE_ROOT')) {
+        define('JET_PREVIEW_CACHE_ROOT', $resolved_jet_cache_path);
+    }
 
     // Pre-create size directories for Jet previews if they don't exist
     $jet_preview_sizes = [JET_PREVIEW_SIZE, JET_FILMSTRIP_THUMB_SIZE];
@@ -489,6 +507,9 @@ try {
         add_column_if_not_exists($pdo, 'zip_jobs', 'final_zip_name', 'VARCHAR(255) NULL DEFAULT NULL');
         add_column_if_not_exists($pdo, 'zip_jobs', 'total_size', 'BIGINT DEFAULT 0');
         add_column_if_not_exists($pdo, 'zip_jobs', 'cleanup_attempts', 'TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT \'Number of times cleanup has been attempted for this job ZIP file\' AFTER downloaded_at');
+        
+        // Add processing_method column to jet_cache_jobs table
+        add_column_if_not_exists($pdo, 'jet_cache_jobs', 'processing_method', 'VARCHAR(50) DEFAULT NULL AFTER original_height');
 
     }
 } catch (PDOException $e) {

@@ -27,11 +27,93 @@ try {
     exit(1); // Thoát với mã lỗi
 }
 
+// --- Database Reconnect Configuration ---
+const MAX_DB_RECONNECT_ATTEMPTS = 1; // Max attempts for reconnect
+const MYSQL_ERROR_CODE_SERVER_GONE_AWAY = 2006;
+const MYSQL_ERROR_CODE_LOST_CONNECTION = 2013;
+
+/**
+ * Global PDO instance, to be managed by connect/reconnect logic.
+ * @var PDO|null $pdo
+ */
+
+/**
+ * Establishes or re-establishes the database connection.
+ * This function relies on db_connect.php to set the global $pdo variable.
+ * It also assumes db_connect.php uses if(!defined()) for constants.
+ */
+function ensure_db_connection() {
+    global $pdo;
+    if (!$pdo || !$pdo->query('SELECT 1')) { // Check if connection is live
+        error_log("[" . date('Y-m-d H:i:s') . "] [Worker DB] Attempting to connect/reconnect to database...");
+        // db_connect.php should set the global $pdo and define constants safely
+        if (file_exists(__DIR__ . '/db_connect.php')) {
+            require __DIR__ . '/db_connect.php'; 
+        }
+        if (!$pdo) {
+            $timestamp = date('Y-m-d H:i:s');
+            $error_msg = "[{$timestamp}] [Worker DB Error] CRITICAL: Failed to establish database connection after attempt.";
+            error_log($error_msg);
+            echo $error_msg . "\n";
+            // Optionally exit if DB is critical and cannot be re-established
+            // exit(1); 
+            throw new Exception("Database connection failed and could not be re-established.");
+        } else {
+            error_log("[" . date('Y-m-d H:i:s') . "] [Worker DB] Database connection (re)established successfully.");
+        }
+    }
+}
+
+/**
+ * Executes a PDOStatement with retry logic for 'MySQL server has gone away' errors.
+ *
+ * @param PDOStatement $stmt The PDOStatement to execute.
+ * @param array $params An array of parameters to pass to execute().
+ * @param bool $is_select_fetch For select queries, determines return type (fetch single).
+ * @param bool $is_select_fetchall For select queries, determines return type (fetchAll).
+ * @return mixed The result of fetch/fetchAll for SELECTs, or rowCount for others.
+ * @throws PDOException if execution fails after retries.
+ */
+function execute_pdo_with_retry(PDOStatement $stmt, array $params = [], bool $is_select_fetch = false, bool $is_select_fetchall = false) {
+    global $pdo; // Ensure $pdo is accessible
+    $attempts = 0;
+    while (true) {
+        try {
+            ensure_db_connection(); // Ensure connection is active before executing
+            $stmt->execute($params);
+            if ($is_select_fetch) {
+                return $stmt->fetch(PDO::FETCH_ASSOC);
+            }
+            if ($is_select_fetchall) {
+                return $stmt->fetchAll(PDO::FETCH_ASSOC);
+            }
+            return $stmt->rowCount(); // For INSERT, UPDATE, DELETE
+        } catch (PDOException $e) {
+            $attempts++;
+            $error_code = $e->errorInfo[1] ?? null;
+            $is_gone_away = ($error_code === MYSQL_ERROR_CODE_SERVER_GONE_AWAY || $error_code === MYSQL_ERROR_CODE_LOST_CONNECTION);
+
+            if ($is_gone_away && $attempts <= MAX_DB_RECONNECT_ATTEMPTS) {
+                $timestamp = date('Y-m-d H:i:s');
+                error_log("[{$timestamp}] [Worker DB Warning] MySQL server has gone away (Code: {$error_code}). Attempting reconnect ({$attempts}/" . MAX_DB_RECONNECT_ATTEMPTS . "). Error: " . $e->getMessage());
+                $pdo = null; // Force re-connection by ensure_db_connection()
+                // Optional: short delay before reconnecting
+                // sleep(1); 
+                continue; // Retry the loop (which will call ensure_db_connection and then execute)
+            } else {
+                // Non-recoverable error or max attempts reached
+                throw $e; // Re-throw the original or last exception
+            }
+        }
+    }
+}
+
 // +++ NEW: Reset 'processing' jobs to 'pending' on startup +++
 try {
+    ensure_db_connection(); // Ensure connection before this startup task
     $sql_reset = "UPDATE cache_jobs SET status = 'pending' WHERE status = 'processing'";
     $stmt_reset = $pdo->prepare($sql_reset);
-    $affected_rows = $stmt_reset->execute() ? $stmt_reset->rowCount() : 0;
+    $affected_rows = execute_pdo_with_retry($stmt_reset); // NEW: Use retry logic
     if ($affected_rows > 0) {
         $reset_timestamp = date('Y-m-d H:i:s');
         $message = "[{$reset_timestamp}] [Worker Startup] Reset {$affected_rows} stuck 'processing' jobs back to 'pending'.";
@@ -71,14 +153,14 @@ echo "Entering main worker loop...\n";
 while ($running) {
     $job = null;
     try {
+        ensure_db_connection(); // Ensure DB is connected at the start of each loop iteration
         // --- Lấy Công việc từ Hàng đợi --- 
         $sql_get_job = "SELECT * FROM cache_jobs 
                         WHERE status = 'pending' 
                         ORDER BY created_at ASC 
                         LIMIT 1";
         $stmt_get = $pdo->prepare($sql_get_job);
-        $stmt_get->execute();
-        $job = $stmt_get->fetch(PDO::FETCH_ASSOC);
+        $job = execute_pdo_with_retry($stmt_get, [], true, false); // NEW: Use retry, is_select_fetch = true
 
         if ($job) {
             $job_id = $job['id'];
@@ -94,17 +176,9 @@ while ($running) {
             // --- Cập nhật trạng thái thành 'processing' ---
             $sql_update_status = "UPDATE cache_jobs SET status = 'processing', processed_at = ?, worker_id = ? WHERE id = ?";
             $worker_instance_id = gethostname() . "_" . getmypid(); // Unique ID for this worker instance
-            if ($stmt_update = $pdo->prepare($sql_update_status)) {
-                if ($stmt_update->execute([time(), $worker_instance_id, $job_id])) {
-                    error_log("[{$timestamp}] [Job {$job_id}] Status updated to processing by worker {$worker_instance_id}.");
-                } else {
-                    error_log("[{$timestamp}] [Job {$job_id}] FAILED to execute status update to processing.");
-                    throw new Exception("Failed to update job status to processing for job {$job_id}.");
-                }
-            } else {
-                error_log("[{$timestamp}] [Job {$job_id}] FAILED to prepare status update query.");
-                throw new Exception("Failed to prepare job status update query for job {$job_id}.");
-            }
+            $stmt_update = $pdo->prepare($sql_update_status);
+            execute_pdo_with_retry($stmt_update, [time(), $worker_instance_id, $job_id]); // NEW: Use retry
+            error_log("[{$timestamp}] [Job {$job_id}] Status updated to processing by worker {$worker_instance_id}.");
 
             $created_count = 0;
             $skipped_count = 0;
@@ -143,7 +217,8 @@ while ($running) {
     
 
                 // Ensure total_files and processed_files are set correctly for single item
-                 $pdo->prepare("UPDATE cache_jobs SET total_files = 1, processed_files = 0 WHERE id = ?")->execute([$job_id]);
+                 $stmt_single_total = $pdo->prepare("UPDATE cache_jobs SET total_files = 1, processed_files = 0 WHERE id = ?");
+                 execute_pdo_with_retry($stmt_single_total, [$job_id]); // NEW
 
                 $size_to_generate = $job_specific_size; // Use size from job
 
@@ -188,20 +263,14 @@ while ($running) {
                             if ($original_dims) {
                                 $sql_update_dims = "UPDATE cache_jobs SET original_width = ?, original_height = ? WHERE id = ?";
                                 $stmt_update_dims = $pdo->prepare($sql_update_dims);
-                                if ($stmt_update_dims->execute([$original_dims[0], $original_dims[1], $job_id])) {
-                                    error_log("[{$timestamp}] [Job {$job_id}] Stored original dimensions ({$original_dims[0]}x{$original_dims[1]}) for {$item_source_prefixed_path}.");
-                                } else {
-                                    error_log("[{$timestamp}] [Job {$job_id}] FAILED to store original dimensions for {$item_source_prefixed_path}. Execute failed.");
-                                }
+                                execute_pdo_with_retry($stmt_update_dims, [$original_dims[0], $original_dims[1], $job_id]); // NEW
+                                error_log("[{$timestamp}] [Job {$job_id}] Stored original dimensions ({$original_dims[0]}x{$original_dims[1]}) for {$item_source_prefixed_path}.");
                             } else {
                                 error_log("[{$timestamp}] [Job {$job_id}] WARNING: Could not get original dimensions for {$item_absolute_path}. Storing 0x0.");
                                 $sql_update_dims_to_zero = "UPDATE cache_jobs SET original_width = 0, original_height = 0 WHERE id = ?";
                                 $stmt_update_dims_to_zero = $pdo->prepare($sql_update_dims_to_zero);
-                                if ($stmt_update_dims_to_zero->execute([$job_id])) {
-                                    error_log("[{$timestamp}] [Job {$job_id}] Stored 0x0 for original dimensions for {$item_source_prefixed_path} after getimagesize failed.");
-                                } else {
-                                    error_log("[{$timestamp}] [Job {$job_id}] FAILED to store 0x0 for original dimensions for {$item_source_prefixed_path} after getimagesize failed. Execute failed.");
-                                }
+                                execute_pdo_with_retry($stmt_update_dims_to_zero, [$job_id]); // NEW
+                                error_log("[{$timestamp}] [Job {$job_id}] Stored 0x0 for original dimensions for {$item_source_prefixed_path} after getimagesize failed.");
                             }
                         } else {
                             // DIAGNOSTIC LOG
@@ -242,7 +311,8 @@ while ($running) {
                             $total_files_in_folder++;
                         }
                     }
-                     $pdo->prepare("UPDATE cache_jobs SET total_files = ? WHERE id = ?")->execute([$total_files_in_folder, $job_id]);
+                     $stmt_folder_total = $pdo->prepare("UPDATE cache_jobs SET total_files = ? WHERE id = ?");
+                     execute_pdo_with_retry($stmt_folder_total, [$total_files_in_folder, $job_id]); // NEW
                     error_log("[{$timestamp}] [Job {$job_id}] Counted {$total_files_in_folder} processable items in folder '{$item_source_prefixed_path}'.");
                 } catch (Throwable $count_e) {
                     throw new Exception("Failed to pre-count files for folder job {$job_id}: " . $count_e->getMessage());
@@ -270,10 +340,9 @@ while ($running) {
                     static $update_interval_seconds_static = 7;   // Make static
                     $now = time();
                     if ($force_update || ($now - $last_progress_update_time_static >= $update_interval_seconds_static)) {
-                        // ... (rest of the update_progress closure logic - needs to be here or refactored)
-                        // For brevity, assuming this logic is correctly re-inserted or refactored
                         try {
-                             $pdo->prepare("UPDATE cache_jobs SET processed_files = ?, current_file_processing = ? WHERE id = ?")->execute([$files_processed_counter, $current_file_path_relative, $job_id]);
+                             $stmt_progress = $pdo->prepare("UPDATE cache_jobs SET processed_files = ?, current_file_processing = ? WHERE id = ?");
+                             execute_pdo_with_retry($stmt_progress, [$files_processed_counter, $current_file_path_relative, $job_id]); // NEW
                              $last_progress_update_time_static = $now;
                         } catch (PDOException $e) {
                             error_log("[{$timestamp}] [Job {$job_id}] Error updating folder job progress: " . $e->getMessage());
@@ -356,12 +425,13 @@ while ($running) {
             $sql_finish = "UPDATE cache_jobs SET status = ?, completed_at = ?, result_message = ?, image_count = ?, processed_files = ?, current_file_processing = NULL WHERE id = ?";
             $stmt_finish = $pdo->prepare($sql_finish);
             // Dùng $files_processed_counter thay vì $files_processed (không còn tồn tại)
-            $stmt_finish->execute([$final_status, time(), $job_result_message, $files_processed_counter, $files_processed_counter, $job_id]); 
+            execute_pdo_with_retry($stmt_finish, [$final_status, time(), $job_result_message, $files_processed_counter, $files_processed_counter, $job_id]); // NEW
             echo "[{$timestamp}] [Job {$job_id}] Marked job as {$final_status}.\n";
 
             // Cập nhật last_cached_fully_at chỉ khi hoàn thành không lỗi VÀ worker không bị dừng
             if ($final_status === 'completed') {
                 try {
+                    ensure_db_connection(); // Ensure connection before this operation
                     // MySQL compatible INSERT ... ON DUPLICATE KEY UPDATE
                     // folder_stats requires folder_path, which is $folder_path_param (source_prefixed_path)
                     $sql_update_stats = "INSERT INTO folder_stats (folder_name, folder_path, views, downloads, last_cached_fully_at) 
@@ -373,13 +443,10 @@ while ($running) {
                     $stmt_update_stats = $pdo->prepare($sql_update_stats);
                     $current_timestamp = time(); 
                     // Execute with folder_name, folder_path, and timestamp
-                    if ($stmt_update_stats->execute([$item_source_prefixed_path, $item_source_prefixed_path, $current_timestamp])) {
-                       error_log("[{$timestamp}] [Job {$job_id}] Successfully updated last_cached_fully_at for '{$item_source_prefixed_path}'.");
-                    } else {
-                        error_log("[{$timestamp}] [Job {$job_id}] Failed to update last_cached_fully_at (execute returned false) for '{$item_source_prefixed_path}'."); 
-                    }
-                } catch (PDOException $e) {
-                    error_log("[{$timestamp}] [Job {$job_id}] PDOException failed to update last_cached_fully_at for '{$item_source_prefixed_path}': " . $e->getMessage());
+                    execute_pdo_with_retry($stmt_update_stats, [$item_source_prefixed_path, $item_source_prefixed_path, $current_timestamp]); // NEW
+                    error_log("[{$timestamp}] [Job {$job_id}] Successfully updated last_cached_fully_at for '{$item_source_prefixed_path}'.");
+                } catch (Throwable $e_stats) {
+                    error_log("[{$timestamp}] [Job {$job_id}] Error updating folder_stats for '{$item_source_prefixed_path}': " . $e_stats->getMessage());
                 }
             }
             
