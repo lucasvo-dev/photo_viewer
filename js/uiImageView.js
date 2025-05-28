@@ -6,23 +6,113 @@ import { refreshCurrentPhotoSwipeSlideIfNeeded } from './photoswipeHandler.js';
 let imageViewEl, currentDirectoryNameEl, imageGridEl, loadMoreContainerEl, loadMoreBtnEl;
 let masonryInstance = null; // Variable to store the Masonry instance
 
+// Intersection Observer for lazy loading
+let imageObserver = null;
+
 // Callbacks
 let appOpenPhotoSwipe = (index) => console.error('openPhotoSwipe not initialized in uiImageView');
 
+// === SKELETON LOADING UTILITIES ===
+function createSkeletonElement(aspectRatio = '1 / 1') {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'image-skeleton';
+    skeleton.style.aspectRatio = aspectRatio;
+    
+    // Add some debug info
+    console.log(`[uiImageView] Created skeleton with aspect ratio: ${aspectRatio}`);
+    
+    return skeleton;
+}
+
+function getOptimalThumbnailSize() {
+    const connection = navigator.connection;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const screenWidth = window.innerWidth;
+    
+    // API only accepts sizes: [150, 750]
+    // Always use 150 for thumbnails, 750 is for large images
+    const baseSize = 150; // Use standard API size
+    
+    console.log(`[uiImageView] Optimal thumbnail size: ${baseSize} (API standard)`);
+    return baseSize;
+}
+
+function getAspectRatioFromMetadata(imgData) {
+    // Check for width and height in the metadata
+    if (imgData.width && imgData.height && imgData.width > 0 && imgData.height > 0) {
+        const ratio = `${imgData.width} / ${imgData.height}`;
+        console.log(`[uiImageView] Calculated aspect ratio for ${imgData.name}: ${ratio} (${imgData.width}x${imgData.height})`);
+        return ratio;
+    }
+    
+    // Fallback to square aspect ratio
+    console.log(`[uiImageView] Using default square aspect ratio for ${imgData.name} (no metadata: width=${imgData.width}, height=${imgData.height})`);
+    return '1 / 1'; // Default square
+}
+
+// === INTERSECTION OBSERVER SETUP ===
+function initializeImageObserver() {
+    if (imageObserver) return; // Already initialized
+    
+    imageObserver = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                const placeholder = entry.target;
+                const imgData = JSON.parse(placeholder.dataset.imgData);
+                
+                // Replace skeleton with actual image
+                loadImageWithPriority(placeholder, imgData);
+                imageObserver.unobserve(placeholder);
+            }
+        });
+    }, {
+        rootMargin: '50px 0px', // Start loading 50px before entering viewport
+        threshold: 0.1
+    });
+}
+
+function loadImageWithPriority(skeletonElement, imgData) {
+    // Create the actual image item
+    const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, true);
+    
+    // Replace skeleton with image element
+    skeletonElement.parentNode.replaceChild(imageElement, skeletonElement);
+    
+    // Trigger layout update for Masonry
+    if (masonryInstance) {
+        // Use imagesLoaded for the new element
+        if (typeof imagesLoaded !== 'undefined') {
+            imagesLoaded(imageElement).on('always', () => {
+                masonryInstance.reloadItems();
+                masonryInstance.layout();
+            });
+        } else {
+            // Fallback without imagesLoaded
+            setTimeout(() => {
+                masonryInstance.reloadItems();
+                masonryInstance.layout();
+            }, 100);
+        }
+    }
+}
+
 // NEW INTERNAL HELPER FUNCTION
-function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
+function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isLazyLoaded = false) {
     const div = document.createElement('div');
     div.className = 'image-item'; // Masonry will use this class as its itemSelector
     div.dataset.sourcePath = imgData.path;
     div.dataset.itemType = imgData.type || 'image'; // Store item type
+    
+    // Set aspect ratio if available
+    const aspectRatio = getAspectRatioFromMetadata(imgData);
+    div.style.aspectRatio = aspectRatio;
 
     const anchor = document.createElement('a');
     anchor.className = 'photoswipe-trigger';
     // For images, fullImagePath is the image itself. For videos, this will be the video file.
     const mediaPath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
     anchor.href = mediaPath; 
-    // data-pswp-src will be handled by photoswipeHandler based on type
-    // anchor.dataset.pswpSrc = mediaPath; 
 
     if (imageIndex !== -1) {
         anchor.dataset.pswpIndex = imageIndex;
@@ -43,17 +133,46 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
     };
 
     const img = document.createElement('img');
-    // Thumbnail path is the same for images and videos (get_thumbnail handles it)
-    const thumbSrc750 = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
-    img.src = thumbSrc750; // Initially request 750px
+    
+    // Use optimal thumbnail size
+    const optimalSize = getOptimalThumbnailSize();
+    
+    // Simplified URL construction - test with direct format
+    const thumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=${optimalSize}`;
+    
+    console.log(`[uiImageView] Creating image for ${imgData.name}:`);
+    console.log(`[uiImageView] - Optimal size: ${optimalSize}`);
+    console.log(`[uiImageView] - Image path: ${imgData.path}`);
+    console.log(`[uiImageView] - Encoded path: ${encodeURIComponent(imgData.path)}`);
+    console.log(`[uiImageView] - Final thumbnail src: ${thumbSrc}`);
+    console.log(`[uiImageView] - Image data:`, imgData);
+    
+    // TEMPORARY: Test with a manual URL to debug 400 error
+    console.log(`[uiImageView] - Manual test URL: api.php?action=get_thumbnail&path=main%2F12G%20THPT%20PHU%20XUAN%2FMAY%201%2FGuukyyeu%20(1).jpg&size=150`);
+    
     img.alt = imgData.name;
-    img.loading = 'lazy';
+    
+    // Progressive loading setup
+    if (isLazyLoaded) {
+        // For lazy loaded images, load immediately
+        img.src = thumbSrc;
+        img.loading = 'eager'; // Load immediately since it's already in viewport
+        console.log(`[uiImageView] Set lazy loaded image src: ${thumbSrc}`);
+    } else {
+        // For images loaded on initial page load, use lazy loading
+        img.loading = 'lazy';
+        img.src = thumbSrc;
+        console.log(`[uiImageView] Set initial image src: ${thumbSrc}`);
+    }
+
+    // Add loading classes for progressive enhancement
+    img.classList.add('img-placeholder');
+    console.log(`[uiImageView] Added img-placeholder class to: ${imgData.name}`);
 
     // Function to update image source and potentially re-layout Masonry
     const updateImageAndLayout = (newSrc) => {
         img.src = newSrc;
         // If Masonry is active, it might need to re-layout if image dimensions change significantly
-        // This is a simple way; more robust would be to update Masonry item data and then layout
         if (masonryInstance && typeof imagesLoaded !== 'undefined') {
             imagesLoaded(img, function() {
                 masonryInstance.layout();
@@ -64,7 +183,7 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
     // Check for placeholder and start polling if necessary
     const checkAndPollThumbnail = async () => {
         try {
-            const response = await fetch(thumbSrc750, { method: 'HEAD' });
+            const response = await fetch(thumbSrc, { method: 'HEAD' });
             const thumbnailStatusHeader = response.headers.get('x-thumbnail-status');
 
             if (thumbnailStatusHeader && thumbnailStatusHeader.includes('placeholder')) {
@@ -77,51 +196,62 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
                 const actualSize = parseInt(parts['actual-size'], 10);
                 const targetSize = parseInt(parts['target-size'], 10);
                 
-                // If a placeholder was served (e.g. 150px instead of 750px)
+                // If a placeholder was served (e.g. 150px instead of requested size)
                 if (actualSize < targetSize) {
                     const actualSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=${actualSize}`;
-                    // Update to the placeholder src immediately if not already set (though HEAD request means src is already placeholder)
-                    if (img.src !== actualSrc) { // This check might be redundant if HEAD was on thumbSrc750
-                         // img.src = actualSrc; // src is already the placeholder effectively
-                    }
                     pollForFinalThumbnail(imgData.path, targetSize, img, updateImageAndLayout);
                 }
             }
-            // If no header or not a placeholder, the initially set src (thumbSrc750) is correct.
         } catch (error) {
             console.error(`[uiImageView] Error checking thumbnail status for ${imgData.path}:`, error);
-            // Fallback: img.src is already set to thumbSrc750, browser will show broken if that fails
         }
     };
 
     img.onload = () => {
-        // If the loaded image source is a placeholder (e.g. 150px), polling should have been started by checkAndPollThumbnail
-        // If it's the final 750px image, nothing more to do here for polling.
-        // This onload might fire for the placeholder first, then for the final image.
+        console.log(`[uiImageView] Image loaded successfully: ${imgData.name}`);
+        // Remove placeholder class and add loaded class
+        img.classList.remove('img-placeholder');
+        img.classList.add('img-loaded');
+        
+        // Make the container visible with animation
+        setTimeout(() => {
+            div.classList.add('image-item--visible');
+            console.log(`[uiImageView] Made image visible: ${imgData.name}, classes:`, div.className);
+        }, 50);
     };
 
-    img.onerror = () => {
+    img.onerror = async () => {
+        console.error(`[uiImageView] Image failed to load: ${imgData.name}, src: ${img.src}`);
+        
+        // Try to get more detailed error information
+        try {
+            const response = await fetch(img.src, { method: 'HEAD' });
+            console.error(`[uiImageView] Thumbnail HTTP status: ${response.status} ${response.statusText}`);
+            console.error(`[uiImageView] Response headers:`, [...response.headers.entries()]);
+        } catch (fetchError) {
+            console.error(`[uiImageView] Fetch error for debugging:`, fetchError);
+        }
+        
         img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
         img.alt = 'Lỗi tải ảnh xem trước';
+        img.classList.remove('img-placeholder');
+        img.classList.add('img-loaded');
+        div.classList.add('image-item--visible');
+        console.log(`[uiImageView] Set fallback image for: ${imgData.name}`);
     };
 
-    // Call the check after a brief delay to allow the initial src to be processed by the browser
-    // and avoid too many HEAD requests firing simultaneously on page load.
-    // setTimeout(checkAndPollThumbnail, 100); 
-    // More robust: use img.onload and check if the loaded src is what we expect, or check headers on first load.
-    // For now, we'll check headers when the image element is created.
-    // Let's use an event listener for 'load' on the image to check headers,
-    // but only once, so we remove it after the first successful load.
+    // Set up thumbnail polling after initial load
     const handleInitialLoad = async () => {
-        img.removeEventListener('load', handleInitialLoad); // Check only on the first load
-        img.removeEventListener('error', handleInitialError); // also remove error if load succeeds
+        img.removeEventListener('load', handleInitialLoad);
+        img.removeEventListener('error', handleInitialError);
         await checkAndPollThumbnail();
     };
+    
     const handleInitialError = () => {
         img.removeEventListener('load', handleInitialLoad);
         img.removeEventListener('error', handleInitialError);
-        // Standard onerror will take over
     };
+    
     img.addEventListener('load', handleInitialLoad);
     img.addEventListener('error', handleInitialError);
 
@@ -137,6 +267,19 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback) {
     }
 
     div.appendChild(anchor);
+    
+    console.log(`[uiImageView] Created image item element for ${imgData.name}:`);
+    console.log(`[uiImageView] - Element classes: ${div.className}`);
+    console.log(`[uiImageView] - Element style.aspectRatio: ${div.style.aspectRatio}`);
+    console.log(`[uiImageView] - Image src: ${img.src}`);
+    console.log(`[uiImageView] - Image classes: ${img.className}`);
+    
+    // TEMPORARY: Commented out force visibility for debugging
+    // setTimeout(() => {
+    //     div.classList.add('image-item--visible');
+    //     console.log(`[uiImageView] Force added visible class to: ${imgData.name}`);
+    // }, 100);
+    
     return div;
 }
 // END NEW INTERNAL HELPER FUNCTION
@@ -156,6 +299,11 @@ export function initializeImageView(callbacks) {
     if (callbacks) {
         if (callbacks.openPhotoSwipe) appOpenPhotoSwipe = callbacks.openPhotoSwipe;
     }
+
+    // Initialize Intersection Observer for lazy loading
+    console.log('[uiImageView] About to initialize Intersection Observer...');
+    initializeImageObserver();
+    console.log('[uiImageView] Intersection Observer initialized:', !!imageObserver);
 
     // Style the container for a spinner - this is a placeholder, actual styling via CSS
     if (loadMoreContainerEl) {
@@ -240,68 +388,111 @@ export function renderImageItems(imagesDataToRender, append = false) {
     const fragment = document.createDocumentFragment();
     const newElements = []; // Array to store references to the new item elements
 
-    imagesDataToRender.forEach((imgData) => {
-        const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
-        const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe);
-        fragment.appendChild(imageElement);
-        newElements.push(imageElement); // Store reference
+    // Determine how many images to show immediately vs lazy load
+    const viewportHeight = window.innerHeight;
+    const estimatedItemHeight = 200; // Rough estimate for initial calculation
+    const itemsPerRow = getItemsPerRowForCurrentScreen();
+    
+    // Reduce initial load count to ensure we see skeletons
+    const initialLoadCount = Math.min(6, Math.ceil(itemsPerRow * 1.5)); // Load max 6 images or 1.5 rows, whichever is smaller
+    
+    console.log(`[uiImageView] Viewport: ${viewportHeight}px, ItemsPerRow: ${itemsPerRow}, InitialLoadCount: ${initialLoadCount}, TotalImages: ${imagesDataToRender.length}`);
+    
+    imagesDataToRender.forEach((imgData, index) => {
+        const shouldLoadImmediately = index < initialLoadCount;
+        
+        console.log(`[uiImageView] Image ${index}: ${imgData.name}, LoadImmediately: ${shouldLoadImmediately}`);
+        
+        if (shouldLoadImmediately) {
+            // Create actual image element for immediate loading
+            const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+            const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, false);
+            fragment.appendChild(imageElement);
+            newElements.push(imageElement);
+        } else {
+            // Create skeleton placeholder for lazy loading
+            const aspectRatio = getAspectRatioFromMetadata(imgData);
+            const skeletonElement = createSkeletonElement(aspectRatio);
+            skeletonElement.dataset.imgData = JSON.stringify(imgData);
+            
+            console.log(`[uiImageView] Creating skeleton for ${imgData.name} with aspect ratio: ${aspectRatio}`);
+            
+            fragment.appendChild(skeletonElement);
+            newElements.push(skeletonElement);
+            
+            // Observe skeleton for intersection
+            if (imageObserver) {
+                imageObserver.observe(skeletonElement);
+                console.log(`[uiImageView] Observing skeleton for ${imgData.name}`);
+            } else {
+                console.warn('[uiImageView] imageObserver not initialized!');
+            }
+        }
     });
 
     imageGroupContainer.appendChild(fragment); // Append all new items at once
 
     if (typeof Masonry !== 'undefined' && typeof imagesLoaded !== 'undefined') {
-        // Important: Use imagesLoaded on the specific new elements we just added,
-        // to avoid re-processing already loaded images from previous batches.
-        const imgLoad = imagesLoaded(newElements);
+        // Filter only actual image elements for imagesLoaded (not skeletons)
+        const imageElements = newElements.filter(el => el.classList.contains('image-item'));
+        const skeletonElements = newElements.filter(el => el.classList.contains('image-skeleton'));
+        
+        console.log(`[uiImageView] Created ${imageElements.length} image elements and ${skeletonElements.length} skeleton elements`);
+        
+        if (imageElements.length > 0) {
+            const imgLoad = imagesLoaded(imageElements);
 
-        imgLoad.on('always', function() {
+            imgLoad.on('always', function() {
+                if (!masonryInstance) {
+                    // Initialize Masonry with all elements (including skeletons)
+                    masonryInstance = new Masonry(imageGroupContainer, {
+                        itemSelector: '.image-item, .image-skeleton',
+                        columnWidth: '.image-item, .image-skeleton',
+                        gutter: 16,
+                        percentPosition: true,
+                        transitionDuration: 0 // Let CSS handle transitions
+                    });
+                    console.log('[uiImageView] Masonry initialized with mixed elements');
+                } else {
+                    // Append only the new elements and layout
+                    masonryInstance.appended(newElements);
+                    masonryInstance.layout();
+                    console.log('[uiImageView] Masonry appended new elements');
+                }
+
+                // After Masonry has laid out the items, make image items visible
+                setTimeout(() => {
+                    imageElements.forEach(el => {
+                        if (!el.classList.contains('image-item--visible')) {
+                            el.classList.add('image-item--visible');
+                        }
+                    });
+                }, 50);
+            });
+
+            // Layout on progress to handle varying image sizes
+            imgLoad.on('progress', function() {
+                if (masonryInstance) {
+                    masonryInstance.layout();
+                }
+            });
+        } else {
+            // Only skeletons were added, just update Masonry layout
             if (!masonryInstance) {
                 masonryInstance = new Masonry(imageGroupContainer, {
-                    itemSelector: '.image-item',
-                    columnWidth: '.image-item',
+                    itemSelector: '.image-item, .image-skeleton',
+                    columnWidth: '.image-item, .image-skeleton',
                     gutter: 16,
                     percentPosition: true,
-                    // Consider transitionDuration: 0 if CSS transitions handle all animation
-                    // transitionDuration: 0 
+                    transitionDuration: 0
                 });
+                console.log('[uiImageView] Masonry initialized with only skeletons');
             } else {
-                masonryInstance.appended(newElements); // Inform Masonry about new items
-                // No, reloadItems is better if we aren't hiding/showing with 'appended'
-                // masonryInstance.reloadItems(); 
-            }
-            // It might be better to use masonry.appended(newElements) then masonry.layout()
-            // For now, reloadItems() and layout() covers adding items. 
-            // If performance is an issue with many items, `appended` can be more efficient.
-            masonryInstance.reloadItems(); 
-            masonryInstance.layout();
-
-            // After Masonry has laid out the items, make them visible
-            // Use a slight delay to ensure layout calculation is complete before triggering CSS transition
-            setTimeout(() => {
-                newElements.forEach(el => {
-                    el.classList.add('image-item--visible');
-                });
-            }, 50); // 50ms delay, adjust if needed, or remove if direct class add works smoothly
-
-        });
-
-        // Optional: if you want items to appear one by one as they load (more complex)
-        // imgLoad.on('progress', function(instance, image) {
-        //     if (masonryInstance) {
-        //         masonryInstance.layout();
-        //     }
-        //     // If you want individual fade-in on progress:
-        //     // const item = image.img.closest('.image-item');
-        //     // if (item) item.classList.add('image-item--visible');
-        // });
-
-        // Keeping the original progress layout for now, as it helps Masonry adjust.
-        // The final reveal is handled by the 'always' callback.
-        imgLoad.on('progress', function() {
-            if (masonryInstance) {
+                masonryInstance.appended(newElements);
                 masonryInstance.layout();
+                console.log('[uiImageView] Masonry appended skeleton elements');
             }
-        });
+        }
 
     } else {
         if (typeof Masonry === 'undefined') console.error("Masonry library not found!");
@@ -386,4 +577,15 @@ async function pollForFinalThumbnail(imagePath, targetSize, imgElement, updateCa
     }, THUMBNAIL_POLL_INTERVAL);
 
     imgElement.dataset.pollIntervalId = intervalId.toString();
+}
+
+// Helper function to determine items per row based on screen size
+function getItemsPerRowForCurrentScreen() {
+    const screenWidth = window.innerWidth;
+    
+    if (screenWidth <= 480) return 2;          // Mobile: 2 columns
+    else if (screenWidth <= 768) return 3;    // Tablet: 3 columns  
+    else if (screenWidth <= 1024) return 4;   // Small desktop: 4 columns
+    else if (screenWidth <= 1440) return 5;   // Large desktop: 5 columns
+    else return 6;                             // Very large: 6 columns
 } 

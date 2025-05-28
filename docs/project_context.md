@@ -51,9 +51,7 @@
         *   **Quan trọng:** Đã thêm bước kiểm tra an toàn để ngăn chặn việc xóa toàn bộ cache nếu script không tìm thấy bất kỳ file ảnh gốc hợp lệ nào (do lỗi cấu hình, thư mục nguồn bị ngắt kết nối, v.v.).
     *   `cron_log_cleaner.php`: Script chạy theo lịch để dọn dẹp các file log cũ.
     *   `cron_zip_cleanup.php`: Script chạy theo lịch để tự động xóa các file ZIP đã được tải xuống sau một khoảng thời gian nhất định (ví dụ: 5 phút) nhằm giải phóng dung lượng ổ cứng.
-    *   `run_cache_cleanup.bat`: Ví dụ file batch để chạy các script cron trên Windows. (Lưu ý: Nên cập nhật file này để bao gồm cả `cron_zip_cleanup.php` nếu sử dụng)
     *   `setup_workers_schedule.bat`: File batch để thiết lập các tác vụ theo lịch trên Windows cho tất cả các worker và cron job cần thiết, bao gồm cả `cron_zip_cleanup.php`.
-    *   `start_jet_worker.bat`: Script khởi động worker RAW cache trong môi trường Windows.
 
 ## 4. Luồng hoạt động & Khái niệm chính
 
@@ -86,6 +84,63 @@
 Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự kiến phát triển bao gồm:
 
 *   **(Tiếp theo) Mở rộng hỗ trợ định dạng RAW:** Liên tục cập nhật danh sách `raw_file_extensions` và kiểm tra khả năng tương thích của `dcraw` với các định dạng RAW mới nếu cần.
+
+*   **🚀 Image Grid Loading Performance Optimization (2025-05-21 - IN PROGRESS):**
+    *   **Mục tiêu:** Cải thiện đáng kể hiệu suất loading và UX của image grid để tránh cảm giác lag hoặc lỗi.
+    *   **Vấn đề hiện tại:**
+        *   Loading experience thiếu mượt mà - không có skeleton loading
+        *   Race conditions giữa các requests
+        *   Không tối ưu cho viewport - load tất cả ảnh cùng lúc
+        *   Thumbnail size cố định - không responsive theo device
+        *   Preload strategy chưa thông minh
+        *   Layout shift khi ảnh xuất hiện
+    *   **Implementation Plan:**
+        *   **Phase 1: Quick Wins (1-2 days)** - ✅ COMPLETED (2025-05-21) - 🔧 DEBUGGING (2025-05-21)
+            *   ✅ Skeleton loading với aspect ratio containers
+                *   Tạo `.image-skeleton` class với shimmer animation
+                *   Aspect ratio containers để prevent layout shift
+                *   Progressive loading states (blur → sharp)
+                *   🔧 **Debug Issues Fixed:**
+                    *   Fixed initial load count calculation (reduced from full viewport to max 6 images)
+                    *   Added comprehensive logging for skeleton creation and Intersection Observer
+                    *   Fixed aspect ratio calculation with proper fallbacks
+                    *   ✅ **MAJOR FIX:** Fixed thumbnail size validation - `getOptimalThumbnailSize()` was returning invalid sizes (120, 175, 200, etc.) not in API's allowed sizes `[150, 750]`, causing all thumbnail requests to fail with HTTP 400. Now uses standardized size 150 for all thumbnails.
+        *   **Phase 2: Advanced Optimizations (3-5 days)** - 📋 PLANNED
+            *   ⏳ Progressive image loading (blur → sharp)
+            *   ⏳ Smart preloading strategy based on scroll direction
+            *   ⏳ Request deduplication và better race condition handling
+            *   ⏳ Virtual scrolling cho large datasets
+        *   **Phase 3: Modern Web Features (2-3 days)** - 📋 PLANNED
+            *   📋 WebP/AVIF support với fallback
+            *   📋 Service Worker caching
+            *   📋 Connection-aware loading
+            *   📋 Performance monitoring và metrics
+    *   **Technical Implementation Details (Phase 1):**
+        *   **Files Modified:**
+            *   `css/components/image_item.css` - Added skeleton loading styles và responsive breakpoints
+            *   `js/uiImageView.js` - Implemented Intersection Observer và skeleton replacement logic
+            *   `js/utils.js` - Added performance utilities classes (RequestManager, ScrollDirectionTracker, etc.)
+            *   `js/apiService.js` - Integrated request deduplication và performance monitoring
+            *   `js/app.js` - Integrated scroll tracking và performance timing
+        *   **Key Features Added:**
+            *   Skeleton placeholders với shimmer animation
+            *   Aspect ratio containers để prevent layout shift
+            *   Intersection Observer cho smart lazy loading
+            *   Responsive thumbnail sizing (2-6 columns)
+            *   Request deduplication để prevent race conditions
+            *   Performance monitoring cho API requests và image loading
+            *   Progressive loading states với CSS transitions
+        *   **Performance Benefits Achieved:**
+            *   Reduced initial page load time bằng cách lazy load images outside viewport
+            *   Eliminated layout shift với aspect ratio containers
+            *   Smoother user experience với skeleton loading
+            *   Better handling của concurrent requests
+            *   Responsive design cho tất cả device sizes
+    *   **Next Steps (Phase 2):**
+        *   Implement progressive image loading (tiny blur image → full resolution)
+        *   Add scroll direction-based smart preloading
+        *   Implement virtual scrolling cho very large image sets
+        *   Add WebP/AVIF format support với graceful fallback
 
 *   **Hoàn thiện Tính năng Lọc ảnh (Culling) cho Designer & Admin (Jet Culling Workspace - Phát triển Tiếp theo):**
     *   **Mục tiêu:** Cung cấp một công cụ mạnh mẽ và hiệu quả cho designer để duyệt và chọn lựa (cull) ảnh từ các bộ ảnh lớn, đặc biệt là ảnh RAW. Admin có thể xem lại và quản lý các lựa chọn này.

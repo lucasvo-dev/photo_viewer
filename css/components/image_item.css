@@ -12,28 +12,48 @@
 /* @media(min-width: 900px) { .image-group{ column-count: 4; } } */
 /* @media(min-width: 1200px){ .image-group{ column-count: 5; } } */
 
+/* === SKELETON LOADING STYLES === */
+.image-skeleton {
+    width: 19%; /* Same as image-item */
+    aspect-ratio: 1 / 1; /* Default square aspect ratio */
+    margin-bottom: 16px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s infinite;
+    position: relative;
+}
+
+.image-skeleton--loading {
+    /* Specific styling when actively loading */
+}
+
+@keyframes skeleton-shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* === IMAGE ITEM IMPROVEMENTS === */
 .image-item { /* Wrapper cho mỗi ảnh */
-    /* break-inside: avoid; */ /* REMOVE this - specific to column-count */
     margin-bottom: 16px; 
-    /* Adjust width for Masonry columns. Gutter handled by Masonry.js option. */
     width: 19%; /* Default for all screens: Aiming for ~5 columns. (100% / 5 = 20%. 19% + gutter) */
-    /* margin-right: 16px; */ /* REMOVE - Masonry's gutter option will handle horizontal spacing */
-    /* Ensure items don't have a fixed height if images vary, Masonry handles height. */
     position: relative; 
     overflow: hidden; /* Keep for border-radius */
     border-radius: 6px;
-    /* Ensure item height is determined by content */
     height: auto; 
     line-height: 0; /* Prevent extra space issues */
 
-    /* Add a min-height to stabilize the item before image loads */
-    min-height: auto; /* Adjust based on typical image height */
-    background-color: #222; /* Optional: placeholder color for the item box */
-
+    /* Aspect ratio container to prevent layout shift */
+    aspect-ratio: 1 / 1; /* Default square, will be overridden with actual ratio */
+    
+    /* Background color while loading */
+    background-color: #161b22;
+    
     /* Initial state for fade-in animation */
     opacity: 0;
     transform: translateY(20px);
-    transition: opacity 0.5s ease-out, transform 0.5s ease-out;
+    transition: opacity 0.4s ease-out, transform 0.4s ease-out, box-shadow 0.2s ease-out;
 }
 
 /* State for when item is loaded and laid out */
@@ -43,18 +63,62 @@
 }
 
 .image-item:hover {
-    transform: scale(1.02); /* This will apply on top of translateY(0) once visible */
+    transform: translateY(0) scale(1.02); /* This will apply on top of translateY(0) once visible */
     box-shadow: 0 6px 15px rgba(0,0,0,0.3);
 }
 
 .image-item img {
     width: 100%;      /* Fit item width */
-    height: auto;     /* Height determined by aspect ratio */
-    /* object-fit: cover; /* Revert this, height:auto should handle aspect ratio */ 
-    object-fit: contain; /* Or use contain to ensure it fits if constrained */
+    height: 100%;     /* Fill the aspect ratio container */
+    object-fit: cover; /* Cover to maintain aspect within container */
     object-position: center; 
     border-radius: 6px; 
     display: block;
     background: #161b22; 
     border: 1px solid #30363d;
+    
+    /* Image loading states */
+    transition: filter 0.3s ease-out, opacity 0.3s ease-out;
+}
+
+/* Progressive loading states */
+.image-item img.img-placeholder {
+    filter: blur(5px);
+    transform: scale(1.05);
+}
+
+.image-item img.img-loaded {
+    filter: none;
+    transform: scale(1);
+}
+
+/* === RESPONSIVE BREAKPOINTS === */
+@media (max-width: 480px) {
+    .image-item, .image-skeleton {
+        width: 48%; /* 2 columns on mobile */
+    }
+}
+
+@media (min-width: 481px) and (max-width: 768px) {
+    .image-item, .image-skeleton {
+        width: 31%; /* 3 columns on tablet */
+    }
+}
+
+@media (min-width: 769px) and (max-width: 1024px) {
+    .image-item, .image-skeleton {
+        width: 23%; /* 4 columns on small desktop */
+    }
+}
+
+@media (min-width: 1025px) and (max-width: 1440px) {
+    .image-item, .image-skeleton {
+        width: 19%; /* 5 columns on large desktop */
+    }
+}
+
+@media (min-width: 1441px) {
+    .image-item, .image-skeleton {
+        width: 15%; /* 6 columns on very large screens */
+    }
 }

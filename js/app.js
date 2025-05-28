@@ -35,7 +35,7 @@ import {
 } from './state.js';
 
 // Import utils
-import { debounce } from './utils.js';
+import { debounce, globalRequestManager, globalScrollTracker, globalPerformanceMonitor } from './utils.js';
 
 // Import API service
 import { fetchDataApi } from './apiService.js';
@@ -935,6 +935,9 @@ function initializeAppEventListeners() {
 
     // Infinite scroll listener
     window.addEventListener('scroll', debounce(() => {
+        // Update scroll tracking for smart preloading
+        globalScrollTracker.update();
+        
         const imageView = document.getElementById('image-view');
         if (imageView && imageView.style.display === 'block' &&
             !isLoadingMore && 
@@ -945,7 +948,16 @@ function initializeAppEventListeners() {
             const threshold = window.innerHeight * 1.5; 
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
                 console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
-                loadMoreImages();
+                
+                // Start performance timing
+                const scrollStartTime = globalPerformanceMonitor.startTiming('infinite-scroll-load');
+                
+                loadMoreImages().then(() => {
+                    globalPerformanceMonitor.endTiming('infinite-scroll-load', scrollStartTime, 'scrollLoad');
+                }).catch(error => {
+                    console.error('[app.js] Error in infinite scroll loadMoreImages:', error);
+                    globalPerformanceMonitor.endTiming('infinite-scroll-load-error', scrollStartTime, 'scrollLoadErrors');
+                });
             }
         }
     }, 750)); // Increased debounce time to 750ms for better duplicate prevention
