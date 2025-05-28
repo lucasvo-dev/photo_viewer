@@ -5,88 +5,82 @@ import { globalScrollTracker, globalPerformanceMonitor } from './utils.js';
 
 // DOM Elements
 let imageViewEl, currentDirectoryNameEl, imageGridEl, loadMoreContainerEl, loadMoreBtnEl;
-let masonryInstance = null;
+let masonryInstance = null; // Variable to store the Masonry instance
 
 // Intersection Observer for lazy loading
 let imageObserver = null;
 
-// === PERFORMANCE OPTIMIZATIONS ===
-const MAX_CONCURRENT_LOADS = 3; // Reduced from 4 for larger 750px images
-const CLEANUP_THRESHOLD = 80; // Reduced from 100 for larger images
-const DEBOUNCE_LAYOUT = 150; // Increased from 100ms for larger images
-
-// Performance tracking
-let loadingQueue = new Set();
-let cleanupCounter = 0;
-let layoutDebounceTimer = null;
-
 // Callbacks
 let appOpenPhotoSwipe = (index) => console.error('openPhotoSwipe not initialized in uiImageView');
 
-// === OPTIMIZED SKELETON LOADING ===
+// === SKELETON LOADING UTILITIES ===
 function createSkeletonElement(aspectRatio = '1 / 1') {
     const skeleton = document.createElement('div');
     skeleton.className = 'image-skeleton';
     skeleton.style.aspectRatio = aspectRatio;
     
-    // Add minimal shimmer effect
-    skeleton.innerHTML = '<div class="skeleton-shimmer"></div>';
+    // Add some debug info
+    console.log(`[uiImageView] Created skeleton with aspect ratio: ${aspectRatio}`);
     
     return skeleton;
 }
 
 function getOptimalThumbnailSize() {
-    // Use 750px for better quality in gallery grid
-    return 750;
+    const connection = navigator.connection;
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    const screenWidth = window.innerWidth;
+    
+    // API only accepts sizes: [150, 750]
+    // Always use 150 for thumbnails, 750 is for large images
+    const baseSize = 150; // Use standard API size
+    
+    console.log(`[uiImageView] Optimal thumbnail size: ${baseSize} (API standard)`);
+    return baseSize;
 }
 
 function getAspectRatioFromMetadata(imgData) {
+    // Check for width and height in the metadata
     if (imgData.width && imgData.height && imgData.width > 0 && imgData.height > 0) {
-        return `${imgData.width} / ${imgData.height}`;
-    }
-    return '1 / 1';
-}
-
-// === DEBOUNCED LAYOUT UPDATE ===
-function debouncedLayoutUpdate() {
-    if (layoutDebounceTimer) {
-        clearTimeout(layoutDebounceTimer);
+        const ratio = `${imgData.width} / ${imgData.height}`;
+        console.log(`[uiImageView] Calculated aspect ratio for ${imgData.name}: ${ratio} (${imgData.width}x${imgData.height})`);
+        return ratio;
     }
     
-    layoutDebounceTimer = setTimeout(() => {
-        if (masonryInstance) {
-            requestAnimationFrame(() => {
-                const layoutStartTime = globalPerformanceMonitor.startTiming('masonry-layout-update');
-                masonryInstance.layout();
-                globalPerformanceMonitor.endTiming('masonry-layout-update', layoutStartTime, 'masonryLayout');
-            });
-        }
-    }, DEBOUNCE_LAYOUT);
+    // Fallback to square aspect ratio
+    console.log(`[uiImageView] Using default square aspect ratio for ${imgData.name} (no metadata: width=${imgData.width}, height=${imgData.height})`);
+    return '1 / 1'; // Default square
 }
+
+// === ENHANCED MASONRY OPTIMIZATION ===
+// Based on best practices research for Masonry galleries with progressive loading
 
 // === OPTIMIZED INTERSECTION OBSERVER ===
 function initializeImageObserver() {
-    if (imageObserver) return;
+    if (imageObserver) return; // Already initialized
     
     imageObserver = new IntersectionObserver((entries) => {
-        // Process only visible entries and limit concurrent loads
-        const visibleEntries = entries
+        // Process entries in DOM order to maintain sequence
+        const sortedEntries = entries
             .filter(entry => entry.isIntersecting)
-            .slice(0, MAX_CONCURRENT_LOADS);
+            .sort((a, b) => {
+                // Sort by DOM index to maintain order
+                const aIndex = parseInt(a.target.dataset.imageIndex) || 0;
+                const bIndex = parseInt(b.target.dataset.imageIndex) || 0;
+                return aIndex - bIndex;
+            });
 
-        visibleEntries.forEach((entry) => {
+        // Load images immediately without staggering to maintain order
+        sortedEntries.forEach((entry) => {
             const placeholder = entry.target;
             const imgData = JSON.parse(placeholder.dataset.imgData);
             
-            // Check if already loading
-            if (!loadingQueue.has(imgData.path)) {
-                loadImageWithPriority(placeholder, imgData);
-                imageObserver.unobserve(placeholder);
-            }
+            // Load immediately to maintain order
+            loadImageWithPriority(placeholder, imgData);
+            imageObserver.unobserve(placeholder);
         });
     }, {
-        rootMargin: '50px 0px', // Reduced from 100px for better control
-        threshold: 0.1
+        rootMargin: '100px 0px', // Reduced from 200px for better control and performance
+        threshold: 0.1 // Slightly higher threshold for better performance
     });
 }
 
@@ -117,23 +111,30 @@ function triggerSmartPreload(currentElement) {
                     loadImageWithPriority(nextSkeleton, imgData, true);
                     imageObserver.unobserve(nextSkeleton);
                 }
-            }, i * 100);
+            }, i * 100); // Stagger preloads for smooth loading
         }
     }
 }
 
-// === OPTIMIZED IMAGE LOADING ===
+// === OPTIMIZED IMAGE LOADING WITH MASONRY INTEGRATION ===
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
-    // Add to loading queue
-    loadingQueue.add(imgData.path);
-    
+    // Try to get index from skeleton first, then find in currentImageList
     let imageIndex = parseInt(skeletonElement.dataset.imageIndex);
     
     if (isNaN(imageIndex) || imageIndex === -1) {
-        imageIndex = currentImageList.findIndex(item => 
-            item.path === imgData.path || item.source_path === imgData.path
-        );
+        // Try multiple path matching strategies
+        imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+        
+        if (imageIndex === -1) {
+            imageIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+        }
+        
+        if (imageIndex === -1 && imgData.source_path) {
+            imageIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+        }
     }
+    
+    console.log(`[uiImageView] loadImageWithPriority for ${imgData.name}, index: ${imageIndex}`);
     
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, !isPreload);
     
@@ -160,99 +161,49 @@ function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
     if (img) {
         const showElement = () => {
             // Smooth reveal with optimized timing
-            imageElement.style.transition = 'opacity 0.2s ease-out, transform 0.2s ease-out';
+            imageElement.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
             imageElement.style.opacity = '1';
             imageElement.style.transform = 'translateY(0)';
             imageElement.classList.add('image-item--visible');
             
-            // Remove from loading queue
-            loadingQueue.delete(imgData.path);
-            
-            // Debounced layout update
-            debouncedLayoutUpdate();
-            
-            // Cleanup check
-            performCleanupCheck();
+            // Optimized Masonry layout update using requestAnimationFrame
+            if (masonryInstance) {
+                requestAnimationFrame(() => {
+                    const layoutStartTime = globalPerformanceMonitor.startTiming('masonry-layout-update');
+                    masonryInstance.reloadItems();
+                    masonryInstance.layout();
+                    globalPerformanceMonitor.endTiming('masonry-layout-update', layoutStartTime, 'masonryLayout');
+                });
+            }
         };
         
         if (img.complete && img.naturalHeight !== 0) {
-            setTimeout(showElement, 10); // Reduced delay
+            setTimeout(showElement, 25); // Reduced delay for faster reveal
         } else {
             img.addEventListener('load', showElement, { once: true });
-            img.addEventListener('error', () => {
-                loadingQueue.delete(imgData.path);
-                showElement();
-            }, { once: true });
+            img.addEventListener('error', showElement, { once: true });
         }
     } else {
-        loadingQueue.delete(imgData.path);
         imageElement.style.opacity = '1';
         imageElement.style.transform = 'translateY(0)';
         imageElement.classList.add('image-item--visible');
         
-        debouncedLayoutUpdate();
-    }
-}
-
-// === PERFORMANCE CLEANUP ===
-function performCleanupCheck() {
-    cleanupCounter++;
-    
-    if (cleanupCounter >= CLEANUP_THRESHOLD) {
-        cleanupCounter = 0;
-        
-        // Cleanup completed images that are far from viewport
-        const viewportTop = window.scrollY;
-        const viewportBottom = viewportTop + window.innerHeight;
-        const cleanupDistance = window.innerHeight * 2.5; // Reduced from 3 for larger images
-        
-        const images = document.querySelectorAll('.image-item');
-        let cleanedCount = 0;
-        
-        images.forEach(img => {
-            const rect = img.getBoundingClientRect();
-            const imgTop = rect.top + viewportTop;
-            
-            // If image is far above viewport, convert back to skeleton
-            if (imgTop < viewportTop - cleanupDistance) {
-                convertToSkeleton(img);
-                cleanedCount++;
-            }
-        });
-        
-        if (cleanedCount > 0) {
-            console.log(`[Performance] Cleaned up ${cleanedCount} images`);
-            debouncedLayoutUpdate();
+        if (masonryInstance) {
+            requestAnimationFrame(() => {
+                masonryInstance.reloadItems();
+                masonryInstance.layout();
+            });
         }
     }
 }
 
-function convertToSkeleton(imageElement) {
-    const imgData = {
-        path: imageElement.dataset.sourcePath,
-        name: imageElement.querySelector('img')?.alt || 'image'
-    };
-    
-    const aspectRatio = imageElement.style.aspectRatio || '1 / 1';
-    const skeleton = createSkeletonElement(aspectRatio);
-    skeleton.dataset.imgData = JSON.stringify(imgData);
-    skeleton.dataset.imageIndex = imageElement.dataset.imageIndex;
-    
-    imageElement.parentNode.replaceChild(skeleton, imageElement);
-    
-    // Re-observe for lazy loading
-    if (imageObserver) {
-        imageObserver.observe(skeleton);
-    }
-}
-
-// === OPTIMIZED IMAGE ELEMENT CREATION ===
+// NEW INTERNAL HELPER FUNCTION
 function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isLazyLoaded = false) {
     const div = document.createElement('div');
-    div.className = 'image-item';
+    div.className = 'image-item'; // Masonry will use this class as its itemSelector
     div.dataset.sourcePath = imgData.path;
-    div.dataset.itemType = imgData.type || 'image';
-    div.dataset.imageIndex = imageIndex;
+    div.dataset.itemType = imgData.type || 'image'; // Store item type
+    div.dataset.imageIndex = imageIndex; // Add index for proper ordering
     
     // Set aspect ratio if available
     const aspectRatio = getAspectRatioFromMetadata(imgData);
@@ -260,9 +211,12 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
 
     const anchor = document.createElement('a');
     anchor.className = 'photoswipe-trigger';
+    // For images, use get_image action for full resolution, not get_thumbnail
     const mediaPath = `api.php?action=get_image&path=${encodeURIComponent(imgData.path)}`;
     anchor.href = mediaPath;
     
+    console.log(`[uiImageView] PhotoSwipe media path: ${mediaPath}`);
+
     if (imageIndex !== -1) {
         anchor.dataset.pswpIndex = imageIndex;
     }
@@ -270,64 +224,91 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
     anchor.onclick = (e) => {
         e.preventDefault();
         
-        let freshIndex = currentImageList.findIndex(item => 
-            item.path === imgData.path || item.source_path === imgData.path
-        );
+        // Try multiple path matching strategies to ensure accuracy
+        let freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
+        
+        // If not found by path, try source_path
+        if (freshIndex === -1) {
+            freshIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+        }
+        
+        // If still not found, try the other way around
+        if (freshIndex === -1 && imgData.source_path) {
+            freshIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+        }
+        
+        console.log(`[uiImageView] Image clicked: ${imgData.name}`);
+        console.log(`[uiImageView] - imgData.path: ${imgData.path}`);
+        console.log(`[uiImageView] - imgData.source_path: ${imgData.source_path}`);
+        console.log(`[uiImageView] - Fresh Index: ${freshIndex}, Original Index: ${imageIndex}`);
         
         if (freshIndex !== -1) {
+            console.log(`[uiImageView] Opening PhotoSwipe at fresh index: ${freshIndex} for ${imgData.name}`);
             openPhotoSwipeCallback(freshIndex);
         } else {
             console.error("Could not find media index for (onclick):", imgData.name);
+            console.error("Available paths in currentImageList:", currentImageList.map((item, idx) => `${idx}: ${item.path || item.source_path}`));
         }
     };
 
-    // Create SINGLE quality image (no progressive loading)
-    const img = createSingleQualityImage(imgData, () => {
-        // Callback when image loads - make container visible
+    console.log(`[uiImageView] Creating image for ${imgData.name}:`);
+    
+    // TEMPORARY: Less verbose logging
+    // console.log(`[uiImageView] - Manual test URL: api.php?action=get_thumbnail&path=main%2F12G%20THPT%20PHU%20XUAN%2FMAY%201%2FGuukyyeu%20(1).jpg&size=150`);
+    
+    // Create progressive thumbnail (150px → 750px) instead of single size
+    const img = createProgressiveThumbnailImage(imgData, () => {
+        // Callback when fast thumbnail loads - make container visible
         setTimeout(() => {
             div.classList.add('image-item--visible');
+            // console.log(`[uiImageView] Made image visible after fast load: ${imgData.name}`);
         }, 50);
     });
     
+    // console.log(`[uiImageView] Added progressive thumbnail loading for: ${imgData.name}`);
+
+    // Function to update image source and potentially re-layout Masonry
+    const updateImageAndLayout = (newSrc) => {
+        img.src = newSrc;
+        // If Masonry is active, it might need to re-layout if image dimensions change significantly
+        if (masonryInstance && typeof imagesLoaded !== 'undefined') {
+            imagesLoaded(img, function() {
+                masonryInstance.layout();
+            });
+        }
+    };
+
+    // Note: Thumbnail polling and old onload/onerror handlers are now managed by createProgressiveThumbnailImage
+    // The progressive thumbnail system handles all loading states and upgrades automatically
+
     anchor.appendChild(img);
 
     // Add play icon overlay for video items
     if (imgData.type === 'video') {
         const playIcon = document.createElement('div');
         playIcon.className = 'play-icon-overlay';
-        playIcon.innerHTML = '&#9658;';
+        playIcon.innerHTML = '&#9658;'; // Unicode play symbol (▶)
         anchor.appendChild(playIcon);
-        div.classList.add('video-item');
+        div.classList.add('video-item'); // Add class for specific video item styling
     }
 
     div.appendChild(anchor);
     
+    console.log(`[uiImageView] Created image item element for ${imgData.name}:`);
+    console.log(`[uiImageView] - Element classes: ${div.className}`);
+    console.log(`[uiImageView] - Element style.aspectRatio: ${div.style.aspectRatio}`);
+    console.log(`[uiImageView] - Image src: ${img.src}`);
+    console.log(`[uiImageView] - Image classes: ${img.className}`);
+    
+    // TEMPORARY: Commented out force visibility for debugging
+    // setTimeout(() => {
+    //     div.classList.add('image-item--visible');
+    //     console.log(`[uiImageView] Force added visible class to: ${imgData.name}`);
+    // }, 100);
+    
     return div;
 }
-
-// === SINGLE QUALITY IMAGE (NO PROGRESSIVE LOADING) ===
-function createSingleQualityImage(imgData, onLoadCallback) {
-    const img = document.createElement('img');
-    img.alt = imgData.name;
-    
-    // Use 750px for better quality in gallery grid
-    const thumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
-    img.src = thumbSrc;
-    img.loading = 'lazy'; // Native lazy loading
-    
-    // Set up event listeners
-    img.addEventListener('load', () => {
-        if (onLoadCallback) onLoadCallback();
-    }, { once: true });
-    
-    img.addEventListener('error', () => {
-        console.error(`[uiImageView] Thumbnail loading failed: ${imgData.name}`);
-        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-        if (onLoadCallback) onLoadCallback();
-    }, { once: true });
-    
-    return img;
-}
+// END NEW INTERNAL HELPER FUNCTION
 
 export function initializeImageView(callbacks) {
     console.log('[uiImageView] initializeImageView called.');
@@ -390,9 +371,8 @@ export function clearImageGrid() {
             }
             delete img.dataset.pollIntervalId;
         });
-        imageGridEl.innerHTML = '';
+        imageGridEl.innerHTML = ''; // Clear ALL content from #image-grid
     }
-    
     // Destroy Masonry instance if it exists
     if (masonryInstance) {
         try {
@@ -402,18 +382,10 @@ export function clearImageGrid() {
         }
         masonryInstance = null;
     }
-    
-    // Clear performance counters
-    loadingQueue.clear();
-    cleanupCounter = 0;
-    
-    if (layoutDebounceTimer) {
-        clearTimeout(layoutDebounceTimer);
-        layoutDebounceTimer = null;
-    }
 }
 
 export function renderImageItems(imagesDataToRender, append = false) {
+    console.log('[uiImageView] renderImageItems called. Appending:', append, 'Data:', imagesDataToRender);
     if (!imageGridEl) {
         console.error('[uiImageView] imageGridEl NOT found in renderImageItems.');
         return;
@@ -422,13 +394,12 @@ export function renderImageItems(imagesDataToRender, append = false) {
     let imageGroupContainer = imageGridEl.querySelector('.image-group'); 
     if (!imageGroupContainer) {
         console.error('[uiImageView] .image-group container NOT found in renderImageItems. This should have been created by createImageGroupIfNeeded.');
-        return;
+        return; // Cannot proceed without the group container
     }
 
     if (!imagesDataToRender || imagesDataToRender.length === 0) {
-        if (!append && imageGroupContainer) {
-            imageGroupContainer.innerHTML = '<p class="info-text">Không có ảnh trong album này.</p>';
-        }
+        console.log('[uiImageView] No imagesDataToRender provided or empty.');
+        if (!append && imageGroupContainer) imageGroupContainer.innerHTML = '<p class="info-text">Không có ảnh trong album này.</p>';
         if (!append && masonryInstance) {
             try {
                 masonryInstance.destroy();
@@ -449,56 +420,69 @@ export function renderImageItems(imagesDataToRender, append = false) {
             columnWidth: '.image-item, .image-skeleton',
             gutter: 16,
             percentPosition: true,
-            transitionDuration: '0.1s' // Faster transitions for better performance
+            transitionDuration: '0.2s' // Smooth transitions
         });
         
         globalPerformanceMonitor.endTiming('masonry-init', masonryStartTime, 'masonryLayout');
+        console.log('[uiImageView] Masonry initialized with performance tracking');
     }
 
+    const viewportHeight = window.innerHeight;
     const itemsPerRow = getItemsPerRowForCurrentScreen();
     
-    // Load fewer images initially for 750px thumbnails
-    const initialLoadCount = Math.min(itemsPerRow * 1.5, 6); // Reduced for larger images
+    // Load more images initially to ensure proper ordering - load first 2 rows
+    const initialLoadCount = Math.min(itemsPerRow * 2, 12); // First 2 rows, max 12 images
     
-    // Process images with optimized batching
+    console.log(`[uiImageView] Viewport: ${viewportHeight}px, ItemsPerRow: ${itemsPerRow}, InitialLoadCount: ${initialLoadCount}, TotalImages: ${imagesDataToRender.length}`);
+    
+    // Process images - load first batch immediately to maintain order
     imagesDataToRender.forEach((imgData, index) => {
         const shouldLoadImmediately = index < initialLoadCount;
         
         if (shouldLoadImmediately) {
-            // Load first batch immediately in correct order
+            // Load first batch immediately in correct order - no staggering
             createAndAppendImageElement(imgData, imageGroupContainer, false);
         } else {
             // Create skeleton immediately for layout, will be lazy loaded
             const aspectRatio = getAspectRatioFromMetadata(imgData);
             const skeletonElement = createSkeletonElement(aspectRatio);
             skeletonElement.dataset.imgData = JSON.stringify(imgData);
-            skeletonElement.dataset.imageIndex = index;
+            skeletonElement.dataset.imageIndex = index; // Add index for proper ordering
             
             // Append skeleton immediately
             imageGroupContainer.appendChild(skeletonElement);
             if (masonryInstance) {
                 masonryInstance.appended(skeletonElement);
+                masonryInstance.layout();
             }
             
             // Observe skeleton for intersection
             if (imageObserver) {
                 imageObserver.observe(skeletonElement);
+                console.log(`[uiImageView] Observing skeleton for ${imgData.name} at index ${index}`);
+            } else {
+                console.warn('[uiImageView] imageObserver not initialized!');
             }
         }
     });
-    
-    // Single layout update at the end
-    debouncedLayoutUpdate();
 }
 
-// Helper function to create and append individual image elements with optimization
+// Helper function to create and append individual image elements smoothly
 function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
     const imageLoadStartTime = globalPerformanceMonitor.startTiming(`image-load-${imgData.name}`);
     
     // Use consistent path matching logic
-    let imageIndex = currentImageList.findIndex(item => 
-        item.path === imgData.path || item.source_path === imgData.path
-    );
+    let imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    
+    if (imageIndex === -1) {
+        imageIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+    }
+    
+    if (imageIndex === -1 && imgData.source_path) {
+        imageIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+    }
+    
+    console.log(`[uiImageView] createAndAppendImageElement for ${imgData.name}, index: ${imageIndex}`);
     
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, isLazyLoaded);
     
@@ -531,9 +515,12 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
         container.appendChild(imageElement);
     }
     
-    // Update Masonry layout with optimized timing
+    // Update Masonry layout with optimized timing and performance tracking
     if (masonryInstance) {
+        const masonryAppendStartTime = globalPerformanceMonitor.startTiming('masonry-append');
         masonryInstance.appended(imageElement);
+        masonryInstance.layout();
+        globalPerformanceMonitor.endTiming('masonry-append', masonryAppendStartTime, 'masonryLayout');
     }
     
     // Wait for image to load, then show with smooth animation
@@ -544,13 +531,21 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
             globalPerformanceMonitor.endTiming(`image-load-${imgData.name}`, imageLoadStartTime, 'imageLoad');
             
             // Smooth reveal animation with optimized timing
-            imageElement.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+            imageElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
             imageElement.style.opacity = '1';
             imageElement.style.transform = 'scale(1)';
             imageElement.classList.add('image-item--visible');
             
-            // Debounced layout update
-            debouncedLayoutUpdate();
+            // Update layout after animation with requestAnimationFrame and performance tracking
+            setTimeout(() => {
+                if (masonryInstance) {
+                    requestAnimationFrame(() => {
+                        const layoutUpdateStartTime = globalPerformanceMonitor.startTiming('masonry-post-load-layout');
+                        masonryInstance.layout();
+                        globalPerformanceMonitor.endTiming('masonry-post-load-layout', layoutUpdateStartTime, 'masonryLayout');
+                    });
+                }
+            }, 300);
         };
         
         if (img.complete && img.naturalHeight !== 0) {
@@ -572,6 +567,8 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
         imageElement.style.transform = 'scale(1)';
         imageElement.classList.add('image-item--visible');
     }
+    
+    console.log(`[uiImageView] Created and appended image element with performance tracking: ${imgData.name} at index ${imageIndex}`);
 }
 
 export function createImageGroupIfNeeded(){
@@ -662,4 +659,173 @@ function getItemsPerRowForCurrentScreen() {
     else if (screenWidth <= 1024) return 4;   // Small desktop: 4 columns
     else if (screenWidth <= 1440) return 5;   // Large desktop: 5 columns
     else return 6;                             // Very large: 6 columns
+}
+
+// === PROGRESSIVE IMAGE LOADING UTILITIES ===
+function createProgressiveImage(imgData, thumbSrc) {
+    const img = document.createElement('img');
+    img.alt = imgData.name;
+    
+    // Create a tiny placeholder (could be base64 encoded micro-image)
+    const tinyPlaceholder = createTinyImagePlaceholder(imgData);
+    
+    // Start with progressive loading classes
+    img.classList.add('img-progressive');
+    img.src = tinyPlaceholder;
+    
+    // Load the actual thumbnail
+    const actualImg = new Image();
+    actualImg.onload = () => {
+        // Progressive reveal: replace src and remove blur
+        img.src = thumbSrc;
+        setTimeout(() => {
+            img.classList.add('loaded');
+            img.classList.remove('img-progressive');
+            img.classList.add('img-loaded');
+        }, 50);
+    };
+    
+    actualImg.onerror = () => {
+        // Fallback handling
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.classList.remove('img-progressive');
+        img.classList.add('img-loaded');
+    };
+    
+    actualImg.src = thumbSrc;
+    
+    return img;
+}
+
+function createTinyImagePlaceholder(imgData) {
+    // Create a tiny colored placeholder based on aspect ratio
+    const aspectRatio = getAspectRatioFromMetadata(imgData);
+    const [width, height] = aspectRatio.split(' / ').map(num => parseInt(num) || 1);
+    
+    // Create a tiny canvas-based image (10px max dimension)
+    const canvas = document.createElement('canvas');
+    const maxDim = 10;
+    const scale = Math.min(maxDim / width, maxDim / height);
+    
+    canvas.width = Math.max(1, Math.floor(width * scale));
+    canvas.height = Math.max(1, Math.floor(height * scale));
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Fill with a subtle gradient based on filename hash
+    const hash = simpleStringHash(imgData.name);
+    const hue = hash % 360;
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, `hsl(${hue}, 20%, 85%)`);
+    gradient.addColorStop(1, `hsl(${hue + 30}, 20%, 75%)`);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    return canvas.toDataURL('image/png');
+}
+
+function simpleStringHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
+
+// === PROGRESSIVE THUMBNAIL LOADING (150px → 750px) ===
+function createProgressiveThumbnailImage(imgData, onLoadCallback) {
+    const img = document.createElement('img');
+    img.alt = imgData.name;
+    
+    // URLs for progressive loading
+    const fastThumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=150`;
+    const highQualityThumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
+    
+    // State tracking to prevent loops
+    let fastLoaded = false;
+    let highQualityLoaded = false;
+    let isUpgrading = false;
+    
+    console.log(`[uiImageView] Progressive loading started: ${imgData.name}`);
+    
+    // Start with 150px thumbnail
+    img.classList.add('img-progressive-thumb');
+    img.src = fastThumbSrc;
+    img.dataset.currentQuality = 'loading';
+    
+    // Handle fast thumbnail load (150px)
+    const handleFastLoad = () => {
+        if (fastLoaded || isUpgrading) return; // Prevent duplicate handling
+        fastLoaded = true;
+        
+        console.log(`[uiImageView] Fast thumbnail (150px) loaded: ${imgData.name}`);
+        img.classList.remove('img-progressive-thumb');
+        img.classList.add('img-loaded-fast');
+        img.dataset.currentQuality = 'fast';
+        
+        // Trigger callback for visibility
+        if (onLoadCallback) onLoadCallback();
+        
+        // Start high quality loading after a delay (non-blocking)
+        setTimeout(() => {
+            if (!highQualityLoaded && !isUpgrading && img.parentNode) {
+                loadHighQuality();
+            }
+        }, 150); // Reduced from 300ms to 150ms for faster upgrades
+    };
+    
+    // Handle high quality upgrade (750px)
+    const loadHighQuality = () => {
+        if (highQualityLoaded || isUpgrading) return;
+        isUpgrading = true;
+        
+        const highResImg = new Image();
+        
+        highResImg.onload = () => {
+            if (highQualityLoaded || !img.parentNode) return; // Check if still needed
+            highQualityLoaded = true;
+            
+            console.log(`[uiImageView] High quality (750px) loaded: ${imgData.name}`);
+            
+            // Smooth transition
+            img.style.transition = 'opacity 0.2s ease';
+            img.style.opacity = '0.8';
+            
+            setTimeout(() => {
+                if (img.parentNode) { // Final check before upgrade
+                    img.src = highQualityThumbSrc;
+                    img.dataset.currentQuality = 'high';
+                    img.style.opacity = '1';
+                    img.classList.remove('img-loaded-fast');
+                    img.classList.add('img-loaded-hq');
+                }
+            }, 100);
+        };
+        
+        highResImg.onerror = () => {
+            console.log(`[uiImageView] High quality failed, keeping 150px: ${imgData.name}`);
+            img.classList.add('img-loaded-final');
+            img.dataset.currentQuality = 'final';
+        };
+        
+        highResImg.src = highQualityThumbSrc;
+    };
+    
+    // Error handling
+    const handleError = () => {
+        console.error(`[uiImageView] Thumbnail loading failed: ${imgData.name}`);
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.classList.add('img-error');
+        img.dataset.currentQuality = 'error';
+        if (onLoadCallback) onLoadCallback();
+    };
+    
+    // Set up event listeners (once only)
+    img.addEventListener('load', handleFastLoad, { once: true });
+    img.addEventListener('error', handleError, { once: true });
+    
+    return img;
 } 
