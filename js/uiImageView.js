@@ -69,16 +69,14 @@ function initializeImageObserver() {
                 return aIndex - bIndex;
             });
 
-        // Stagger loading to maintain order and prevent overwhelming the browser
-        sortedEntries.forEach((entry, index) => {
+        // Load images immediately without staggering to maintain order
+        sortedEntries.forEach((entry) => {
             const placeholder = entry.target;
             const imgData = JSON.parse(placeholder.dataset.imgData);
             
-            // Stagger loading to maintain order and prevent overwhelming
-            setTimeout(() => {
-                loadImageWithPriority(placeholder, imgData);
-                imageObserver.unobserve(placeholder);
-            }, index * 50); // 50ms stagger between images for smooth sequential loading
+            // Load immediately to maintain order
+            loadImageWithPriority(placeholder, imgData);
+            imageObserver.unobserve(placeholder);
         });
     }, {
         rootMargin: '100px 0px', // Reduced from 200px for better control and performance
@@ -120,7 +118,8 @@ function triggerSmartPreload(currentElement) {
 
 // === OPTIMIZED IMAGE LOADING WITH MASONRY INTEGRATION ===
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
-    const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    const imageIndex = parseInt(skeletonElement.dataset.imageIndex) || 
+                      currentImageList.findIndex(item => item.path === imgData.path);
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, !isPreload);
     
     if (isPreload) {
@@ -134,6 +133,9 @@ function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
     // Start with skeleton dimensions to prevent layout shift
     imageElement.style.opacity = '0';
     imageElement.style.transform = 'translateY(10px)';
+    
+    // Copy the imageIndex from skeleton to maintain order
+    imageElement.dataset.imageIndex = skeletonElement.dataset.imageIndex || imageIndex;
     
     // Replace skeleton with image element
     skeletonElement.parentNode.replaceChild(imageElement, skeletonElement);
@@ -185,6 +187,7 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
     div.className = 'image-item'; // Masonry will use this class as its itemSelector
     div.dataset.sourcePath = imgData.path;
     div.dataset.itemType = imgData.type || 'image'; // Store item type
+    div.dataset.imageIndex = imageIndex; // Add index for proper ordering
     
     // Set aspect ratio if available
     const aspectRatio = getAspectRatioFromMetadata(imgData);
@@ -398,20 +401,18 @@ export function renderImageItems(imagesDataToRender, append = false) {
     const viewportHeight = window.innerHeight;
     const itemsPerRow = getItemsPerRowForCurrentScreen();
     
-    // Reduce initial immediate load - only load first row for instant feedback
-    const initialLoadCount = Math.min(itemsPerRow, 6); // Just first row, max 6
+    // Load more images initially to ensure proper ordering - load first 2 rows
+    const initialLoadCount = Math.min(itemsPerRow * 2, 12); // First 2 rows, max 12 images
     
     console.log(`[uiImageView] Viewport: ${viewportHeight}px, ItemsPerRow: ${itemsPerRow}, InitialLoadCount: ${initialLoadCount}, TotalImages: ${imagesDataToRender.length}`);
     
-    // Process images with staggered loading for smooth experience
+    // Process images - load first batch immediately to maintain order
     imagesDataToRender.forEach((imgData, index) => {
         const shouldLoadImmediately = index < initialLoadCount;
         
         if (shouldLoadImmediately) {
-            // Load first row immediately but staggered for smooth appearance
-            setTimeout(() => {
-                createAndAppendImageElement(imgData, imageGroupContainer, false);
-            }, index * 50); // 50ms stagger between each image for smooth loading
+            // Load first batch immediately in correct order - no staggering
+            createAndAppendImageElement(imgData, imageGroupContainer, false);
         } else {
             // Create skeleton immediately for layout, will be lazy loaded
             const aspectRatio = getAspectRatioFromMetadata(imgData);
@@ -421,13 +422,15 @@ export function renderImageItems(imagesDataToRender, append = false) {
             
             // Append skeleton immediately
             imageGroupContainer.appendChild(skeletonElement);
-            masonryInstance.appended(skeletonElement);
-            masonryInstance.layout();
+            if (masonryInstance) {
+                masonryInstance.appended(skeletonElement);
+                masonryInstance.layout();
+            }
             
             // Observe skeleton for intersection
             if (imageObserver) {
                 imageObserver.observe(skeletonElement);
-                console.log(`[uiImageView] Observing skeleton for ${imgData.name}`);
+                console.log(`[uiImageView] Observing skeleton for ${imgData.name} at index ${index}`);
             } else {
                 console.warn('[uiImageView] imageObserver not initialized!');
             }
@@ -445,7 +448,31 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
     // Add to DOM immediately but hidden
     imageElement.style.opacity = '0';
     imageElement.style.transform = 'scale(0.9)';
-    container.appendChild(imageElement);
+    
+    // Insert in correct position to maintain order
+    const existingItems = container.children;
+    let insertPosition = null;
+    
+    // Find the correct position to insert based on imageIndex
+    for (let i = 0; i < existingItems.length; i++) {
+        const existingItem = existingItems[i];
+        const existingIndex = parseInt(existingItem.dataset.imageIndex) || 
+                             (existingItem.dataset.imgData ? 
+                              currentImageList.findIndex(item => 
+                                  item.path === JSON.parse(existingItem.dataset.imgData).path) : -1);
+        
+        if (existingIndex > imageIndex) {
+            insertPosition = existingItem;
+            break;
+        }
+    }
+    
+    // Insert at correct position or append at end
+    if (insertPosition) {
+        container.insertBefore(imageElement, insertPosition);
+    } else {
+        container.appendChild(imageElement);
+    }
     
     // Update Masonry layout with optimized timing and performance tracking
     if (masonryInstance) {
@@ -500,7 +527,7 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
         imageElement.classList.add('image-item--visible');
     }
     
-    console.log(`[uiImageView] Created and appended image element with performance tracking: ${imgData.name}`);
+    console.log(`[uiImageView] Created and appended image element with performance tracking: ${imgData.name} at index ${imageIndex}`);
 }
 
 export function createImageGroupIfNeeded(){
