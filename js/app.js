@@ -233,14 +233,51 @@ async function fetchData(url, options = {}) {
 // --- Hiển thị/ẩn views chính ---
 function showDirectoryView() {
     console.log('[app.js] showDirectoryView called.');
+    
+    // Reset navigation flag
+    isProcessingNavigation = false;
+    
+    // Reset state when going to directory view
+    setCurrentFolder('');
+    setCurrentImageList([]);
+    setCurrentPage(1);
+    setTotalImages(0);
+    setPreloadedImages([]);
+    setIsLoadingMore(false);
+    setIsCurrentlyPreloading(false);
+    
+    // Abort any ongoing requests
+    if (paginationAbortController) {
+        paginationAbortController.abort();
+        setPaginationAbortController(null);
+    }
+    if (preloadAbortController) {
+        preloadAbortController.abort();
+        setPreloadAbortController(null);
+    }
+    if (searchAbortController) {
+        searchAbortController.abort();
+        setSearchAbortController(null);
+    }
+    
+    // Clear all active page requests
+    clearAllActivePageRequests();
+    
+    // Clear image grid
+    clearImageGrid();
+    
+    // Show/hide appropriate UI elements
     document.getElementById('directory-view').style.display = 'block';
     hideImageViewUI(); // Use imported hide function
     document.getElementById('image-view').style.display = 'none'; // Ensure main container is hidden
     document.getElementById('backButton').style.display = 'none';
     document.title = 'Thư viện Ảnh - Guustudio';
+    
+    // Clear hash if present
     if (location.hash) {
         history.pushState("", document.title, window.location.pathname + window.location.search);
     }
+    
     showDirectoryViewOnly(); 
     document.body.classList.remove('gallery-view-active'); // << REMOVE class for homepage
 }
@@ -265,12 +302,21 @@ const escapePasswordPromptListener = (overlayId) => { ... }; // Adjusted
 // --- Load Sub Items (Folders/Images) ---
 async function loadSubItems(folderPath) {
     console.log(`[app.js] loadSubItems called for path: ${folderPath}`);
+    
+    // Prevent double loading of the same folder
+    if (currentFolder === folderPath && !isProcessingNavigation) {
+        console.log(`[app.js] loadSubItems: Already in folder ${folderPath}, skipping duplicate load.`);
+        return;
+    }
+    
     if (isProcessingNavigation) {
         console.log('[app.js] loadSubItems: isProcessingNavigation is true, returning to prevent concurrent execution.');
         return;
     }
+
+    // Abort any ongoing requests when navigating to new folder
     if (isLoadingMore) {
-        console.log('[app.js] loadSubItems: isLoadingMore is true, returning.');
+        console.log('[app.js] loadSubItems: isLoadingMore is true, aborting ongoing requests.');
         if (paginationAbortController) {
              console.log('[app.js] loadSubItems: Aborting pending pagination fetch due to folder navigation.');
              paginationAbortController.abort();
@@ -283,7 +329,6 @@ async function loadSubItems(folderPath) {
              preloadAbortController.abort();
              setPreloadAbortController(null);
         }
-        if (isProcessingNavigation) return;
     }
 
     isProcessingNavigation = true;
@@ -626,6 +671,10 @@ document.getElementById('backButton').onclick = () => {
 // --- Hash Handling ---
 async function handleUrlHash() { // Make function async
     console.log("[app.js] handleUrlHash: ENTRY. Current hash:", location.hash);
+    
+    // Reset navigation flag at start
+    isProcessingNavigation = false;
+    
     showGlobalLoadingOverlay(); // Show global overlay at the start
 
     try {
@@ -654,6 +703,7 @@ async function handleUrlHash() { // Make function async
                 await loadTopLevelDirectories(); // Await the async operation
             }
         } else {
+            // No hash or invalid hash - show home page
             console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
             showDirectoryView();
             await loadTopLevelDirectories(); // Await the async operation
@@ -887,6 +937,35 @@ function initializeAppEventListeners() {
         });
     } else {
         console.error("[app.js] Could not initialize SelectionManager: one or more required DOM elements not found.");
+    }
+
+    // Logo click handler for home navigation
+    const logoLink = document.querySelector('.logo-link');
+    if (logoLink) {
+        logoLink.addEventListener('click', async (e) => {
+            e.preventDefault();
+            console.log('[app.js] Logo clicked, navigating to home');
+            
+            // Reset navigation flag
+            isProcessingNavigation = false;
+            
+            // Clear the hash to go to home
+            if (location.hash) {
+                history.pushState("", document.title, window.location.pathname + window.location.search);
+            }
+            
+            // Reset state
+            setCurrentFolder('');
+            setCurrentImageList([]);
+            setCurrentPage(1);
+            setTotalImages(0);
+            
+            // Show directory view and load top level directories
+            showDirectoryView();
+            await loadTopLevelDirectories();
+        });
+    } else {
+        console.warn('[app.js] Logo link not found for home navigation');
     }
 
     // Search functionality

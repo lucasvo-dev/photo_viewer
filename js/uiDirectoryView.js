@@ -80,7 +80,12 @@ export function createDirectoryListItem(dirData, itemClickHandler) {
     li.classList.add('list-item-fade-in');
 
     const a  = document.createElement('a');
-    a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
+    // Only set href if no itemClickHandler is provided to prevent double navigation
+    if (!itemClickHandler || (dirData.protected && !dirData.authorized)) {
+        a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
+    } else {
+        a.href = '#'; // Prevent default link behavior
+    }
     a.dataset.dir = dirData.path;
 
     const img = document.createElement('img');
@@ -109,7 +114,11 @@ export function createDirectoryListItem(dirData, itemClickHandler) {
     if (dirData.protected && !dirData.authorized) {
         a.onclick = e => { e.preventDefault(); showPasswordPrompt(dirData.path); };
     } else if (itemClickHandler) {
-        a.onclick = e => { e.preventDefault(); itemClickHandler(dirData.path); };
+        a.onclick = e => { 
+            e.preventDefault(); 
+            console.log(`[uiDirectoryView] Folder clicked via itemClickHandler: ${dirData.path}`);
+            itemClickHandler(dirData.path); 
+        };
     }
     // If no itemClickHandler, the default href behavior will apply for non-protected items.
 
