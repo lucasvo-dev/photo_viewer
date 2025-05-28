@@ -65,19 +65,19 @@ function initializeImageObserver() {
                 loadImageWithPriority(placeholder, imgData);
                 imageObserver.unobserve(placeholder);
                 
-                // Smart preloading: trigger preload of nearby images based on scroll direction
-                setTimeout(() => triggerSmartPreload(placeholder), 100);
+                // Simplified smart preloading: only preload next image to maintain order
+                setTimeout(() => triggerSmartPreload(placeholder), 200);
             }
         });
     }, {
-        rootMargin: '50px 0px', // Start loading 50px before entering viewport
-        threshold: 0.1
+        rootMargin: '200px 0px', // Start loading 200px before entering viewport for smoother experience
+        threshold: 0.01 // Trigger as soon as any part becomes visible
     });
 }
 
-// Smart preloading based on scroll direction and velocity - IMPROVED
+// Smart preloading based on scroll direction and velocity - SIMPLIFIED
 function triggerSmartPreload(currentElement) {
-    // Re-enable with improved logic
+    // Simplified: only preload the very next skeleton to maintain loading order
     if (!globalScrollTracker) {
         console.log('[uiImageView] No scroll tracker available');
         return;
@@ -90,32 +90,24 @@ function triggerSmartPreload(currentElement) {
     
     console.log('[uiImageView] Triggering smart preload');
     
-    // Find next skeleton elements in DOM order
+    // Find next skeleton element in DOM order
     const allSkeletons = document.querySelectorAll('.image-skeleton[data-img-data]');
     const currentIndex = Array.from(allSkeletons).indexOf(currentElement);
     
     if (currentIndex === -1) return;
     
-    // Only preload next 2 images to maintain smooth order
-    const nextSkeletons = [];
-    for (let i = currentIndex + 1; i < Math.min(allSkeletons.length, currentIndex + 3); i++) {
-        const skeleton = allSkeletons[i];
-        if (skeleton && skeleton.dataset.imgData) {
-            nextSkeletons.push({ skeleton, index: i });
-        }
-    }
-    
-    // Stagger the preload with small delays
-    nextSkeletons.forEach(({ skeleton, index }, order) => {
+    // Only preload the very next image to maintain strict order
+    const nextSkeleton = allSkeletons[currentIndex + 1];
+    if (nextSkeleton && nextSkeleton.dataset.imgData) {
         setTimeout(() => {
-            if (skeleton.parentNode) {
-                console.log(`[uiImageView] Preloading image at index ${index}`);
-                const imgData = JSON.parse(skeleton.dataset.imgData);
-                loadImageWithPriority(skeleton, imgData, true);
-                imageObserver.unobserve(skeleton);
+            if (nextSkeleton.parentNode) {
+                console.log(`[uiImageView] Preloading next image at index ${currentIndex + 1}`);
+                const imgData = JSON.parse(nextSkeleton.dataset.imgData);
+                loadImageWithPriority(nextSkeleton, imgData, true);
+                imageObserver.unobserve(nextSkeleton);
             }
-        }, order * 100); // 100ms stagger between preloads
-    });
+        }, 100); // Small delay to ensure current image loads first
+    }
 }
 
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
@@ -129,25 +121,56 @@ function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
         console.log(`[uiImageView] Created preloaded image for: ${imgData.name}`);
     }
     
+    // Start hidden for smooth transition
+    imageElement.style.opacity = '0';
+    imageElement.style.transform = 'scale(0.95)';
+    
     // Replace skeleton with image element
     skeletonElement.parentNode.replaceChild(imageElement, skeletonElement);
     
-    // Trigger layout update for Masonry
-    if (masonryInstance) {
-        // Use imagesLoaded for the new element
-        if (typeof imagesLoaded !== 'undefined') {
-            imagesLoaded(imageElement).on('always', () => {
-                masonryInstance.reloadItems();
-                masonryInstance.layout();
-            });
+    // Wait for image to load, then show with smooth animation
+    const img = imageElement.querySelector('img');
+    if (img) {
+        const showElement = () => {
+            // Smooth reveal animation
+            imageElement.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+            imageElement.style.opacity = '1';
+            imageElement.style.transform = 'scale(1)';
+            imageElement.classList.add('image-item--visible');
+            
+            // Update Masonry layout after animation
+            setTimeout(() => {
+                if (masonryInstance) {
+                    masonryInstance.reloadItems();
+                    masonryInstance.layout();
+                }
+            }, 400);
+        };
+        
+        if (img.complete && img.naturalHeight !== 0) {
+            // Image already loaded
+            setTimeout(showElement, 50); // Small delay for smooth transition
         } else {
-            // Fallback without imagesLoaded
+            // Wait for image to load
+            img.addEventListener('load', showElement, { once: true });
+            img.addEventListener('error', showElement, { once: true }); // Show even on error
+        }
+    } else {
+        // No image found, show immediately
+        imageElement.style.opacity = '1';
+        imageElement.style.transform = 'scale(1)';
+        imageElement.classList.add('image-item--visible');
+        
+        // Update Masonry layout
+        if (masonryInstance) {
             setTimeout(() => {
                 masonryInstance.reloadItems();
                 masonryInstance.layout();
             }, 100);
         }
     }
+    
+    console.log(`[uiImageView] Lazy loaded image: ${imgData.name}`);
 }
 
 // NEW INTERNAL HELPER FUNCTION
@@ -350,40 +373,45 @@ export function renderImageItems(imagesDataToRender, append = false) {
         return;
     }
 
-    const fragment = document.createDocumentFragment();
-    const newElements = []; // Array to store references to the new item elements
+    // Initialize Masonry if not exists
+    if (!masonryInstance) {
+        masonryInstance = new Masonry(imageGroupContainer, {
+            itemSelector: '.image-item, .image-skeleton',
+            columnWidth: '.image-item, .image-skeleton',
+            gutter: 16,
+            percentPosition: true,
+            transitionDuration: '0.2s' // Smooth transitions
+        });
+        console.log('[uiImageView] Masonry initialized');
+    }
 
-    // Determine how many images to show immediately vs lazy load
     const viewportHeight = window.innerHeight;
-    const estimatedItemHeight = 200; // Rough estimate for initial calculation
     const itemsPerRow = getItemsPerRowForCurrentScreen();
     
-    // Increase initial load count for better user experience
-    const initialLoadCount = Math.min(18, Math.ceil(itemsPerRow * 3)); // Load up to 18 images or 3 rows, whichever is smaller
+    // Reduce initial immediate load - only load first row for instant feedback
+    const initialLoadCount = Math.min(itemsPerRow, 6); // Just first row, max 6
     
     console.log(`[uiImageView] Viewport: ${viewportHeight}px, ItemsPerRow: ${itemsPerRow}, InitialLoadCount: ${initialLoadCount}, TotalImages: ${imagesDataToRender.length}`);
     
+    // Process images with staggered loading for smooth experience
     imagesDataToRender.forEach((imgData, index) => {
         const shouldLoadImmediately = index < initialLoadCount;
         
-        console.log(`[uiImageView] Image ${index}: ${imgData.name}, LoadImmediately: ${shouldLoadImmediately}`);
-        
         if (shouldLoadImmediately) {
-            // Create actual image element for immediate loading
-            const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
-            const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, false);
-            fragment.appendChild(imageElement);
-            newElements.push(imageElement);
+            // Load first row immediately but staggered
+            setTimeout(() => {
+                createAndAppendImageElement(imgData, imageGroupContainer, false);
+            }, index * 50); // 50ms stagger between each image
         } else {
-            // Create skeleton placeholder for lazy loading
+            // Create skeleton immediately for layout, will be lazy loaded
             const aspectRatio = getAspectRatioFromMetadata(imgData);
             const skeletonElement = createSkeletonElement(aspectRatio);
             skeletonElement.dataset.imgData = JSON.stringify(imgData);
             
-            console.log(`[uiImageView] Creating skeleton for ${imgData.name} with aspect ratio: ${aspectRatio}`);
-            
-            fragment.appendChild(skeletonElement);
-            newElements.push(skeletonElement);
+            // Append skeleton immediately
+            imageGroupContainer.appendChild(skeletonElement);
+            masonryInstance.appended(skeletonElement);
+            masonryInstance.layout();
             
             // Observe skeleton for intersection
             if (imageObserver) {
@@ -394,75 +422,58 @@ export function renderImageItems(imagesDataToRender, append = false) {
             }
         }
     });
+}
 
-    imageGroupContainer.appendChild(fragment); // Append all new items at once
-
-    if (typeof Masonry !== 'undefined' && typeof imagesLoaded !== 'undefined') {
-        // Filter only actual image elements for imagesLoaded (not skeletons)
-        const imageElements = newElements.filter(el => el.classList.contains('image-item'));
-        const skeletonElements = newElements.filter(el => el.classList.contains('image-skeleton'));
-        
-        console.log(`[uiImageView] Created ${imageElements.length} image elements and ${skeletonElements.length} skeleton elements`);
-        
-        if (imageElements.length > 0) {
-            const imgLoad = imagesLoaded(imageElements);
-
-            imgLoad.on('always', function() {
-                if (!masonryInstance) {
-                    // Initialize Masonry with all elements (including skeletons)
-                    masonryInstance = new Masonry(imageGroupContainer, {
-                        itemSelector: '.image-item, .image-skeleton',
-                        columnWidth: '.image-item, .image-skeleton',
-                        gutter: 16,
-                        percentPosition: true,
-                        transitionDuration: 0 // Let CSS handle transitions
-                    });
-                    console.log('[uiImageView] Masonry initialized with mixed elements');
-                } else {
-                    // Append only the new elements and layout
-                    masonryInstance.appended(newElements);
-                    masonryInstance.layout();
-                    console.log('[uiImageView] Masonry appended new elements');
-                }
-
-                // After Masonry has laid out the items, make image items visible
-                setTimeout(() => {
-                    imageElements.forEach(el => {
-                        if (!el.classList.contains('image-item--visible')) {
-                            el.classList.add('image-item--visible');
-                        }
-                    });
-                }, 50);
-            });
-
-            // Layout on progress to handle varying image sizes
-            imgLoad.on('progress', function() {
+// Helper function to create and append individual image elements smoothly
+function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
+    const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, isLazyLoaded);
+    
+    // Add to DOM immediately but hidden
+    imageElement.style.opacity = '0';
+    imageElement.style.transform = 'scale(0.9)';
+    container.appendChild(imageElement);
+    
+    // Update Masonry layout
+    if (masonryInstance) {
+        masonryInstance.appended(imageElement);
+        masonryInstance.layout();
+    }
+    
+    // Wait for image to load, then show with smooth animation
+    const img = imageElement.querySelector('img');
+    if (img) {
+        const showElement = () => {
+            // Smooth reveal animation
+            imageElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
+            imageElement.style.opacity = '1';
+            imageElement.style.transform = 'scale(1)';
+            imageElement.classList.add('image-item--visible');
+            
+            // Update layout after animation
+            setTimeout(() => {
                 if (masonryInstance) {
                     masonryInstance.layout();
                 }
-            });
+            }, 300);
+        };
+        
+        if (img.complete && img.naturalHeight !== 0) {
+            // Image already loaded
+            showElement();
         } else {
-            // Only skeletons were added, just update Masonry layout
-            if (!masonryInstance) {
-                masonryInstance = new Masonry(imageGroupContainer, {
-                    itemSelector: '.image-item, .image-skeleton',
-                    columnWidth: '.image-item, .image-skeleton',
-                    gutter: 16,
-                    percentPosition: true,
-                    transitionDuration: 0
-                });
-                console.log('[uiImageView] Masonry initialized with only skeletons');
-            } else {
-                masonryInstance.appended(newElements);
-                masonryInstance.layout();
-                console.log('[uiImageView] Masonry appended skeleton elements');
-            }
+            // Wait for image to load
+            img.addEventListener('load', showElement, { once: true });
+            img.addEventListener('error', showElement, { once: true }); // Show even on error
         }
-
     } else {
-        if (typeof Masonry === 'undefined') console.error("Masonry library not found!");
-        if (typeof imagesLoaded === 'undefined') console.error("imagesLoaded library not found!");
+        // No image found, show immediately
+        imageElement.style.opacity = '1';
+        imageElement.style.transform = 'scale(1)';
+        imageElement.classList.add('image-item--visible');
     }
+    
+    console.log(`[uiImageView] Created and appended image element: ${imgData.name}`);
 }
 
 export function createImageGroupIfNeeded(){

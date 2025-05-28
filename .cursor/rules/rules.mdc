@@ -4,7 +4,7 @@ globs:
 alwaysApply: true
 ---
 rules:
-  - **Importan: Don't auto create php or bat file just for test, try to less create new file.
+  - **Important: Don't auto create php or bat file just for test, try to avoid create new file.
   - id: communication_language
     description: Giao tiếp với tôi bằng Tiếng Anh.
     prompt: Communicate with me in english.
