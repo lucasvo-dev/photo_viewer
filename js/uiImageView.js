@@ -118,8 +118,24 @@ function triggerSmartPreload(currentElement) {
 
 // === OPTIMIZED IMAGE LOADING WITH MASONRY INTEGRATION ===
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
-    const imageIndex = parseInt(skeletonElement.dataset.imageIndex) || 
-                      currentImageList.findIndex(item => item.path === imgData.path);
+    // Try to get index from skeleton first, then find in currentImageList
+    let imageIndex = parseInt(skeletonElement.dataset.imageIndex);
+    
+    if (isNaN(imageIndex) || imageIndex === -1) {
+        // Try multiple path matching strategies
+        imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+        
+        if (imageIndex === -1) {
+            imageIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+        }
+        
+        if (imageIndex === -1 && imgData.source_path) {
+            imageIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+        }
+    }
+    
+    console.log(`[uiImageView] loadImageWithPriority for ${imgData.name}, index: ${imageIndex}`);
+    
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, !isPreload);
     
     if (isPreload) {
@@ -207,18 +223,31 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
 
     anchor.onclick = (e) => {
         e.preventDefault();
-        console.log(`[uiImageView] Image clicked: ${imgData.name}, Index: ${imageIndex}`);
         
-        if (imageIndex !== -1) {
-            openPhotoSwipeCallback(imageIndex);
+        // Try multiple path matching strategies to ensure accuracy
+        let freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
+        
+        // If not found by path, try source_path
+        if (freshIndex === -1) {
+            freshIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+        }
+        
+        // If still not found, try the other way around
+        if (freshIndex === -1 && imgData.source_path) {
+            freshIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+        }
+        
+        console.log(`[uiImageView] Image clicked: ${imgData.name}`);
+        console.log(`[uiImageView] - imgData.path: ${imgData.path}`);
+        console.log(`[uiImageView] - imgData.source_path: ${imgData.source_path}`);
+        console.log(`[uiImageView] - Fresh Index: ${freshIndex}, Original Index: ${imageIndex}`);
+        
+        if (freshIndex !== -1) {
+            console.log(`[uiImageView] Opening PhotoSwipe at fresh index: ${freshIndex} for ${imgData.name}`);
+            openPhotoSwipeCallback(freshIndex);
         } else {
-            const freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
-            if (freshIndex !== -1) {
-                console.log(`[uiImageView] Found fresh index: ${freshIndex} for ${imgData.name}`);
-                openPhotoSwipeCallback(freshIndex);
-            } else {
-                console.error("Could not find media index for (onclick):", imgData.name, imgData.path);
-            }
+            console.error("Could not find media index for (onclick):", imgData.name);
+            console.error("Available paths in currentImageList:", currentImageList.map((item, idx) => `${idx}: ${item.path || item.source_path}`));
         }
     };
 
@@ -442,7 +471,19 @@ export function renderImageItems(imagesDataToRender, append = false) {
 function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
     const imageLoadStartTime = globalPerformanceMonitor.startTiming(`image-load-${imgData.name}`);
     
-    const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    // Use consistent path matching logic
+    let imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
+    
+    if (imageIndex === -1) {
+        imageIndex = currentImageList.findIndex(item => item.source_path === imgData.path);
+    }
+    
+    if (imageIndex === -1 && imgData.source_path) {
+        imageIndex = currentImageList.findIndex(item => item.path === imgData.source_path);
+    }
+    
+    console.log(`[uiImageView] createAndAppendImageElement for ${imgData.name}, index: ${imageIndex}`);
+    
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, isLazyLoaded);
     
     // Add to DOM immediately but hidden
