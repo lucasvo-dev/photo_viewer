@@ -935,8 +935,11 @@ function initializeAppEventListeners() {
 
     // Infinite scroll listener
     window.addEventListener('scroll', debounce(() => {
-        // Update scroll tracking for smart preloading
-        globalScrollTracker.update();
+        // Start performance timing for scroll response
+        const scrollStartTime = globalPerformanceMonitor.startTiming('scroll-response');
+        
+        // Update scroll tracking for smart preloading (now handled automatically in utils.js)
+        // globalScrollTracker.update(); // Removed - now handled globally
         
         const imageView = document.getElementById('image-view');
         if (imageView && imageView.style.display === 'block' &&
@@ -949,17 +952,21 @@ function initializeAppEventListeners() {
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
                 console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
                 
-                // Start performance timing
-                const scrollStartTime = globalPerformanceMonitor.startTiming('infinite-scroll-load');
+                // Start performance timing for infinite scroll load
+                const infiniteScrollStartTime = globalPerformanceMonitor.startTiming('infinite-scroll-load');
                 
                 loadMoreImages().then(() => {
-                    globalPerformanceMonitor.endTiming('infinite-scroll-load', scrollStartTime, 'scrollLoad');
+                    globalPerformanceMonitor.endTiming('infinite-scroll-load', infiniteScrollStartTime, 'scrollLoad');
                 }).catch(error => {
                     console.error('[app.js] Error in infinite scroll loadMoreImages:', error);
-                    globalPerformanceMonitor.endTiming('infinite-scroll-load-error', scrollStartTime, 'scrollLoadErrors');
+                    globalPerformanceMonitor.endTiming('infinite-scroll-load-error', infiniteScrollStartTime, 'scrollLoadErrors');
                 });
             }
         }
+        
+        // End scroll response timing
+        globalPerformanceMonitor.endTiming('scroll-response', scrollStartTime, 'scrollResponse');
+        
     }, 750)); // Increased debounce time to 750ms for better duplicate prevention
 
     // Handle popstate for back/forward navigation

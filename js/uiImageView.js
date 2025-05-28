@@ -1,7 +1,7 @@
 import { currentImageList, updateImageListItem } from './state.js';
 import { API_BASE_URL, fetchDataApi } from './config.js';
 import { refreshCurrentPhotoSwipeSlideIfNeeded } from './photoswipeHandler.js';
-import { globalScrollTracker } from './utils.js';
+import { globalScrollTracker, globalPerformanceMonitor } from './utils.js';
 
 // DOM Elements
 let imageViewEl, currentDirectoryNameEl, imageGridEl, loadMoreContainerEl, loadMoreBtnEl;
@@ -51,126 +51,132 @@ function getAspectRatioFromMetadata(imgData) {
     return '1 / 1'; // Default square
 }
 
-// === ENHANCED INTERSECTION OBSERVER WITH SMART PRELOADING ===
+// === ENHANCED MASONRY OPTIMIZATION ===
+// Based on best practices research for Masonry galleries with progressive loading
+
+// === OPTIMIZED INTERSECTION OBSERVER ===
 function initializeImageObserver() {
     if (imageObserver) return; // Already initialized
     
     imageObserver = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-            if (entry.isIntersecting) {
-                const placeholder = entry.target;
-                const imgData = JSON.parse(placeholder.dataset.imgData);
-                
-                // Replace skeleton with actual image
+        // Process entries in DOM order to maintain sequence
+        const sortedEntries = entries
+            .filter(entry => entry.isIntersecting)
+            .sort((a, b) => {
+                // Sort by DOM index to maintain order
+                const aIndex = parseInt(a.target.dataset.imageIndex) || 0;
+                const bIndex = parseInt(b.target.dataset.imageIndex) || 0;
+                return aIndex - bIndex;
+            });
+
+        // Stagger loading to maintain order and prevent overwhelming the browser
+        sortedEntries.forEach((entry, index) => {
+            const placeholder = entry.target;
+            const imgData = JSON.parse(placeholder.dataset.imgData);
+            
+            // Stagger loading to maintain order and prevent overwhelming
+            setTimeout(() => {
                 loadImageWithPriority(placeholder, imgData);
                 imageObserver.unobserve(placeholder);
-                
-                // Simplified smart preloading: only preload next image to maintain order
-                setTimeout(() => triggerSmartPreload(placeholder), 200);
-            }
+            }, index * 50); // 50ms stagger between images for smooth sequential loading
         });
     }, {
-        rootMargin: '200px 0px', // Start loading 200px before entering viewport for smoother experience
-        threshold: 0.01 // Trigger as soon as any part becomes visible
+        rootMargin: '100px 0px', // Reduced from 200px for better control and performance
+        threshold: 0.1 // Slightly higher threshold for better performance
     });
 }
 
-// Smart preloading based on scroll direction and velocity - SIMPLIFIED
+// === OPTIMIZED SMART PRELOADING ===
 function triggerSmartPreload(currentElement) {
-    // Simplified: only preload the very next skeleton to maintain loading order
-    if (!globalScrollTracker) {
-        console.log('[uiImageView] No scroll tracker available');
-        return;
-    }
+    if (!globalScrollTracker) return;
     
-    // Only preload when scroll has stopped and direction is consistent
+    // Only preload when scroll velocity is low and direction is consistent
     if (globalScrollTracker.isScrolling || !globalScrollTracker.shouldPreload()) {
         return;
     }
     
-    console.log('[uiImageView] Triggering smart preload');
-    
-    // Find next skeleton element in DOM order
+    // Find next 2 skeleton elements in DOM order for batch preloading
     const allSkeletons = document.querySelectorAll('.image-skeleton[data-img-data]');
     const currentIndex = Array.from(allSkeletons).indexOf(currentElement);
     
     if (currentIndex === -1) return;
     
-    // Only preload the very next image to maintain strict order
-    const nextSkeleton = allSkeletons[currentIndex + 1];
-    if (nextSkeleton && nextSkeleton.dataset.imgData) {
-        setTimeout(() => {
-            if (nextSkeleton.parentNode) {
-                console.log(`[uiImageView] Preloading next image at index ${currentIndex + 1}`);
-                const imgData = JSON.parse(nextSkeleton.dataset.imgData);
-                loadImageWithPriority(nextSkeleton, imgData, true);
-                imageObserver.unobserve(nextSkeleton);
-            }
-        }, 100); // Small delay to ensure current image loads first
+    // Preload next 2 images in sequence for better performance
+    const preloadCount = Math.min(2, allSkeletons.length - currentIndex - 1);
+    
+    for (let i = 1; i <= preloadCount; i++) {
+        const nextSkeleton = allSkeletons[currentIndex + i];
+        if (nextSkeleton && nextSkeleton.dataset.imgData) {
+            setTimeout(() => {
+                if (nextSkeleton.parentNode) {
+                    const imgData = JSON.parse(nextSkeleton.dataset.imgData);
+                    loadImageWithPriority(nextSkeleton, imgData, true);
+                    imageObserver.unobserve(nextSkeleton);
+                }
+            }, i * 100); // Stagger preloads for smooth loading
+        }
     }
 }
 
+// === OPTIMIZED IMAGE LOADING WITH MASONRY INTEGRATION ===
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
-    // Create the actual image item
     const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, !isPreload);
     
-    // Add preload class for styling differentiation
     if (isPreload) {
         imageElement.classList.add('image-item--preloaded');
-        console.log(`[uiImageView] Created preloaded image for: ${imgData.name}`);
     }
     
-    // Start hidden for smooth transition
+    // Maintain aspect ratio during transition
+    const aspectRatio = getAspectRatioFromMetadata(imgData);
+    imageElement.style.aspectRatio = aspectRatio;
+    
+    // Start with skeleton dimensions to prevent layout shift
     imageElement.style.opacity = '0';
-    imageElement.style.transform = 'scale(0.95)';
+    imageElement.style.transform = 'translateY(10px)';
     
     // Replace skeleton with image element
     skeletonElement.parentNode.replaceChild(imageElement, skeletonElement);
     
-    // Wait for image to load, then show with smooth animation
+    // Wait for image to load with optimized Masonry integration
     const img = imageElement.querySelector('img');
     if (img) {
         const showElement = () => {
-            // Smooth reveal animation
-            imageElement.style.transition = 'opacity 0.4s ease, transform 0.4s ease';
+            // Smooth reveal with optimized timing
+            imageElement.style.transition = 'opacity 0.3s ease-out, transform 0.3s ease-out';
             imageElement.style.opacity = '1';
-            imageElement.style.transform = 'scale(1)';
+            imageElement.style.transform = 'translateY(0)';
             imageElement.classList.add('image-item--visible');
             
-            // Update Masonry layout after animation
-            setTimeout(() => {
-                if (masonryInstance) {
+            // Optimized Masonry layout update using requestAnimationFrame
+            if (masonryInstance) {
+                requestAnimationFrame(() => {
+                    const layoutStartTime = globalPerformanceMonitor.startTiming('masonry-layout-update');
                     masonryInstance.reloadItems();
                     masonryInstance.layout();
-                }
-            }, 400);
+                    globalPerformanceMonitor.endTiming('masonry-layout-update', layoutStartTime, 'masonryLayout');
+                });
+            }
         };
         
         if (img.complete && img.naturalHeight !== 0) {
-            // Image already loaded
-            setTimeout(showElement, 50); // Small delay for smooth transition
+            setTimeout(showElement, 25); // Reduced delay for faster reveal
         } else {
-            // Wait for image to load
             img.addEventListener('load', showElement, { once: true });
-            img.addEventListener('error', showElement, { once: true }); // Show even on error
+            img.addEventListener('error', showElement, { once: true });
         }
     } else {
-        // No image found, show immediately
         imageElement.style.opacity = '1';
-        imageElement.style.transform = 'scale(1)';
+        imageElement.style.transform = 'translateY(0)';
         imageElement.classList.add('image-item--visible');
         
-        // Update Masonry layout
         if (masonryInstance) {
-            setTimeout(() => {
+            requestAnimationFrame(() => {
                 masonryInstance.reloadItems();
                 masonryInstance.layout();
-            }, 100);
+            });
         }
     }
-    
-    console.log(`[uiImageView] Lazy loaded image: ${imgData.name}`);
 }
 
 // NEW INTERNAL HELPER FUNCTION
@@ -375,6 +381,8 @@ export function renderImageItems(imagesDataToRender, append = false) {
 
     // Initialize Masonry if not exists
     if (!masonryInstance) {
+        const masonryStartTime = globalPerformanceMonitor.startTiming('masonry-init');
+        
         masonryInstance = new Masonry(imageGroupContainer, {
             itemSelector: '.image-item, .image-skeleton',
             columnWidth: '.image-item, .image-skeleton',
@@ -382,7 +390,9 @@ export function renderImageItems(imagesDataToRender, append = false) {
             percentPosition: true,
             transitionDuration: '0.2s' // Smooth transitions
         });
-        console.log('[uiImageView] Masonry initialized');
+        
+        globalPerformanceMonitor.endTiming('masonry-init', masonryStartTime, 'masonryLayout');
+        console.log('[uiImageView] Masonry initialized with performance tracking');
     }
 
     const viewportHeight = window.innerHeight;
@@ -398,15 +408,16 @@ export function renderImageItems(imagesDataToRender, append = false) {
         const shouldLoadImmediately = index < initialLoadCount;
         
         if (shouldLoadImmediately) {
-            // Load first row immediately but staggered
+            // Load first row immediately but staggered for smooth appearance
             setTimeout(() => {
                 createAndAppendImageElement(imgData, imageGroupContainer, false);
-            }, index * 50); // 50ms stagger between each image
+            }, index * 50); // 50ms stagger between each image for smooth loading
         } else {
             // Create skeleton immediately for layout, will be lazy loaded
             const aspectRatio = getAspectRatioFromMetadata(imgData);
             const skeletonElement = createSkeletonElement(aspectRatio);
             skeletonElement.dataset.imgData = JSON.stringify(imgData);
+            skeletonElement.dataset.imageIndex = index; // Add index for proper ordering
             
             // Append skeleton immediately
             imageGroupContainer.appendChild(skeletonElement);
@@ -426,6 +437,8 @@ export function renderImageItems(imagesDataToRender, append = false) {
 
 // Helper function to create and append individual image elements smoothly
 function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
+    const imageLoadStartTime = globalPerformanceMonitor.startTiming(`image-load-${imgData.name}`);
+    
     const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
     const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, isLazyLoaded);
     
@@ -434,26 +447,35 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
     imageElement.style.transform = 'scale(0.9)';
     container.appendChild(imageElement);
     
-    // Update Masonry layout
+    // Update Masonry layout with optimized timing and performance tracking
     if (masonryInstance) {
+        const masonryAppendStartTime = globalPerformanceMonitor.startTiming('masonry-append');
         masonryInstance.appended(imageElement);
         masonryInstance.layout();
+        globalPerformanceMonitor.endTiming('masonry-append', masonryAppendStartTime, 'masonryLayout');
     }
     
     // Wait for image to load, then show with smooth animation
     const img = imageElement.querySelector('img');
     if (img) {
         const showElement = () => {
-            // Smooth reveal animation
+            // End image loading performance timing
+            globalPerformanceMonitor.endTiming(`image-load-${imgData.name}`, imageLoadStartTime, 'imageLoad');
+            
+            // Smooth reveal animation with optimized timing
             imageElement.style.transition = 'opacity 0.3s ease, transform 0.3s ease';
             imageElement.style.opacity = '1';
             imageElement.style.transform = 'scale(1)';
             imageElement.classList.add('image-item--visible');
             
-            // Update layout after animation
+            // Update layout after animation with requestAnimationFrame and performance tracking
             setTimeout(() => {
                 if (masonryInstance) {
-                    masonryInstance.layout();
+                    requestAnimationFrame(() => {
+                        const layoutUpdateStartTime = globalPerformanceMonitor.startTiming('masonry-post-load-layout');
+                        masonryInstance.layout();
+                        globalPerformanceMonitor.endTiming('masonry-post-load-layout', layoutUpdateStartTime, 'masonryLayout');
+                    });
                 }
             }, 300);
         };
@@ -464,16 +486,21 @@ function createAndAppendImageElement(imgData, container, isLazyLoaded = false) {
         } else {
             // Wait for image to load
             img.addEventListener('load', showElement, { once: true });
-            img.addEventListener('error', showElement, { once: true }); // Show even on error
+            img.addEventListener('error', () => {
+                // End timing even on error
+                globalPerformanceMonitor.endTiming(`image-load-${imgData.name}`, imageLoadStartTime, 'imageLoad');
+                showElement();
+            }, { once: true });
         }
     } else {
         // No image found, show immediately
+        globalPerformanceMonitor.endTiming(`image-load-${imgData.name}`, imageLoadStartTime, 'imageLoad');
         imageElement.style.opacity = '1';
         imageElement.style.transform = 'scale(1)';
         imageElement.classList.add('image-item--visible');
     }
     
-    console.log(`[uiImageView] Created and appended image element: ${imgData.name}`);
+    console.log(`[uiImageView] Created and appended image element with performance tracking: ${imgData.name}`);
 }
 
 export function createImageGroupIfNeeded(){

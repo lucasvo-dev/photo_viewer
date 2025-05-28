@@ -68,139 +68,130 @@ export class RequestManager {
     }
 }
 
-// === ENHANCED SCROLL DIRECTION TRACKER FOR SMART PRELOADING ===
-export class ScrollDirectionTracker {
+// === ENHANCED SCROLL DIRECTION TRACKER ===
+// Optimized for Masonry galleries with better velocity tracking and preload decisions
+class ScrollDirectionTracker {
     constructor() {
         this.lastScrollY = window.scrollY;
-        this.scrollDirection = 'down';
-        this.scrollVelocity = 0;
-        this.lastScrollTime = Date.now();
+        this.lastTimestamp = performance.now();
+        this.direction = 'none';
+        this.velocity = 0;
         this.isScrolling = false;
-        this.scrollEndTimer = null;
+        this.scrollHistory = [];
+        this.maxHistoryLength = 5; // Track last 5 scroll events for pattern analysis
+        this.scrollTimeout = null;
+        this.consistentDirectionCount = 0;
+        this.lastDirection = 'none';
         
-        // Smart preloading configuration
-        this.preloadDistance = window.innerHeight * 2; // Preload 2 viewports ahead
-        this.fastScrollThreshold = 2; // pixels per millisecond for fast scroll detection
-        this.scrollHistory = []; // Track scroll behavior
-        this.maxHistoryLength = 10;
+        // Optimized thresholds for Masonry galleries
+        this.velocityThreshold = 0.5; // Reduced for more responsive preloading
+        this.consistentScrollThreshold = 3; // Require 3 consistent direction changes
+        this.preloadCooldown = 1000; // 1 second cooldown between preload decisions
+        this.lastPreloadTime = 0;
     }
-    
+
     update() {
         const currentScrollY = window.scrollY;
-        const currentTime = Date.now();
+        const currentTime = performance.now();
         const deltaY = currentScrollY - this.lastScrollY;
-        const deltaTime = currentTime - this.lastScrollTime;
+        const deltaTime = currentTime - this.lastTimestamp;
         
-        // Calculate scroll velocity (pixels per millisecond)
-        if (deltaTime > 0) {
-            this.scrollVelocity = Math.abs(deltaY) / deltaTime;
-            
-            // Determine scroll direction with threshold
-            if (deltaY > 5) {
-                this.scrollDirection = 'down';
-            } else if (deltaY < -5) {
-                this.scrollDirection = 'up';
+        // Calculate velocity (pixels per millisecond)
+        this.velocity = deltaTime > 0 ? Math.abs(deltaY) / deltaTime : 0;
+        
+        // Determine direction
+        const newDirection = deltaY > 5 ? 'down' : deltaY < -5 ? 'up' : 'none';
+        
+        // Track direction consistency for better preload decisions
+        if (newDirection !== 'none') {
+            if (newDirection === this.lastDirection) {
+                this.consistentDirectionCount++;
+            } else {
+                this.consistentDirectionCount = 1;
+                this.lastDirection = newDirection;
             }
-            // If small delta, keep previous direction
-            
-            // Track scroll history for pattern detection
-            this.scrollHistory.push({
-                time: currentTime,
-                direction: this.scrollDirection,
-                velocity: this.scrollVelocity,
-                position: currentScrollY
-            });
-            
-            // Maintain history length
-            if (this.scrollHistory.length > this.maxHistoryLength) {
-                this.scrollHistory.shift();
-            }
+            this.direction = newDirection;
         }
         
-        // Track scrolling state with debounce
+        // Update scroll history for pattern analysis
+        this.scrollHistory.push({
+            y: currentScrollY,
+            direction: newDirection,
+            velocity: this.velocity,
+            timestamp: currentTime
+        });
+        
+        // Keep history manageable
+        if (this.scrollHistory.length > this.maxHistoryLength) {
+            this.scrollHistory.shift();
+        }
+        
+        // Set scrolling state
         this.isScrolling = true;
-        clearTimeout(this.scrollEndTimer);
-        this.scrollEndTimer = setTimeout(() => {
+        clearTimeout(this.scrollTimeout);
+        this.scrollTimeout = setTimeout(() => {
             this.isScrolling = false;
-            this.onScrollEnd();
-        }, 150);
+            this.direction = 'none';
+            this.consistentDirectionCount = 0;
+        }, 150); // Reduced timeout for more responsive state changes
         
+        // Update tracking variables
         this.lastScrollY = currentScrollY;
-        this.lastScrollTime = currentTime;
-        
-        // Reduce console spam - only log significant changes
-        if (Math.abs(deltaY) > 20 || this.scrollHistory.length % 5 === 0) {
-            console.log(`[ScrollTracker] Direction: ${this.scrollDirection}, Velocity: ${this.scrollVelocity.toFixed(2)}, Should Preload: ${this.shouldPreload()}`);
-        }
+        this.lastTimestamp = currentTime;
     }
-    
-    onScrollEnd() {
-        console.log('[ScrollTracker] Scroll ended, good time to preload if needed');
-        // Can trigger preload actions here when scroll stops
-    }
-    
-    getDirection() {
-        return this.scrollDirection;
-    }
-    
-    getVelocity() {
-        return this.scrollVelocity;
-    }
-    
-    isFastScrolling() {
-        return this.scrollVelocity > this.fastScrollThreshold;
-    }
-    
-    // Enhanced smart preloading logic
+
+    // Enhanced preload decision logic for Masonry galleries
     shouldPreload() {
-        // Don't preload during fast scrolling to save bandwidth
-        if (this.isFastScrolling()) {
+        const now = performance.now();
+        
+        // Cooldown check
+        if (now - this.lastPreloadTime < this.preloadCooldown) {
             return false;
         }
         
-        // Analyze scroll pattern - prefer consistent downward scrolling
-        const recentHistory = this.scrollHistory.slice(-5);
-        const downwardScrolls = recentHistory.filter(h => h.direction === 'down').length;
-        const consistentDownward = downwardScrolls >= 3;
-        
-        return !this.isScrolling && this.scrollDirection === 'down' && consistentDownward;
-    }
-    
-    getPreloadDirection() {
-        return this.scrollDirection;
-    }
-    
-    getPreloadDistance() {
-        // Adjust preload distance based on scroll velocity and pattern
-        if (this.isFastScrolling()) {
-            return this.preloadDistance * 0.5; // Reduce for fast scrolling
+        // Don't preload during active scrolling
+        if (this.isScrolling) {
+            return false;
         }
         
-        // Increase preload distance for consistent slow scrolling
-        const avgVelocity = this.getAverageVelocity();
-        if (avgVelocity < 0.5) { // Very slow, deliberate scrolling
-            return this.preloadDistance * 1.5;
+        // Check for consistent scroll direction
+        if (this.consistentDirectionCount < this.consistentScrollThreshold) {
+            return false;
         }
         
-        return this.preloadDistance;
+        // Check velocity - only preload during slow, steady scrolling
+        if (this.velocity > this.velocityThreshold) {
+            return false;
+        }
+        
+        // Analyze scroll pattern for predictable behavior
+        if (this.scrollHistory.length >= 3) {
+            const recentDirections = this.scrollHistory.slice(-3).map(h => h.direction);
+            const isConsistent = recentDirections.every(dir => dir === recentDirections[0] && dir !== 'none');
+            
+            if (isConsistent) {
+                this.lastPreloadTime = now;
+                return true;
+            }
+        }
+        
+        return false;
     }
-    
-    getAverageVelocity() {
-        if (this.scrollHistory.length === 0) return 0;
-        const sum = this.scrollHistory.reduce((acc, h) => acc + h.velocity, 0);
-        return sum / this.scrollHistory.length;
+
+    getScrollDirection() {
+        return this.direction;
     }
-    
-    // Get scroll position relative to document height
-    getScrollProgress() {
-        const scrollTop = window.scrollY;
-        const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
-        return documentHeight > 0 ? scrollTop / documentHeight : 0;
+
+    getScrollVelocity() {
+        return this.velocity;
     }
-    
-    // Check if user is approaching bottom (for infinite scroll)
-    isApproachingBottom(threshold = 0.8) {
-        return this.getScrollProgress() > threshold;
+
+    isScrollingDown() {
+        return this.direction === 'down' && this.consistentDirectionCount >= 2;
+    }
+
+    isScrollingUp() {
+        return this.direction === 'up' && this.consistentDirectionCount >= 2;
     }
 }
 
@@ -306,61 +297,306 @@ export class ImageFormatDetector {
     }
 }
 
-// Performance Monitor
-export class PerformanceMonitor {
+// === ENHANCED PERFORMANCE MONITOR ===
+// Optimized for Masonry gallery performance tracking
+class PerformanceMonitor {
     constructor() {
-        this.metrics = {
-            imageLoadTimes: [],
-            apiRequestTimes: [],
-            renderTimes: []
+        this.metrics = new Map();
+        this.timings = new Map();
+        this.imageLoadTimes = [];
+        this.masonryLayoutTimes = [];
+        this.scrollPerformance = [];
+        this.maxMetricsHistory = 100; // Keep last 100 measurements
+        
+        // Performance thresholds for Masonry galleries
+        this.thresholds = {
+            imageLoad: 2000, // 2 seconds max for image loading
+            masonryLayout: 100, // 100ms max for layout operations
+            scrollResponse: 16, // 16ms for 60fps scroll response
+            apiResponse: 1000 // 1 second max for API responses
+        };
+        
+        // Track performance patterns
+        this.performancePatterns = {
+            slowImageLoads: 0,
+            slowMasonryLayouts: 0,
+            slowScrollResponses: 0,
+            slowApiResponses: 0
         };
     }
-    
-    startTiming(operation) {
-        return performance.now();
+
+    // Start timing an operation
+    startTiming(operationName) {
+        const startTime = performance.now();
+        this.timings.set(operationName, startTime);
+        return startTime;
     }
-    
-    endTiming(operation, startTime, category = 'general') {
-        const duration = performance.now() - startTime;
+
+    // End timing and record metrics
+    endTiming(operationName, startTime = null, category = 'general') {
+        const endTime = performance.now();
+        const actualStartTime = startTime || this.timings.get(operationName);
         
-        if (!this.metrics[category]) {
-            this.metrics[category] = [];
+        if (!actualStartTime) {
+            console.warn(`[PerformanceMonitor] No start time found for operation: ${operationName}`);
+            return null;
         }
         
-        this.metrics[category].push(duration);
+        const duration = endTime - actualStartTime;
+        this.recordMetric(operationName, duration, category);
+        this.timings.delete(operationName);
         
-        // Keep only last 50 measurements
-        if (this.metrics[category].length > 50) {
-            this.metrics[category] = this.metrics[category].slice(-50);
-        }
+        // Check against thresholds and update patterns
+        this.checkThresholds(operationName, duration, category);
         
-        console.log(`[PerformanceMonitor] ${operation} took ${duration.toFixed(2)}ms`);
         return duration;
     }
-    
-    getAverageTime(category) {
-        const times = this.metrics[category];
-        if (!times || times.length === 0) return 0;
+
+    // Record a performance metric
+    recordMetric(name, value, category = 'general') {
+        if (!this.metrics.has(category)) {
+            this.metrics.set(category, new Map());
+        }
         
-        return times.reduce((sum, time) => sum + time, 0) / times.length;
-    }
-    
-    logReport() {
-        console.log('[PerformanceMonitor] Performance Report:');
-        Object.entries(this.metrics).forEach(([category, times]) => {
-            if (times.length > 0) {
-                const avg = this.getAverageTime(category);
-                const min = Math.min(...times);
-                const max = Math.max(...times);
-                console.log(`  ${category}: avg=${avg.toFixed(2)}ms, min=${min.toFixed(2)}ms, max=${max.toFixed(2)}ms (${times.length} samples)`);
-            }
+        const categoryMetrics = this.metrics.get(category);
+        if (!categoryMetrics.has(name)) {
+            categoryMetrics.set(name, []);
+        }
+        
+        const metricArray = categoryMetrics.get(name);
+        metricArray.push({
+            value,
+            timestamp: performance.now()
         });
+        
+        // Keep metrics history manageable
+        if (metricArray.length > this.maxMetricsHistory) {
+            metricArray.shift();
+        }
+        
+        // Store in specialized arrays for analysis
+        this.storeSpecializedMetrics(name, value, category);
+    }
+
+    // Store metrics in specialized arrays for better analysis
+    storeSpecializedMetrics(name, value, category) {
+        switch (category) {
+            case 'imageLoad':
+                this.imageLoadTimes.push(value);
+                if (this.imageLoadTimes.length > this.maxMetricsHistory) {
+                    this.imageLoadTimes.shift();
+                }
+                break;
+            case 'masonryLayout':
+                this.masonryLayoutTimes.push(value);
+                if (this.masonryLayoutTimes.length > this.maxMetricsHistory) {
+                    this.masonryLayoutTimes.shift();
+                }
+                break;
+            case 'scrollResponse':
+                this.scrollPerformance.push(value);
+                if (this.scrollPerformance.length > this.maxMetricsHistory) {
+                    this.scrollPerformance.shift();
+                }
+                break;
+        }
+    }
+
+    // Check performance against thresholds
+    checkThresholds(operationName, duration, category) {
+        let threshold = this.thresholds.general || 1000;
+        
+        switch (category) {
+            case 'imageLoad':
+                threshold = this.thresholds.imageLoad;
+                if (duration > threshold) {
+                    this.performancePatterns.slowImageLoads++;
+                }
+                break;
+            case 'masonryLayout':
+                threshold = this.thresholds.masonryLayout;
+                if (duration > threshold) {
+                    this.performancePatterns.slowMasonryLayouts++;
+                    console.warn(`[PerformanceMonitor] Slow Masonry layout detected: ${duration.toFixed(2)}ms for ${operationName}`);
+                }
+                break;
+            case 'scrollResponse':
+                threshold = this.thresholds.scrollResponse;
+                if (duration > threshold) {
+                    this.performancePatterns.slowScrollResponses++;
+                }
+                break;
+            case 'apiResponse':
+                threshold = this.thresholds.apiResponse;
+                if (duration > threshold) {
+                    this.performancePatterns.slowApiResponses++;
+                }
+                break;
+        }
+    }
+
+    // Get performance statistics
+    getStats(category = null) {
+        if (category) {
+            return this.getCategoryStats(category);
+        }
+        
+        return {
+            imageLoading: this.getImageLoadingStats(),
+            masonryPerformance: this.getMasonryStats(),
+            scrollPerformance: this.getScrollStats(),
+            overallPatterns: this.performancePatterns
+        };
+    }
+
+    // Get image loading statistics
+    getImageLoadingStats() {
+        if (this.imageLoadTimes.length === 0) return null;
+        
+        const times = this.imageLoadTimes;
+        const avg = times.reduce((sum, time) => sum + time, 0) / times.length;
+        const min = Math.min(...times);
+        const max = Math.max(...times);
+        const median = this.calculateMedian(times);
+        
+        return {
+            average: avg,
+            median,
+            min,
+            max,
+            count: times.length,
+            slowLoads: this.performancePatterns.slowImageLoads
+        };
+    }
+
+    // Get Masonry performance statistics
+    getMasonryStats() {
+        if (this.masonryLayoutTimes.length === 0) return null;
+        
+        const times = this.masonryLayoutTimes;
+        const avg = times.reduce((sum, time) => sum + time, 0) / times.length;
+        const min = Math.min(...times);
+        const max = Math.max(...times);
+        
+        return {
+            average: avg,
+            min,
+            max,
+            count: times.length,
+            slowLayouts: this.performancePatterns.slowMasonryLayouts
+        };
+    }
+
+    // Get scroll performance statistics
+    getScrollStats() {
+        if (this.scrollPerformance.length === 0) return null;
+        
+        const times = this.scrollPerformance;
+        const avg = times.reduce((sum, time) => sum + time, 0) / times.length;
+        const droppedFrames = times.filter(time => time > 16).length;
+        
+        return {
+            average: avg,
+            droppedFrames,
+            totalMeasurements: times.length,
+            frameDropRate: (droppedFrames / times.length) * 100
+        };
+    }
+
+    // Calculate median value
+    calculateMedian(values) {
+        const sorted = [...values].sort((a, b) => a - b);
+        const mid = Math.floor(sorted.length / 2);
+        return sorted.length % 2 !== 0 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+    }
+
+    // Get category-specific statistics
+    getCategoryStats(category) {
+        const categoryMetrics = this.metrics.get(category);
+        if (!categoryMetrics) return null;
+        
+        const stats = {};
+        for (const [metricName, metricArray] of categoryMetrics) {
+            const values = metricArray.map(m => m.value);
+            if (values.length > 0) {
+                stats[metricName] = {
+                    average: values.reduce((sum, val) => sum + val, 0) / values.length,
+                    min: Math.min(...values),
+                    max: Math.max(...values),
+                    count: values.length,
+                    recent: values.slice(-5) // Last 5 measurements
+                };
+            }
+        }
+        
+        return stats;
+    }
+
+    // Log performance summary
+    logPerformanceSummary() {
+        const stats = this.getStats();
+        console.group('[PerformanceMonitor] Performance Summary');
+        
+        if (stats.imageLoading) {
+            console.log('Image Loading:', {
+                avgTime: `${stats.imageLoading.average.toFixed(2)}ms`,
+                medianTime: `${stats.imageLoading.median.toFixed(2)}ms`,
+                slowLoads: stats.imageLoading.slowLoads,
+                totalImages: stats.imageLoading.count
+            });
+        }
+        
+        if (stats.masonryPerformance) {
+            console.log('Masonry Performance:', {
+                avgLayoutTime: `${stats.masonryPerformance.average.toFixed(2)}ms`,
+                slowLayouts: stats.masonryPerformance.slowLayouts,
+                totalLayouts: stats.masonryPerformance.count
+            });
+        }
+        
+        if (stats.scrollPerformance) {
+            console.log('Scroll Performance:', {
+                avgResponseTime: `${stats.scrollPerformance.average.toFixed(2)}ms`,
+                frameDropRate: `${stats.scrollPerformance.frameDropRate.toFixed(1)}%`,
+                droppedFrames: stats.scrollPerformance.droppedFrames
+            });
+        }
+        
+        console.groupEnd();
+    }
+
+    // Clear all metrics
+    clearMetrics() {
+        this.metrics.clear();
+        this.timings.clear();
+        this.imageLoadTimes = [];
+        this.masonryLayoutTimes = [];
+        this.scrollPerformance = [];
+        this.performancePatterns = {
+            slowImageLoads: 0,
+            slowMasonryLayouts: 0,
+            slowScrollResponses: 0,
+            slowApiResponses: 0
+        };
     }
 }
 
-// Global instances
+// === GLOBAL INSTANCES ===
+// Create optimized global instances for Masonry gallery performance
 export const globalRequestManager = new RequestManager();
 export const globalScrollTracker = new ScrollDirectionTracker();
-export const globalConnectionDetector = new ConnectionQualityDetector();
-export const globalImageFormatDetector = new ImageFormatDetector();
-export const globalPerformanceMonitor = new PerformanceMonitor(); 
+export const globalPerformanceMonitor = new PerformanceMonitor();
+
+// Initialize scroll tracking
+window.addEventListener('scroll', () => {
+    globalScrollTracker.update();
+}, { passive: true });
+
+// Log performance summary every 2 minutes in development
+if (window.location.hostname === 'localhost' || window.location.hostname.includes('dev')) {
+    setInterval(() => {
+        globalPerformanceMonitor.logPerformanceSummary();
+    }, 120000); // 2 minutes
+}
+
+console.log('[utils.js] Optimized utilities initialized for Masonry gallery performance'); 
