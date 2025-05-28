@@ -68,34 +68,75 @@ export class RequestManager {
     }
 }
 
-// Scroll Direction Tracker for smart preloading
+// === ENHANCED SCROLL DIRECTION TRACKER FOR SMART PRELOADING ===
 export class ScrollDirectionTracker {
     constructor() {
+        this.lastScrollY = window.scrollY;
         this.scrollDirection = 'down';
-        this.lastScrollY = 0;
         this.scrollVelocity = 0;
         this.lastScrollTime = Date.now();
+        this.isScrolling = false;
+        this.scrollEndTimer = null;
+        
+        // Smart preloading configuration
+        this.preloadDistance = window.innerHeight * 2; // Preload 2 viewports ahead
+        this.fastScrollThreshold = 2; // pixels per millisecond for fast scroll detection
+        this.scrollHistory = []; // Track scroll behavior
+        this.maxHistoryLength = 10;
     }
     
     update() {
         const currentScrollY = window.scrollY;
         const currentTime = Date.now();
-        const timeDelta = currentTime - this.lastScrollTime;
+        const deltaY = currentScrollY - this.lastScrollY;
+        const deltaTime = currentTime - this.lastScrollTime;
         
-        if (timeDelta > 0) {
-            const scrollDelta = currentScrollY - this.lastScrollY;
-            this.scrollVelocity = Math.abs(scrollDelta) / timeDelta;
+        // Calculate scroll velocity (pixels per millisecond)
+        if (deltaTime > 0) {
+            this.scrollVelocity = Math.abs(deltaY) / deltaTime;
             
-            if (scrollDelta > 5) {
+            // Determine scroll direction with threshold
+            if (deltaY > 5) {
                 this.scrollDirection = 'down';
-            } else if (scrollDelta < -5) {
+            } else if (deltaY < -5) {
                 this.scrollDirection = 'up';
             }
             // If small delta, keep previous direction
+            
+            // Track scroll history for pattern detection
+            this.scrollHistory.push({
+                time: currentTime,
+                direction: this.scrollDirection,
+                velocity: this.scrollVelocity,
+                position: currentScrollY
+            });
+            
+            // Maintain history length
+            if (this.scrollHistory.length > this.maxHistoryLength) {
+                this.scrollHistory.shift();
+            }
         }
+        
+        // Track scrolling state with debounce
+        this.isScrolling = true;
+        clearTimeout(this.scrollEndTimer);
+        this.scrollEndTimer = setTimeout(() => {
+            this.isScrolling = false;
+            this.onScrollEnd();
+        }, 150);
         
         this.lastScrollY = currentScrollY;
         this.lastScrollTime = currentTime;
+        
+        // Reduce console spam - only log significant changes
+        if (Math.abs(deltaY) > 20 || this.scrollHistory.length % 5 === 0) {
+            console.log(`[ScrollTracker] Direction: ${this.scrollDirection}, Velocity: ${this.scrollVelocity.toFixed(2)}, Should Preload: ${this.shouldPreload()}`);
+        }
+    }
+    
+    onScrollEnd() {
+        console.log('[ScrollTracker] Scroll ended, good time to preload if needed');
+        // Can trigger preload actions here when scroll stops
     }
     
     getDirection() {
@@ -107,7 +148,59 @@ export class ScrollDirectionTracker {
     }
     
     isFastScrolling() {
-        return this.scrollVelocity > 2; // pixels per millisecond
+        return this.scrollVelocity > this.fastScrollThreshold;
+    }
+    
+    // Enhanced smart preloading logic
+    shouldPreload() {
+        // Don't preload during fast scrolling to save bandwidth
+        if (this.isFastScrolling()) {
+            return false;
+        }
+        
+        // Analyze scroll pattern - prefer consistent downward scrolling
+        const recentHistory = this.scrollHistory.slice(-5);
+        const downwardScrolls = recentHistory.filter(h => h.direction === 'down').length;
+        const consistentDownward = downwardScrolls >= 3;
+        
+        return !this.isScrolling && this.scrollDirection === 'down' && consistentDownward;
+    }
+    
+    getPreloadDirection() {
+        return this.scrollDirection;
+    }
+    
+    getPreloadDistance() {
+        // Adjust preload distance based on scroll velocity and pattern
+        if (this.isFastScrolling()) {
+            return this.preloadDistance * 0.5; // Reduce for fast scrolling
+        }
+        
+        // Increase preload distance for consistent slow scrolling
+        const avgVelocity = this.getAverageVelocity();
+        if (avgVelocity < 0.5) { // Very slow, deliberate scrolling
+            return this.preloadDistance * 1.5;
+        }
+        
+        return this.preloadDistance;
+    }
+    
+    getAverageVelocity() {
+        if (this.scrollHistory.length === 0) return 0;
+        const sum = this.scrollHistory.reduce((acc, h) => acc + h.velocity, 0);
+        return sum / this.scrollHistory.length;
+    }
+    
+    // Get scroll position relative to document height
+    getScrollProgress() {
+        const scrollTop = window.scrollY;
+        const documentHeight = document.documentElement.scrollHeight - window.innerHeight;
+        return documentHeight > 0 ? scrollTop / documentHeight : 0;
+    }
+    
+    // Check if user is approaching bottom (for infinite scroll)
+    isApproachingBottom(threshold = 0.8) {
+        return this.getScrollProgress() > threshold;
     }
 }
 

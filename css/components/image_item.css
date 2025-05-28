@@ -19,14 +19,16 @@
     margin-bottom: 16px;
     border-radius: 6px;
     overflow: hidden;
-    background: linear-gradient(90deg, #1a1a1a 25%, #2a2a2a 50%, #1a1a1a 75%);
+    background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
     background-size: 200% 100%;
     animation: skeleton-shimmer 1.5s infinite;
     position: relative;
+    border: 1px solid #30363d;
 }
 
 .image-skeleton--loading {
     /* Specific styling when actively loading */
+    opacity: 0.8;
 }
 
 @keyframes skeleton-shimmer {
@@ -92,6 +94,55 @@
     transform: scale(1);
 }
 
+/* === PROGRESSIVE LOADING STYLES === */
+.img-progressive {
+    filter: blur(5px);
+    transform: scale(1.05);
+    transition: filter 0.3s ease, transform 0.3s ease;
+}
+
+.img-progressive.loaded {
+    filter: blur(0);
+    transform: scale(1);
+}
+
+/* Improved image loading states */
+.img-placeholder {
+    background: linear-gradient(90deg, var(--skeleton-bg) 25%, var(--skeleton-highlight) 50%, var(--skeleton-bg) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    filter: blur(2px);
+    opacity: 0.7;
+    transition: filter 0.4s ease, opacity 0.4s ease;
+}
+
+.img-loaded {
+    filter: blur(0);
+    opacity: 1;
+    transition: filter 0.4s ease, opacity 0.4s ease;
+}
+
+/* Smooth image reveal animation */
+.image-item {
+    opacity: 0;
+    transform: translateY(20px);
+    transition: opacity 0.6s ease, transform 0.6s ease;
+}
+
+.image-item--visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Enhanced loading states for better UX */
+.image-item--loading {
+    opacity: 0.6;
+}
+
+.image-item--loaded {
+    opacity: 1;
+}
+
 /* === RESPONSIVE BREAKPOINTS === */
 @media (max-width: 480px) {
     .image-item, .image-skeleton {
@@ -121,4 +172,38 @@
     .image-item, .image-skeleton {
         width: 15%; /* 6 columns on very large screens */
     }
+}
+
+/* === PROGRESSIVE THUMBNAIL LOADING STYLES === */
+.img-progressive-thumb {
+    filter: blur(1px);
+    opacity: 0.8;
+    transition: filter 0.3s ease, opacity 0.3s ease;
+}
+
+.img-loaded-fast {
+    filter: blur(0);
+    opacity: 1;
+    /* Subtle indication that it's low-res */
+    transform: scale(1.01);
+    transition: filter 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
+}
+
+.img-loaded-hq {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1);
+    /* High quality loaded - crisp and clear */
+    transition: filter 0.3s ease, opacity 0.3s ease, transform 0.3s ease;
+}
+
+.img-loaded-final {
+    filter: blur(0);
+    opacity: 1;
+    transform: scale(1);
+}
+
+.img-error {
+    filter: grayscale(1);
+    opacity: 0.5;
 }

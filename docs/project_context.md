@@ -105,11 +105,30 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
                     *   Added comprehensive logging for skeleton creation and Intersection Observer
                     *   Fixed aspect ratio calculation with proper fallbacks
                     *   ✅ **MAJOR FIX:** Fixed thumbnail size validation - `getOptimalThumbnailSize()` was returning invalid sizes (120, 175, 200, etc.) not in API's allowed sizes `[150, 750]`, causing all thumbnail requests to fail with HTTP 400. Now uses standardized size 150 for all thumbnails.
-        *   **Phase 2: Advanced Optimizations (3-5 days)** - 📋 PLANNED
-            *   ⏳ Progressive image loading (blur → sharp)
-            *   ⏳ Smart preloading strategy based on scroll direction
-            *   ⏳ Request deduplication và better race condition handling
-            *   ⏳ Virtual scrolling cho large datasets
+                    *   🔧 **Phase 2 Bug Fixes (2025-05-21):**
+                        *   Fixed infinite loading loops causing image flickering
+                        *   Prevented duplicate event handlers with `{ once: true }` option
+                        *   Reduced console spam by throttling scroll tracker logging
+                        *   Temporarily disabled complex smart preloading to fix loading order
+                        *   Added state tracking to prevent race conditions in progressive loading
+                        *   Fixed PhotoSwipe click handlers with proper event handling
+        *   **Phase 2: Advanced Optimizations (3-5 days)** - ✅ COMPLETED (2025-05-21)
+            *   ✅ Progressive image loading (blur → sharp)
+                *   **Progressive Thumbnail Strategy:** 150px (fast) → 750px (high quality)
+                *   Fast initial load với 150px thumbnails for immediate feedback
+                *   Automatic upgrade to 750px for enhanced quality after 200ms delay
+                *   Smooth opacity transitions during quality upgrades
+                *   Natural skeleton loading với subtle gray shimmer animation
+            *   ✅ Smart preloading strategy based on scroll direction
+                *   Enhanced ScrollDirectionTracker với velocity và pattern analysis
+                *   Scroll history tracking cho consistent behavior detection
+                *   Adaptive preload distance based on scroll velocity
+                *   Direction-aware preloading (up/down scroll detection)
+            *   ✅ Enhanced request deduplication và race condition handling
+                *   Improved RequestManager với better error handling
+                *   Smart preload timing to avoid overwhelming connections
+                *   Staggered preload requests to prevent bandwidth spikes
+                *   Progressive thumbnail loading prevents duplicate size requests
         *   **Phase 3: Modern Web Features (2-3 days)** - 📋 PLANNED
             *   📋 WebP/AVIF support với fallback
             *   📋 Service Worker caching

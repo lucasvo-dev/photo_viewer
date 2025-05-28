@@ -1,6 +1,7 @@
 import { currentImageList, updateImageListItem } from './state.js';
 import { API_BASE_URL, fetchDataApi } from './config.js';
 import { refreshCurrentPhotoSwipeSlideIfNeeded } from './photoswipeHandler.js';
+import { globalScrollTracker } from './utils.js';
 
 // DOM Elements
 let imageViewEl, currentDirectoryNameEl, imageGridEl, loadMoreContainerEl, loadMoreBtnEl;
@@ -50,7 +51,7 @@ function getAspectRatioFromMetadata(imgData) {
     return '1 / 1'; // Default square
 }
 
-// === INTERSECTION OBSERVER SETUP ===
+// === ENHANCED INTERSECTION OBSERVER WITH SMART PRELOADING ===
 function initializeImageObserver() {
     if (imageObserver) return; // Already initialized
     
@@ -63,6 +64,9 @@ function initializeImageObserver() {
                 // Replace skeleton with actual image
                 loadImageWithPriority(placeholder, imgData);
                 imageObserver.unobserve(placeholder);
+                
+                // Smart preloading: trigger preload of nearby images based on scroll direction
+                setTimeout(() => triggerSmartPreload(placeholder), 100);
             }
         });
     }, {
@@ -71,10 +75,58 @@ function initializeImageObserver() {
     });
 }
 
-function loadImageWithPriority(skeletonElement, imgData) {
+// Smart preloading based on scroll direction and velocity - SIMPLIFIED
+function triggerSmartPreload(currentElement) {
+    // Temporarily disable smart preloading to fix loading issues
+    console.log('[uiImageView] Smart preloading temporarily disabled to fix loading order');
+    return;
+    
+    if (!globalScrollTracker || !globalScrollTracker.shouldPreload()) {
+        console.log('[uiImageView] Skipping preload - conditions not met');
+        return;
+    }
+    
+    const scrollDirection = globalScrollTracker.getPreloadDirection();
+    
+    console.log(`[uiImageView] Triggering simple preload - Direction: ${scrollDirection}`);
+    
+    // Find next 2 skeleton elements only
+    const allSkeletons = document.querySelectorAll('.image-skeleton[data-img-data]');
+    const currentIndex = Array.from(allSkeletons).indexOf(currentElement);
+    
+    if (currentIndex === -1) return;
+    
+    // Only preload next 1-2 images to maintain order
+    const preloadCount = 1;
+    const endIndex = Math.min(allSkeletons.length, currentIndex + preloadCount + 1);
+    
+    for (let i = currentIndex + 1; i < endIndex; i++) {
+        const skeleton = allSkeletons[i];
+        if (skeleton && skeleton.dataset.imgData) {
+            console.log(`[uiImageView] Simple preload for index ${i}`);
+            const imgData = JSON.parse(skeleton.dataset.imgData);
+            
+            setTimeout(() => {
+                if (skeleton.parentNode) {
+                    loadImageWithPriority(skeleton, imgData, true);
+                    imageObserver.unobserve(skeleton);
+                }
+            }, 200);
+            break; // Only preload one at a time
+        }
+    }
+}
+
+function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
     // Create the actual image item
     const imageIndex = currentImageList.findIndex(item => item.path === imgData.path);
-    const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, true);
+    const imageElement = createImageItemElement(imgData, imageIndex, appOpenPhotoSwipe, !isPreload);
+    
+    // Add preload class for styling differentiation
+    if (isPreload) {
+        imageElement.classList.add('image-item--preloaded');
+        console.log(`[uiImageView] Created preloaded image for: ${imgData.name}`);
+    }
     
     // Replace skeleton with image element
     skeletonElement.parentNode.replaceChild(imageElement, skeletonElement);
@@ -120,11 +172,14 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
 
     anchor.onclick = (e) => {
         e.preventDefault();
+        console.log(`[uiImageView] Image clicked: ${imgData.name}, Index: ${imageIndex}`);
+        
         if (imageIndex !== -1) {
             openPhotoSwipeCallback(imageIndex);
         } else {
             const freshIndex = currentImageList.findIndex(item => item.path === imgData.path);
             if (freshIndex !== -1) {
+                console.log(`[uiImageView] Found fresh index: ${freshIndex} for ${imgData.name}`);
                 openPhotoSwipeCallback(freshIndex);
             } else {
                 console.error("Could not find media index for (onclick):", imgData.name, imgData.path);
@@ -132,42 +187,21 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
         }
     };
 
-    const img = document.createElement('img');
-    
-    // Use optimal thumbnail size
-    const optimalSize = getOptimalThumbnailSize();
-    
-    // Simplified URL construction - test with direct format
-    const thumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=${optimalSize}`;
-    
     console.log(`[uiImageView] Creating image for ${imgData.name}:`);
-    console.log(`[uiImageView] - Optimal size: ${optimalSize}`);
-    console.log(`[uiImageView] - Image path: ${imgData.path}`);
-    console.log(`[uiImageView] - Encoded path: ${encodeURIComponent(imgData.path)}`);
-    console.log(`[uiImageView] - Final thumbnail src: ${thumbSrc}`);
-    console.log(`[uiImageView] - Image data:`, imgData);
     
-    // TEMPORARY: Test with a manual URL to debug 400 error
-    console.log(`[uiImageView] - Manual test URL: api.php?action=get_thumbnail&path=main%2F12G%20THPT%20PHU%20XUAN%2FMAY%201%2FGuukyyeu%20(1).jpg&size=150`);
+    // TEMPORARY: Less verbose logging
+    // console.log(`[uiImageView] - Manual test URL: api.php?action=get_thumbnail&path=main%2F12G%20THPT%20PHU%20XUAN%2FMAY%201%2FGuukyyeu%20(1).jpg&size=150`);
     
-    img.alt = imgData.name;
+    // Create progressive thumbnail (150px → 750px) instead of single size
+    const img = createProgressiveThumbnailImage(imgData, () => {
+        // Callback when fast thumbnail loads - make container visible
+        setTimeout(() => {
+            div.classList.add('image-item--visible');
+            // console.log(`[uiImageView] Made image visible after fast load: ${imgData.name}`);
+        }, 50);
+    });
     
-    // Progressive loading setup
-    if (isLazyLoaded) {
-        // For lazy loaded images, load immediately
-        img.src = thumbSrc;
-        img.loading = 'eager'; // Load immediately since it's already in viewport
-        console.log(`[uiImageView] Set lazy loaded image src: ${thumbSrc}`);
-    } else {
-        // For images loaded on initial page load, use lazy loading
-        img.loading = 'lazy';
-        img.src = thumbSrc;
-        console.log(`[uiImageView] Set initial image src: ${thumbSrc}`);
-    }
-
-    // Add loading classes for progressive enhancement
-    img.classList.add('img-placeholder');
-    console.log(`[uiImageView] Added img-placeholder class to: ${imgData.name}`);
+    // console.log(`[uiImageView] Added progressive thumbnail loading for: ${imgData.name}`);
 
     // Function to update image source and potentially re-layout Masonry
     const updateImageAndLayout = (newSrc) => {
@@ -180,80 +214,8 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
         }
     };
 
-    // Check for placeholder and start polling if necessary
-    const checkAndPollThumbnail = async () => {
-        try {
-            const response = await fetch(thumbSrc, { method: 'HEAD' });
-            const thumbnailStatusHeader = response.headers.get('x-thumbnail-status');
-
-            if (thumbnailStatusHeader && thumbnailStatusHeader.includes('placeholder')) {
-                const parts = thumbnailStatusHeader.split(';').reduce((acc, part) => {
-                    const [key, value] = part.trim().split('=');
-                    acc[key] = value;
-                    return acc;
-                }, {});
-
-                const actualSize = parseInt(parts['actual-size'], 10);
-                const targetSize = parseInt(parts['target-size'], 10);
-                
-                // If a placeholder was served (e.g. 150px instead of requested size)
-                if (actualSize < targetSize) {
-                    const actualSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=${actualSize}`;
-                    pollForFinalThumbnail(imgData.path, targetSize, img, updateImageAndLayout);
-                }
-            }
-        } catch (error) {
-            console.error(`[uiImageView] Error checking thumbnail status for ${imgData.path}:`, error);
-        }
-    };
-
-    img.onload = () => {
-        console.log(`[uiImageView] Image loaded successfully: ${imgData.name}`);
-        // Remove placeholder class and add loaded class
-        img.classList.remove('img-placeholder');
-        img.classList.add('img-loaded');
-        
-        // Make the container visible with animation
-        setTimeout(() => {
-            div.classList.add('image-item--visible');
-            console.log(`[uiImageView] Made image visible: ${imgData.name}, classes:`, div.className);
-        }, 50);
-    };
-
-    img.onerror = async () => {
-        console.error(`[uiImageView] Image failed to load: ${imgData.name}, src: ${img.src}`);
-        
-        // Try to get more detailed error information
-        try {
-            const response = await fetch(img.src, { method: 'HEAD' });
-            console.error(`[uiImageView] Thumbnail HTTP status: ${response.status} ${response.statusText}`);
-            console.error(`[uiImageView] Response headers:`, [...response.headers.entries()]);
-        } catch (fetchError) {
-            console.error(`[uiImageView] Fetch error for debugging:`, fetchError);
-        }
-        
-        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
-        img.alt = 'Lỗi tải ảnh xem trước';
-        img.classList.remove('img-placeholder');
-        img.classList.add('img-loaded');
-        div.classList.add('image-item--visible');
-        console.log(`[uiImageView] Set fallback image for: ${imgData.name}`);
-    };
-
-    // Set up thumbnail polling after initial load
-    const handleInitialLoad = async () => {
-        img.removeEventListener('load', handleInitialLoad);
-        img.removeEventListener('error', handleInitialError);
-        await checkAndPollThumbnail();
-    };
-    
-    const handleInitialError = () => {
-        img.removeEventListener('load', handleInitialLoad);
-        img.removeEventListener('error', handleInitialError);
-    };
-    
-    img.addEventListener('load', handleInitialLoad);
-    img.addEventListener('error', handleInitialError);
+    // Note: Thumbnail polling and old onload/onerror handlers are now managed by createProgressiveThumbnailImage
+    // The progressive thumbnail system handles all loading states and upgrades automatically
 
     anchor.appendChild(img);
 
@@ -588,4 +550,173 @@ function getItemsPerRowForCurrentScreen() {
     else if (screenWidth <= 1024) return 4;   // Small desktop: 4 columns
     else if (screenWidth <= 1440) return 5;   // Large desktop: 5 columns
     else return 6;                             // Very large: 6 columns
+}
+
+// === PROGRESSIVE IMAGE LOADING UTILITIES ===
+function createProgressiveImage(imgData, thumbSrc) {
+    const img = document.createElement('img');
+    img.alt = imgData.name;
+    
+    // Create a tiny placeholder (could be base64 encoded micro-image)
+    const tinyPlaceholder = createTinyImagePlaceholder(imgData);
+    
+    // Start with progressive loading classes
+    img.classList.add('img-progressive');
+    img.src = tinyPlaceholder;
+    
+    // Load the actual thumbnail
+    const actualImg = new Image();
+    actualImg.onload = () => {
+        // Progressive reveal: replace src and remove blur
+        img.src = thumbSrc;
+        setTimeout(() => {
+            img.classList.add('loaded');
+            img.classList.remove('img-progressive');
+            img.classList.add('img-loaded');
+        }, 50);
+    };
+    
+    actualImg.onerror = () => {
+        // Fallback handling
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.classList.remove('img-progressive');
+        img.classList.add('img-loaded');
+    };
+    
+    actualImg.src = thumbSrc;
+    
+    return img;
+}
+
+function createTinyImagePlaceholder(imgData) {
+    // Create a tiny colored placeholder based on aspect ratio
+    const aspectRatio = getAspectRatioFromMetadata(imgData);
+    const [width, height] = aspectRatio.split(' / ').map(num => parseInt(num) || 1);
+    
+    // Create a tiny canvas-based image (10px max dimension)
+    const canvas = document.createElement('canvas');
+    const maxDim = 10;
+    const scale = Math.min(maxDim / width, maxDim / height);
+    
+    canvas.width = Math.max(1, Math.floor(width * scale));
+    canvas.height = Math.max(1, Math.floor(height * scale));
+    
+    const ctx = canvas.getContext('2d');
+    
+    // Fill with a subtle gradient based on filename hash
+    const hash = simpleStringHash(imgData.name);
+    const hue = hash % 360;
+    const gradient = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+    gradient.addColorStop(0, `hsl(${hue}, 20%, 85%)`);
+    gradient.addColorStop(1, `hsl(${hue + 30}, 20%, 75%)`);
+    
+    ctx.fillStyle = gradient;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    
+    return canvas.toDataURL('image/png');
+}
+
+function simpleStringHash(str) {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        const char = str.charCodeAt(i);
+        hash = ((hash << 5) - hash) + char;
+        hash = hash & hash; // Convert to 32bit integer
+    }
+    return Math.abs(hash);
+}
+
+// === PROGRESSIVE THUMBNAIL LOADING (150px → 750px) ===
+function createProgressiveThumbnailImage(imgData, onLoadCallback) {
+    const img = document.createElement('img');
+    img.alt = imgData.name;
+    
+    // URLs for progressive loading
+    const fastThumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=150`;
+    const highQualityThumbSrc = `api.php?action=get_thumbnail&path=${encodeURIComponent(imgData.path)}&size=750`;
+    
+    // State tracking to prevent loops
+    let fastLoaded = false;
+    let highQualityLoaded = false;
+    let isUpgrading = false;
+    
+    console.log(`[uiImageView] Progressive loading started: ${imgData.name}`);
+    
+    // Start with 150px thumbnail
+    img.classList.add('img-progressive-thumb');
+    img.src = fastThumbSrc;
+    img.dataset.currentQuality = 'loading';
+    
+    // Handle fast thumbnail load (150px)
+    const handleFastLoad = () => {
+        if (fastLoaded || isUpgrading) return; // Prevent duplicate handling
+        fastLoaded = true;
+        
+        console.log(`[uiImageView] Fast thumbnail (150px) loaded: ${imgData.name}`);
+        img.classList.remove('img-progressive-thumb');
+        img.classList.add('img-loaded-fast');
+        img.dataset.currentQuality = 'fast';
+        
+        // Trigger callback for visibility
+        if (onLoadCallback) onLoadCallback();
+        
+        // Start high quality loading after a delay (non-blocking)
+        setTimeout(() => {
+            if (!highQualityLoaded && !isUpgrading && img.parentNode) {
+                loadHighQuality();
+            }
+        }, 300);
+    };
+    
+    // Handle high quality upgrade (750px)
+    const loadHighQuality = () => {
+        if (highQualityLoaded || isUpgrading) return;
+        isUpgrading = true;
+        
+        const highResImg = new Image();
+        
+        highResImg.onload = () => {
+            if (highQualityLoaded || !img.parentNode) return; // Check if still needed
+            highQualityLoaded = true;
+            
+            console.log(`[uiImageView] High quality (750px) loaded: ${imgData.name}`);
+            
+            // Smooth transition
+            img.style.transition = 'opacity 0.2s ease';
+            img.style.opacity = '0.8';
+            
+            setTimeout(() => {
+                if (img.parentNode) { // Final check before upgrade
+                    img.src = highQualityThumbSrc;
+                    img.dataset.currentQuality = 'high';
+                    img.style.opacity = '1';
+                    img.classList.remove('img-loaded-fast');
+                    img.classList.add('img-loaded-hq');
+                }
+            }, 100);
+        };
+        
+        highResImg.onerror = () => {
+            console.log(`[uiImageView] High quality failed, keeping 150px: ${imgData.name}`);
+            img.classList.add('img-loaded-final');
+            img.dataset.currentQuality = 'final';
+        };
+        
+        highResImg.src = highQualityThumbSrc;
+    };
+    
+    // Error handling
+    const handleError = () => {
+        console.error(`[uiImageView] Thumbnail loading failed: ${imgData.name}`);
+        img.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+        img.classList.add('img-error');
+        img.dataset.currentQuality = 'error';
+        if (onLoadCallback) onLoadCallback();
+    };
+    
+    // Set up event listeners (once only)
+    img.addEventListener('load', handleFastLoad, { once: true });
+    img.addEventListener('error', handleError, { once: true });
+    
+    return img;
 } 
