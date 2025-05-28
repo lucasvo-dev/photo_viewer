@@ -4,35 +4,52 @@
 }
 .image-group { /* Container riêng cho ảnh masonry */
     margin-top: 24px; /* Khoảng cách với thư mục con nếu có */
-    /* column-count: 2; column-gap: 16px; */ /* REMOVE these for Masonry.js */
     width: 100%; /* Ensure the group takes full available width */
+    
+    /* Performance optimization */
+    contain: layout style paint;
 }
-/* Responsive columns - REMOVE these as Masonry.js will handle responsiveness via item selectors and width */
-/* @media(min-width: 600px) { .image-group{ column-count: 3; } } */
-/* @media(min-width: 900px) { .image-group{ column-count: 4; } } */
-/* @media(min-width: 1200px){ .image-group{ column-count: 5; } } */
 
 /* === OPTIMIZED SKELETON LOADING === */
 .image-skeleton {
-    background: linear-gradient(90deg, #161b22 25%, #21262d 50%, #161b22 75%);
-    background-size: 200% 100%;
-    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    background-color: #161b22;
+    border: 1px solid #30363d;
     border-radius: 6px;
     position: relative;
     overflow: hidden;
+    margin-bottom: 16px;
     
-    /* Optimized for better performance */
-    will-change: background-position;
+    /* Aspect ratio container to prevent layout shift */
+    aspect-ratio: 1 / 1; /* Default square, will be overridden */
+    
+    /* Performance optimizations */
+    will-change: auto; /* Let browser decide */
     transform: translateZ(0); /* Force hardware acceleration */
+    backface-visibility: hidden;
+    
+    /* Always visible - no fade in for skeletons */
+    opacity: 1;
+    transform: translateY(0);
 }
 
-.image-skeleton--loading {
-    animation-duration: 1.2s; /* Slightly faster for active loading state */
+.skeleton-shimmer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.05) 50%,
+        transparent 100%
+    );
+    animation: shimmer 1.5s infinite;
 }
 
-@keyframes skeleton-shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+@keyframes shimmer {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
 }
 
 /* === OPTIMIZED IMAGE ITEM STYLES === */
@@ -53,12 +70,13 @@
     
     /* Initial state for fade-in animation - optimized for performance */
     opacity: 0;
-    transform: translateY(10px); /* Reduced from 15px for subtler effect */
-    transition: opacity 0.25s ease-out, transform 0.25s ease-out; /* Faster transitions */
+    transform: translateY(10px);
+    transition: opacity 0.2s ease-out, transform 0.2s ease-out; /* Faster transitions */
     
     /* Performance optimizations */
     will-change: opacity, transform;
     backface-visibility: hidden;
+    transform: translateZ(0); /* Force hardware acceleration */
 }
 
 .image-item.image-item--visible {
@@ -67,11 +85,11 @@
 }
 
 .image-item:hover {
-    transform: translateY(-2px) scale(1.02); /* Subtle hover effect */
-    transition: transform 0.2s ease-out; /* Quick hover response */
+    transform: translateY(-2px) scale(1.02);
+    transition: transform 0.15s ease-out; /* Quick hover response */
 }
 
-/* === OPTIMIZED IMAGE LOADING STATES === */
+/* === SIMPLIFIED IMAGE STYLES === */
 .image-item img {
     width: 100%;
     height: 100%;
@@ -79,80 +97,17 @@
     border-radius: 6px;
     display: block;
     
-    /* Optimized transitions for progressive loading */
-    transition: opacity 0.2s ease-out, filter 0.2s ease-out;
-    will-change: opacity, filter;
+    /* Optimized transitions for high quality thumbnails */
+    transition: opacity 0.2s ease-out;
+    
+    /* Performance optimizations for 750px images */
+    will-change: opacity;
+    image-rendering: optimizeQuality; /* Better quality for 750px thumbnails */
 }
 
-/* === PROGRESSIVE LOADING STATES === */
-.img-progressive-thumb {
-    opacity: 0.7;
-    filter: blur(1px) brightness(0.9);
-}
-
-.img-loaded-fast {
-    opacity: 0.95;
-    filter: blur(0.5px) brightness(0.95);
-}
-
-.img-loaded-hq {
-    opacity: 1;
-    filter: none;
-}
-
-.img-loaded-final {
-    opacity: 1;
-    filter: none;
-}
-
-.img-error {
-    opacity: 0.6;
-    filter: grayscale(1);
-}
-
-/* === PROGRESSIVE LOADING STYLES === */
-.img-progressive {
-    filter: blur(5px);
-    transform: scale(1.05);
-    transition: filter 0.3s ease, transform 0.3s ease;
-}
-
-.img-progressive.loaded {
-    filter: blur(0);
-    transform: scale(1);
-}
-
-/* Improved image loading states */
-.img-placeholder {
-    background: linear-gradient(90deg, var(--skeleton-bg) 25%, var(--skeleton-highlight) 50%, var(--skeleton-bg) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    filter: blur(2px);
-    opacity: 0.7;
-    transition: filter 0.4s ease, opacity 0.4s ease;
-}
-
-.img-loaded {
-    filter: blur(0);
-    opacity: 1;
-    transition: filter 0.4s ease, opacity 0.4s ease;
-}
-
-/* Smooth image reveal animation */
-/* .image-item {
-    opacity: 0;
-    transform: translateY(20px);
-    transition: opacity 0.6s ease, transform 0.6s ease;
-}
-
-.image-item--visible {
-    opacity: 1;
-    transform: translateY(0);
-} */
-
-/* Enhanced loading states for better UX */
+/* === SIMPLIFIED LOADING STATES === */
 .image-item--loading {
-    opacity: 0.6;
+    opacity: 0.7;
 }
 
 .image-item--loaded {
@@ -163,12 +118,14 @@
 @media (max-width: 480px) {
     .image-item, .image-skeleton {
         width: 48%; /* 2 columns on mobile */
+        margin-bottom: 12px;
     }
 }
 
 @media (min-width: 481px) and (max-width: 768px) {
     .image-item, .image-skeleton {
         width: 31%; /* 3 columns on tablet */
+        margin-bottom: 14px;
     }
 }
 
@@ -187,5 +144,45 @@
 @media (min-width: 1441px) {
     .image-item, .image-skeleton {
         width: 15%; /* 6 columns on very large screens */
+    }
+}
+
+/* === PERFORMANCE OPTIMIZATIONS === */
+/* Reduce repaints and reflows */
+.image-group {
+    contain: layout style paint;
+}
+
+/* Optimize for large galleries */
+@media (min-height: 800px) {
+    .image-item, .image-skeleton {
+        /* Slightly smaller margins for large screens */
+        margin-bottom: 14px;
+    }
+}
+
+/* === ACCESSIBILITY === */
+@media (prefers-reduced-motion: reduce) {
+    .image-item, .image-skeleton {
+        transition: none;
+    }
+    
+    .skeleton-shimmer {
+        animation: none;
+    }
+    
+    .image-item:hover {
+        transform: none;
+    }
+}
+
+/* === PRINT STYLES === */
+@media print {
+    .image-skeleton {
+        display: none;
+    }
+    
+    .skeleton-shimmer {
+        display: none;
     }
 }
