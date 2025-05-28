@@ -347,7 +347,7 @@ try {
         $pdo->exec("CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
             username VARCHAR(50) NOT NULL UNIQUE,
-            password VARCHAR(255) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL,
             role ENUM('admin', 'designer') NOT NULL,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP NULL
@@ -522,8 +522,8 @@ try {
             // Hash the password
             $admin_password_hash = password_hash($admin_password, PASSWORD_DEFAULT);
             
-            // Insert admin user
-            $create_admin_stmt = $pdo->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, 'admin')");
+            // Insert admin user - use 'password_hash' column to match table schema
+            $create_admin_stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')");
             $create_admin_stmt->execute([$admin_username, $admin_password_hash]);
             
             error_log("AUTO-SETUP: Created admin user '{$admin_username}' with default password. Please change password after first login.");
