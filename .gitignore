@@ -2,6 +2,11 @@ database.sqlite
 database.sqlite-shm
 database.sqlite-wal
 
+# Configuration files with sensitive data
+config.php
+logs/
+cache/
+
 # Playwright
 node_modules/
 /test-results/

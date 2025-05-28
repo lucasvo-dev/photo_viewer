@@ -508,6 +508,40 @@ try {
         // Add processing_method column to jet_cache_jobs table
         add_column_if_not_exists($pdo, 'jet_cache_jobs', 'processing_method', 'VARCHAR(50) DEFAULT NULL AFTER original_height');
 
+        // --- AUTO-SETUP ADMIN USER ---
+        // Check if admin user exists, if not create one from config
+        $admin_check_stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'admin'");
+        $admin_check_stmt->execute();
+        $admin_count = $admin_check_stmt->fetchColumn();
+        
+        if ($admin_count == 0) {
+            // No admin user exists, create one from config
+            $admin_username = $config['admin_user'] ?? 'admin';
+            $admin_password = $config['admin_pass'] ?? 'admin123';
+            
+            // Hash the password
+            $admin_password_hash = password_hash($admin_password, PASSWORD_DEFAULT);
+            
+            // Insert admin user
+            $create_admin_stmt = $pdo->prepare("INSERT INTO users (username, password, role) VALUES (?, ?, 'admin')");
+            $create_admin_stmt->execute([$admin_username, $admin_password_hash]);
+            
+            error_log("AUTO-SETUP: Created admin user '{$admin_username}' with default password. Please change password after first login.");
+            
+            // Log to a setup file for reference
+            $setup_log = __DIR__ . '/logs/setup.log';
+            if (!is_dir(dirname($setup_log))) {
+                @mkdir(dirname($setup_log), 0775, true);
+            }
+            file_put_contents($setup_log, 
+                date('Y-m-d H:i:s') . " - AUTO-SETUP: Created admin user '{$admin_username}' with default password\n", 
+                FILE_APPEND | LOCK_EX
+            );
+        } else {
+            // Admin user already exists
+            error_log("AUTO-SETUP: Admin user already exists, skipping creation.");
+        }
+
     }
 } catch (PDOException $e) {
     error_log("Failed to create or check database tables (folder_stats, folder_passwords): " . $e->getMessage());
