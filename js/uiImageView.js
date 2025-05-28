@@ -75,46 +75,47 @@ function initializeImageObserver() {
     });
 }
 
-// Smart preloading based on scroll direction and velocity - SIMPLIFIED
+// Smart preloading based on scroll direction and velocity - IMPROVED
 function triggerSmartPreload(currentElement) {
-    // Temporarily disable smart preloading to fix loading issues
-    console.log('[uiImageView] Smart preloading temporarily disabled to fix loading order');
-    return;
-    
-    if (!globalScrollTracker || !globalScrollTracker.shouldPreload()) {
-        console.log('[uiImageView] Skipping preload - conditions not met');
+    // Re-enable with improved logic
+    if (!globalScrollTracker) {
+        console.log('[uiImageView] No scroll tracker available');
         return;
     }
     
-    const scrollDirection = globalScrollTracker.getPreloadDirection();
+    // Only preload when scroll has stopped and direction is consistent
+    if (globalScrollTracker.isScrolling || !globalScrollTracker.shouldPreload()) {
+        return;
+    }
     
-    console.log(`[uiImageView] Triggering simple preload - Direction: ${scrollDirection}`);
+    console.log('[uiImageView] Triggering smart preload');
     
-    // Find next 2 skeleton elements only
+    // Find next skeleton elements in DOM order
     const allSkeletons = document.querySelectorAll('.image-skeleton[data-img-data]');
     const currentIndex = Array.from(allSkeletons).indexOf(currentElement);
     
     if (currentIndex === -1) return;
     
-    // Only preload next 1-2 images to maintain order
-    const preloadCount = 1;
-    const endIndex = Math.min(allSkeletons.length, currentIndex + preloadCount + 1);
-    
-    for (let i = currentIndex + 1; i < endIndex; i++) {
+    // Only preload next 2 images to maintain smooth order
+    const nextSkeletons = [];
+    for (let i = currentIndex + 1; i < Math.min(allSkeletons.length, currentIndex + 3); i++) {
         const skeleton = allSkeletons[i];
         if (skeleton && skeleton.dataset.imgData) {
-            console.log(`[uiImageView] Simple preload for index ${i}`);
-            const imgData = JSON.parse(skeleton.dataset.imgData);
-            
-            setTimeout(() => {
-                if (skeleton.parentNode) {
-                    loadImageWithPriority(skeleton, imgData, true);
-                    imageObserver.unobserve(skeleton);
-                }
-            }, 200);
-            break; // Only preload one at a time
+            nextSkeletons.push({ skeleton, index: i });
         }
     }
+    
+    // Stagger the preload with small delays
+    nextSkeletons.forEach(({ skeleton, index }, order) => {
+        setTimeout(() => {
+            if (skeleton.parentNode) {
+                console.log(`[uiImageView] Preloading image at index ${index}`);
+                const imgData = JSON.parse(skeleton.dataset.imgData);
+                loadImageWithPriority(skeleton, imgData, true);
+                imageObserver.unobserve(skeleton);
+            }
+        }, order * 100); // 100ms stagger between preloads
+    });
 }
 
 function loadImageWithPriority(skeletonElement, imgData, isPreload = false) {
@@ -162,9 +163,11 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
 
     const anchor = document.createElement('a');
     anchor.className = 'photoswipe-trigger';
-    // For images, fullImagePath is the image itself. For videos, this will be the video file.
-    const mediaPath = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(imgData.path)}`;
-    anchor.href = mediaPath; 
+    // For images, use get_image action for full resolution, not get_thumbnail
+    const mediaPath = `api.php?action=get_image&path=${encodeURIComponent(imgData.path)}`;
+    anchor.href = mediaPath;
+    
+    console.log(`[uiImageView] PhotoSwipe media path: ${mediaPath}`);
 
     if (imageIndex !== -1) {
         anchor.dataset.pswpIndex = imageIndex;
@@ -355,8 +358,8 @@ export function renderImageItems(imagesDataToRender, append = false) {
     const estimatedItemHeight = 200; // Rough estimate for initial calculation
     const itemsPerRow = getItemsPerRowForCurrentScreen();
     
-    // Reduce initial load count to ensure we see skeletons
-    const initialLoadCount = Math.min(6, Math.ceil(itemsPerRow * 1.5)); // Load max 6 images or 1.5 rows, whichever is smaller
+    // Increase initial load count for better user experience
+    const initialLoadCount = Math.min(18, Math.ceil(itemsPerRow * 3)); // Load up to 18 images or 3 rows, whichever is smaller
     
     console.log(`[uiImageView] Viewport: ${viewportHeight}px, ItemsPerRow: ${itemsPerRow}, InitialLoadCount: ${initialLoadCount}, TotalImages: ${imagesDataToRender.length}`);
     
@@ -665,7 +668,7 @@ function createProgressiveThumbnailImage(imgData, onLoadCallback) {
             if (!highQualityLoaded && !isUpgrading && img.parentNode) {
                 loadHighQuality();
             }
-        }, 300);
+        }, 150); // Reduced from 300ms to 150ms for faster upgrades
     };
     
     // Handle high quality upgrade (750px)

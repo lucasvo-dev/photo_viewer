@@ -112,6 +112,13 @@ Ngoài các tối ưu và cải tiến nhỏ lẻ, các tính năng lớn dự k
                         *   Temporarily disabled complex smart preloading to fix loading order
                         *   Added state tracking to prevent race conditions in progressive loading
                         *   Fixed PhotoSwipe click handlers with proper event handling
+                        *   ✅ **Performance Improvements (2025-05-21):**
+                            *   Increased initial batch size from 6 to 18 images (3 rows)
+                            *   Fixed PhotoSwipe preview URLs to use `get_image` action
+                            *   Reduced progressive loading delays (300ms → 150ms)
+                            *   Enhanced smooth transitions with optimized CSS timing
+                            *   Re-enabled smart preloading with improved staggered logic
+                            *   Removed CSS conflicts causing layout issues
         *   **Phase 2: Advanced Optimizations (3-5 days)** - ✅ COMPLETED (2025-05-21)
             *   ✅ Progressive image loading (blur → sharp)
                 *   **Progressive Thumbnail Strategy:** 150px (fast) → 750px (high quality)
