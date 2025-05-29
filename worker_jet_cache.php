@@ -309,8 +309,9 @@ function process_cr3_with_imagemagick($magick_path, $raw_file_path, $output_path
         $magick_options[] = "-define jpeg:dct-method=fast";        // Fast DCT method
         $magick_options[] = "-interlace none";                     // No interlacing for speed
         $magick_options[] = "-filter Lanczos";                     // Good quality filtering
-        $magick_options[] = "-limit memory 256MB";                 // Memory limits for parallel processing
-        $magick_options[] = "-limit map 256MB";                    // Memory mapping limits
+        $magick_options[] = "-limit memory 512MB";                 // Increased memory for large files
+        $magick_options[] = "-limit map 512MB";                    // Increased memory mapping limits
+        $magick_options[] = "-limit disk 2GB";                     // Allow more disk usage if needed
         
         if (JPEG_STRIP_METADATA) {
             $magick_options[] = "-strip";
@@ -318,11 +319,22 @@ function process_cr3_with_imagemagick($magick_path, $raw_file_path, $output_path
         
         $magick_opts_string = implode(' ', $magick_options);
         
-        // Direct CR3 to JPEG conversion using ImageMagick
-        $magick_cr3_cmd = "\"{$magick_path}\" {$escaped_raw_file_path} {$magick_opts_string} {$escaped_final_cache_path}";
+        // Direct CR3 to JPEG conversion using ImageMagick with error capture
+        $magick_cr3_cmd = "\"{$magick_path}\" {$escaped_raw_file_path} {$magick_opts_string} {$escaped_final_cache_path} 2>&1";
         
         echo "[{$timestamp}] [Job {$job_id}] Processing CR3 with ImageMagick directly...\n";
         error_log("[{$timestamp}] [Jet Job {$job_id}] Processing CR3 with ImageMagick. CMD: {$magick_cr3_cmd}");
+        
+        // Check if output directory exists and is writable
+        $output_dir = dirname($output_path);
+        if (!is_dir($output_dir)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] Creating CR3 output directory: {$output_dir}");
+            @mkdir($output_dir, 0775, true);
+        }
+        
+        if (!is_writable($output_dir)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] WARNING: CR3 output directory not writable: {$output_dir}");
+        }
         
         // Execute ImageMagick with appropriate priority
         $magick_isolated_cmd = "start /NORMAL /AFFINITY 0x3 /B /WAIT cmd /c \"" . $magick_cr3_cmd . "\"";
@@ -334,13 +346,31 @@ function process_cr3_with_imagemagick($magick_path, $raw_file_path, $output_path
         error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 execution time: {$magick_time}ms");
         $trimmed_magick_output = trim((string)$magick_output);
         
-        if (!file_exists($output_path) || filesize($output_path) === 0) {
-            error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 processing FAILED: JPEG not created or empty. Output: " . ($trimmed_magick_output ?: "EMPTY"));
-            throw new Exception("ImageMagick CR3 processing failed. Output: " . $trimmed_magick_output);
+        // Enhanced diagnostic logging for CR3
+        if (!empty($trimmed_magick_output)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 output: {$trimmed_magick_output}");
         }
         
-        echo "[{$timestamp}] [Job {$job_id}] CR3 SUCCESS: Created cache file using ImageMagick: {$output_path}\n";
-        error_log("[{$timestamp}] [Jet Job {$job_id}] CR3 SUCCESS: Created cache file with size: " . filesize($output_path));
+        // Check if output file was created
+        if (file_exists($output_path)) {
+            $output_size = filesize($output_path);
+            error_log("[{$timestamp}] [Jet Job {$job_id}] CR3 output file created with size: {$output_size} bytes");
+            
+            if ($output_size === 0) {
+                error_log("[{$timestamp}] [Jet Job {$job_id}] ERROR: CR3 output file is empty (0 bytes)");
+            }
+        } else {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ERROR: CR3 output file not created at: {$output_path}");
+        }
+        
+        if (!file_exists($output_path) || filesize($output_path) === 0) {
+            $error_details = "ImageMagick CR3 processing failed. ";
+            $error_details .= "Output dir writable: " . (is_writable($output_dir) ? "YES" : "NO") . ". ";
+            $error_details .= "ImageMagick output: " . ($trimmed_magick_output ?: "EMPTY");
+            
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 processing FAILED: {$error_details}");
+            throw new Exception($error_details);
+        }
         
         return "CR3 cache created successfully using ImageMagick direct processing.";
         
@@ -404,13 +434,14 @@ function process_raw_with_optimized_dcraw($dcraw_path, $magick_path, $raw_file_p
         $magick_options[] = "-sampling-factor 4:2:0";      // Optimize JPEG compression
         $magick_options[] = "-colorspace sRGB";            // Ensure proper color space
         
-        // Balanced speed optimizations for parallel processing
+        // Enhanced speed optimizations with higher memory for large TIFF files (72MB+)
         $magick_options[] = "-define jpeg:optimize-coding=false";  // Skip optimization for speed
         $magick_options[] = "-define jpeg:dct-method=fast";        // Fast DCT method
         $magick_options[] = "-interlace none";                     // No interlacing for speed
         $magick_options[] = "-filter Lanczos";                     // Better quality than Point but still fast
-        $magick_options[] = "-limit memory 256MB";                 // Lower memory for 10 concurrent processes
-        $magick_options[] = "-limit map 256MB";                    // Lower memory mapping
+        $magick_options[] = "-limit memory 512MB";                 // Increased memory for large TIFF files
+        $magick_options[] = "-limit map 512MB";                    // Increased memory mapping
+        $magick_options[] = "-limit disk 2GB";                     // Allow more disk usage if needed
         
         if (JPEG_STRIP_METADATA) {
             $magick_options[] = "-strip";
@@ -418,10 +449,28 @@ function process_raw_with_optimized_dcraw($dcraw_path, $magick_path, $raw_file_p
         
         $magick_opts_string = implode(' ', $magick_options);
         
-        $magick_tiff_to_jpg_cmd = "\"{$magick_path}\" {$escaped_temp_tiff_path} {$magick_opts_string} {$escaped_final_cache_path}";
+        // Enhanced command with proper error capture
+        $magick_tiff_to_jpg_cmd = "\"{$magick_path}\" {$escaped_temp_tiff_path} {$magick_opts_string} {$escaped_final_cache_path} 2>&1";
         
         echo "[{$timestamp}] [Job {$job_id}] Executing optimized ImageMagick resize...\n";
         error_log("[{$timestamp}] [Jet Job {$job_id}] Executing optimized dcraw Step 2. CMD: {$magick_tiff_to_jpg_cmd}");
+        
+        // Add diagnostic logging before ImageMagick execution
+        if (file_exists($temp_tiff_filename)) {
+            $tiff_size = filesize($temp_tiff_filename);
+            error_log("[{$timestamp}] [Jet Job {$job_id}] TIFF input file verified: {$tiff_size} bytes");
+        }
+        
+        // Check if output directory exists and is writable
+        $output_dir = dirname($output_path);
+        if (!is_dir($output_dir)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] Creating output directory: {$output_dir}");
+            @mkdir($output_dir, 0775, true);
+        }
+        
+        if (!is_writable($output_dir)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] WARNING: Output directory not writable: {$output_dir}");
+        }
         
         // Set moderate priority for ImageMagick for parallel processing
         $magick_isolated_cmd = "start /NORMAL /AFFINITY 0x3 /B /WAIT cmd /c \"" . $magick_tiff_to_jpg_cmd . "\"";
@@ -431,9 +480,31 @@ function process_raw_with_optimized_dcraw($dcraw_path, $magick_path, $raw_file_p
         error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick execution time: {$magick_time}ms");
         $trimmed_magick_output = trim((string)$magick_output);
         
+        // Enhanced diagnostic logging
+        if (!empty($trimmed_magick_output)) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick output: {$trimmed_magick_output}");
+        }
+        
+        // Check if output file was created
+        if (file_exists($output_path)) {
+            $output_size = filesize($output_path);
+            error_log("[{$timestamp}] [Jet Job {$job_id}] Output file created with size: {$output_size} bytes");
+            
+            if ($output_size === 0) {
+                error_log("[{$timestamp}] [Jet Job {$job_id}] ERROR: Output file is empty (0 bytes)");
+            }
+        } else {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ERROR: Output file not created at: {$output_path}");
+        }
+        
         if (!file_exists($output_path) || filesize($output_path) === 0) {
-            error_log("[{$timestamp}] [Jet Job {$job_id}] dcraw Step 2 FAILED: Final JPEG not created or empty. Output: " . ($trimmed_magick_output ?: "EMPTY"));
-            throw new Exception("dcraw step 2 failed. Output: " . $trimmed_magick_output);
+            $error_details = "Final JPEG not created or empty. ";
+            $error_details .= "TIFF size: " . (file_exists($temp_tiff_filename) ? filesize($temp_tiff_filename) : "N/A") . " bytes. ";
+            $error_details .= "Output dir writable: " . (is_writable($output_dir) ? "YES" : "NO") . ". ";
+            $error_details .= "ImageMagick output: " . ($trimmed_magick_output ?: "EMPTY");
+            
+            error_log("[{$timestamp}] [Jet Job {$job_id}] dcraw Step 2 FAILED: {$error_details}");
+            throw new Exception("dcraw step 2 failed. " . $error_details);
         }
         
         echo "[{$timestamp}] [Job {$job_id}] dcraw SUCCESS: Created cache file: {$output_path}\n";
