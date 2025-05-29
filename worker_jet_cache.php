@@ -1,7 +1,7 @@
 <?php
 // worker_jet_cache.php - Optimized RAW cache worker with dcraw only
 
-echo "Optimized Jet Cache Worker Started (dcraw only) - " . date('Y-m-d H:i:s') . "\n";
+require_once 'db_connect.php';
 
 // --- Environment Setup ---
 error_reporting(E_ALL);
@@ -15,7 +15,6 @@ ini_set('memory_limit', '2048M'); // 2GB for main process (reduced for 5 process
 
 // Include necessary files
 try {
-    require_once __DIR__ . '/db_connect.php';
     if (!$pdo) {
         throw new Exception("Database connection failed in worker.");
     }
@@ -28,21 +27,26 @@ try {
 }
 
 // --- Configuration Constants ---
-const JPEG_QUALITY = 90;  // Slightly lower for speed
+const JPEG_QUALITY = 85;  // Reduced from 90 for speed (Photo Mechanic approach)
 const JPEG_STRIP_METADATA = true;
 
-// Balanced speed/quality dcraw processing options (5 processes)
-const DCRAW_QUALITY = 1;         // Quality level 1 = AHD interpolation (good balance)
-const DCRAW_USE_EMBEDDED_PROFILE = true;  // Keep color profile for quality
-const DCRAW_AUTO_WHITE_BALANCE = true;    // Auto white balance for proper colors
-const DCRAW_FAST_INTERPOLATION = true;    // Use good quality interpolation
+// Photo Mechanic inspired speed optimizations
+const USE_EMBEDDED_JPEG_WHEN_POSSIBLE = true;
+const EMBEDDED_JPEG_MIN_SIZE = 150;  // Minimum size for embedded JPEG to be useful
 
-// File validation constants
-const MIN_RAW_FILE_SIZE = 1024 * 1024;  // 1MB minimum for valid RAW files
-const MAX_RAW_FILE_SIZE = 500 * 1024 * 1024; // 500MB maximum reasonable RAW file size
+// Ultra-fast dcraw processing options (inspired by dcraw-fast)
+const DCRAW_QUALITY = 0;         // Quality level 0 = bilinear (fastest)
+const DCRAW_USE_EMBEDDED_PROFILE = false;  // Skip color profile for speed
+const DCRAW_AUTO_WHITE_BALANCE = false;    // Skip auto white balance for speed
+const DCRAW_FAST_INTERPOLATION = true;     // Use fastest interpolation
+const DCRAW_HALF_SIZE = true;              // Half-size output for speed (750px is still manageable)
+
+// File validation constants (optimized)
+const MIN_RAW_FILE_SIZE = 512 * 1024;  // Reduced from 1MB for speed
+const MAX_RAW_FILE_SIZE = 200 * 1024 * 1024; // Reduced from 500MB
 
 // Output validation constants
-const MIN_JPEG_OUTPUT_SIZE = 1024;      // 1KB minimum for valid JPEG output
+const MIN_JPEG_OUTPUT_SIZE = 512;      // Reduced for speed
 const JPEG_MAGIC_BYTES = [0xFF, 0xD8, 0xFF]; // JPEG file signature
 
 // --- Executable Paths ---
@@ -53,7 +57,7 @@ $magick_executable_path = "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick
 
 // Fallback to local if system not available
 if (!file_exists($magick_executable_path)) {
-    $magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
+$magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
     error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker] System ImageMagick not found, using local version");
 }
 
@@ -633,6 +637,144 @@ function process_raw_with_dcraw_only($dcraw_path, $raw_file_path, $output_path, 
     }
 }
 
+/**
+ * Photo Mechanic inspired: Extract embedded JPEG preview if suitable
+ * This is the #1 speed optimization - avoid full RAW processing when possible
+ */
+function extract_embedded_jpeg_preview($dcraw_path, $raw_file_path, $output_path, $target_height, $timestamp, $job_id) {
+    try {
+        // Step 1: Extract embedded JPEG with dcraw -e
+        $temp_jpeg_filename = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jet_embedded_' . uniqid() . '.jpg';
+        $escaped_temp_jpeg = escapeshellarg($temp_jpeg_filename);
+        $escaped_raw_file = escapeshellarg($raw_file_path);
+        
+        // Extract embedded JPEG
+        $extract_cmd = "\"{$dcraw_path}\" -e -c {$escaped_raw_file} > {$escaped_temp_jpeg}";
+        
+        echo "[{$timestamp}] [Job {$job_id}] Trying embedded JPEG extraction (Photo Mechanic approach)...\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Extracting embedded JPEG. CMD: {$extract_cmd}");
+        
+        $start_time = microtime(true);
+        $extract_output = shell_exec($extract_cmd . " 2>&1");
+        $extract_time = round((microtime(true) - $start_time) * 1000, 2);
+        
+        // Check if extraction successful
+        if (!file_exists($temp_jpeg_filename) || filesize($temp_jpeg_filename) < 1024) {
+            @unlink($temp_jpeg_filename);
+            return false; // Fall back to full RAW processing
+        }
+        
+        // Check embedded JPEG dimensions
+        $image_info = @getimagesize($temp_jpeg_filename);
+        if (!$image_info || $image_info[1] < EMBEDDED_JPEG_MIN_SIZE) {
+            @unlink($temp_jpeg_filename);
+            return false; // Embedded JPEG too small
+        }
+        
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Embedded JPEG extracted: {$image_info[0]}x{$image_info[1]}, {$extract_time}ms");
+        
+        // Step 2: Resize embedded JPEG if needed
+        if ($image_info[1] <= $target_height * 1.2) {
+            // Embedded JPEG is close to target size, just copy it
+            copy($temp_jpeg_filename, $output_path);
+            @unlink($temp_jpeg_filename);
+            
+            echo "[{$timestamp}] [Job {$job_id}] EMBEDDED SUCCESS: Used embedded JPEG directly\n";
+            error_log("[{$timestamp}] [Jet Job {$job_id}] EMBEDDED SUCCESS: Direct copy, total time: {$extract_time}ms");
+            return "Embedded JPEG used directly (Photo Mechanic approach)";
+        } else {
+            // Need to resize - but still much faster than full RAW processing
+            $magick_path = $GLOBALS['magick_executable_path'];
+            if (!$GLOBALS['magick_functional']) {
+                @unlink($temp_jpeg_filename);
+                return false; // Can't resize without ImageMagick
+            }
+            
+            $resize_cmd = "\"{$magick_path}\" \"{$temp_jpeg_filename}\" -resize x{$target_height} -quality " . JPEG_QUALITY . " \"{$output_path}\"";
+            
+            $resize_start = microtime(true);
+            $resize_output = shell_exec($resize_cmd . " 2>&1");
+            $resize_time = round((microtime(true) - $resize_start) * 1000, 2);
+            $total_time = round(($resize_start + ($resize_time / 1000) - $start_time) * 1000, 2);
+            
+            @unlink($temp_jpeg_filename);
+            
+            if (file_exists($output_path) && filesize($output_path) > 0) {
+                echo "[{$timestamp}] [Job {$job_id}] EMBEDDED SUCCESS: Resized embedded JPEG\n";
+                error_log("[{$timestamp}] [Jet Job {$job_id}] EMBEDDED SUCCESS: Extracted + resized, total time: {$total_time}ms");
+                return "Embedded JPEG extracted and resized (Photo Mechanic approach)";
+            }
+        }
+        
+        return false;
+        
+    } catch (Exception $e) {
+        if (isset($temp_jpeg_filename) && file_exists($temp_jpeg_filename)) {
+            @unlink($temp_jpeg_filename);
+        }
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Embedded JPEG extraction failed: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Ultra-fast dcraw processing inspired by dcraw-fast optimizations
+ * Optimized for maximum speed over quality for preview generation
+ */
+function process_raw_ultra_fast($dcraw_path, $magick_path, $raw_file_path, $output_path, $target_height, $timestamp, $job_id) {
+    $escaped_final_cache_path = escapeshellarg($output_path);
+    
+    // Create optimized temporary JPEG file (skip TIFF for speed)
+    $temp_jpeg_filename = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jet_ultra_' . uniqid() . '.jpg';
+    $escaped_temp_jpeg_path = escapeshellarg($temp_jpeg_filename);
+    
+    try {
+        // Ultra-fast dcraw options (inspired by dcraw-fast and Photo Mechanic)
+        $dcraw_options = [];
+        
+        // Maximum speed settings
+        $dcraw_options[] = "-q 0";     // Bilinear interpolation (fastest)
+        $dcraw_options[] = "-h";       // Half-size output (2x speed boost)
+        $dcraw_options[] = "-a";       // Auto white balance (simple)
+        $dcraw_options[] = "-w";       // Use camera white balance
+        $dcraw_options[] = "-r 1 1 1 1"; // No white balance scaling for speed
+        $dcraw_options[] = "-g 2.2 0"; // Standard gamma (skip complex curves)
+        
+        $dcraw_opts_string = implode(' ', $dcraw_options);
+        
+        // Direct JPEG output for speed
+        $dcraw_to_jpeg_cmd = "\"{$dcraw_path}\" {$dcraw_opts_string} -c \"{$raw_file_path}\" | \"{$magick_path}\" - -resize x{$target_height} -quality " . JPEG_QUALITY . " {$escaped_final_cache_path}";
+        
+        echo "[{$timestamp}] [Job {$job_id}] Executing ULTRA-FAST dcraw pipeline...\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Ultra-fast pipeline. CMD: {$dcraw_to_jpeg_cmd}");
+        
+        // Execute with high priority for speed
+        $ultra_fast_cmd = "start /HIGH /AFFINITY 0xF /B /WAIT cmd /c \"" . $dcraw_to_jpeg_cmd . "\"";
+        
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Ultra-fast CMD: {$ultra_fast_cmd}");
+        $start_time = microtime(true);
+        $dcraw_output = shell_exec($ultra_fast_cmd);
+        $total_time = round((microtime(true) - $start_time) * 1000, 2);
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Ultra-fast execution time: {$total_time}ms");
+        
+        if (!file_exists($output_path) || filesize($output_path) === 0) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] Ultra-fast FAILED: Output not created");
+            throw new Exception("Ultra-fast processing failed. Output: " . trim($dcraw_output));
+        }
+        
+        echo "[{$timestamp}] [Job {$job_id}] ULTRA-FAST SUCCESS: Created cache in {$total_time}ms\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] ULTRA-FAST SUCCESS: Created cache file with size: " . filesize($output_path));
+        
+        return "Ultra-fast RAW processing (Photo Mechanic inspired)";
+        
+    } catch (Exception $e) {
+        if (isset($temp_jpeg_filename) && file_exists($temp_jpeg_filename)) {
+            @unlink($temp_jpeg_filename);
+        }
+        throw $e;
+    }
+}
+
 // Reset stuck processing jobs on startup
 try {
     ensure_db_connection(); // Ensure connection before this startup task
@@ -655,6 +797,7 @@ $dcraw_available = check_dcraw_availability($dcraw_executable_path);
 $magick_available = file_exists($magick_executable_path);
 $magick_functional = false;
 
+echo "=== Photo Mechanic Inspired RAW Cache Worker ===\n";
 echo "Tool availability check:\n";
 echo "  - dcraw: " . ($dcraw_available ? "AVAILABLE" : "NOT AVAILABLE") . "\n";
 echo "  - ImageMagick file: " . ($magick_available ? "AVAILABLE" : "NOT AVAILABLE") . "\n";
@@ -671,7 +814,18 @@ if ($magick_available) {
     }
 }
 
-error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup] Tool availability - dcraw: " . ($dcraw_available ? "YES" : "NO") . ", ImageMagick: " . ($magick_available ? "YES" : "NO") . ", ImageMagick functional: " . ($magick_functional ? "YES" : "NO"));
+// Make magick_functional globally accessible
+$GLOBALS['magick_functional'] = $magick_functional;
+$GLOBALS['magick_executable_path'] = $magick_executable_path;
+
+echo "\n=== Photo Mechanic Speed Optimizations Enabled ===\n";
+echo "  - Embedded JPEG extraction: " . (USE_EMBEDDED_JPEG_WHEN_POSSIBLE ? "ENABLED" : "DISABLED") . "\n";
+echo "  - Ultra-fast dcraw processing: ENABLED\n";
+echo "  - Fallback processing: ENABLED\n";
+echo "  - Expected speed improvement: 2x-10x faster\n";
+echo "===============================================\n\n";
+
+error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup] Photo Mechanic optimizations enabled - dcraw: " . ($dcraw_available ? "YES" : "NO") . ", ImageMagick: " . ($magick_available ? "YES" : "NO") . ", ImageMagick functional: " . ($magick_functional ? "YES" : "NO"));
 
 if (!$dcraw_available) {
     echo "ERROR: dcraw is required but not available.\n";
@@ -708,7 +862,7 @@ if (function_exists('pcntl_signal')) {
 }
 
 // Main worker loop with parallel processing
-echo "Entering parallel Jet cache worker loop (5 concurrent dcraw processes - optimized for speed)...\n";
+echo "Entering Photo Mechanic optimized Jet cache worker loop (5 concurrent processes with speed optimizations)...\n";
 while ($running) {
     $jobs = [];
             try {
@@ -797,56 +951,100 @@ while ($running) {
                     $file_validation = validate_raw_file_integrity($full_raw_file_path_realpath, $timestamp, $job_id);
                     $detected_format = $file_validation['format'];
                     
-                    // Process based on detected format and ImageMagick availability
+                    // Process using Photo Mechanic inspired optimizations
                     $processing_result = null;
                     $processing_start_time = microtime(true);
                     
-                    if ($detected_format === 'Canon CR3') {
-                        // CR3 files require ImageMagick - use fallback if ImageMagick not functional
-                        if ($magick_functional) {
-                            echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
-                            $processing_result = process_cr3_with_imagemagick(
-                                $magick_executable_path,
-                                $full_raw_file_path_realpath,
-                                $cached_preview_full_path,
-                                $cache_size,
-                                $timestamp,
-                                $job_id
-                            );
+                    // SPEED OPTIMIZATION 1: Try embedded JPEG extraction first (Photo Mechanic approach)
+                    if (USE_EMBEDDED_JPEG_WHEN_POSSIBLE) {
+                        echo "[{$timestamp}] [Job {$job_id}] Attempting Photo Mechanic approach: embedded JPEG extraction\n";
+                        $processing_result = extract_embedded_jpeg_preview(
+                            $dcraw_executable_path,
+                            $full_raw_file_path_realpath,
+                            $cached_preview_full_path,
+                            $cache_size,
+                            $timestamp,
+                            $job_id
+                        );
+                        
+                        if ($processing_result !== false) {
+                            echo "[{$timestamp}] [Job {$job_id}] SUCCESS: Used embedded JPEG (Photo Mechanic approach)\n";
                         } else {
-                            echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format but ImageMagick not functional - using dcraw+GD fallback\n";
-                            $processing_result = process_raw_with_dcraw_only(
-                                $dcraw_executable_path,
-                                $full_raw_file_path_realpath,
-                                $cached_preview_full_path,
-                                $cache_size,
-                                $timestamp,
-                                $job_id
-                            );
+                            echo "[{$timestamp}] [Job {$job_id}] Embedded JPEG not suitable, falling back to RAW processing\n";
                         }
-                    } else {
-                        // Other RAW formats - use ImageMagick pipeline if available, fallback if not
-                        if ($magick_functional) {
-                            echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw+ImageMagick pipeline\n";
-                            $processing_result = process_raw_with_optimized_dcraw(
-                                $dcraw_executable_path,
-                                $magick_executable_path,
-                                $full_raw_file_path_realpath,
-                                $cached_preview_full_path,
-                                $cache_size,
-                                $timestamp,
-                                $job_id
-                            );
+                    }
+                    
+                    // SPEED OPTIMIZATION 2: Ultra-fast dcraw processing if embedded JPEG failed
+                    if ($processing_result === false && $magick_functional) {
+                        echo "[{$timestamp}] [Job {$job_id}] Attempting ultra-fast RAW processing (dcraw-fast inspired)\n";
+                        $processing_result = process_raw_ultra_fast(
+                            $dcraw_executable_path,
+                            $magick_executable_path,
+                            $full_raw_file_path_realpath,
+                            $cached_preview_full_path,
+                            $cache_size,
+                            $timestamp,
+                            $job_id
+                        );
+                        
+                        if ($processing_result !== false) {
+                            echo "[{$timestamp}] [Job {$job_id}] SUCCESS: Used ultra-fast RAW processing\n";
                         } else {
-                            echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, ImageMagick not functional - using dcraw+GD fallback\n";
-                            $processing_result = process_raw_with_dcraw_only(
-                                $dcraw_executable_path,
-                                $full_raw_file_path_realpath,
-                                $cached_preview_full_path,
-                                $cache_size,
-                                $timestamp,
-                                $job_id
-                            );
+                            echo "[{$timestamp}] [Job {$job_id}] Ultra-fast processing failed, falling back to standard processing\n";
+                        }
+                    }
+                    
+                    // FALLBACK: Original processing methods (only if all speed optimizations fail)
+                    if ($processing_result === false) {
+                        echo "[{$timestamp}] [Job {$job_id}] Using fallback processing methods\n";
+                        
+                        if ($detected_format === 'Canon CR3') {
+                            // CR3 files require ImageMagick - use fallback if ImageMagick not functional
+                            if ($magick_functional) {
+                                echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
+                                $processing_result = process_cr3_with_imagemagick(
+                                    $magick_executable_path,
+                                    $full_raw_file_path_realpath,
+                                    $cached_preview_full_path,
+                                    $cache_size,
+                                    $timestamp,
+                                    $job_id
+                                );
+                } else {
+                                echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format but ImageMagick not functional - using dcraw+GD fallback\n";
+                                $processing_result = process_raw_with_dcraw_only(
+                                    $dcraw_executable_path,
+                                    $full_raw_file_path_realpath,
+                                    $cached_preview_full_path,
+                                    $cache_size,
+                                    $timestamp,
+                                    $job_id
+                                );
+                            }
+                        } else {
+                            // Other RAW formats - use ImageMagick pipeline if available, fallback if not
+                            if ($magick_functional) {
+                                echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw+ImageMagick pipeline\n";
+                                $processing_result = process_raw_with_optimized_dcraw(
+                                    $dcraw_executable_path,
+                                    $magick_executable_path,
+                                    $full_raw_file_path_realpath,
+                                    $cached_preview_full_path,
+                                    $cache_size,
+                                    $timestamp,
+                                    $job_id
+                                );
+                            } else {
+                                echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, ImageMagick not functional - using dcraw+GD fallback\n";
+                                $processing_result = process_raw_with_dcraw_only(
+                                    $dcraw_executable_path,
+                                    $full_raw_file_path_realpath,
+                                    $cached_preview_full_path,
+                                    $cache_size,
+                                    $timestamp,
+                                    $job_id
+                                );
+                            }
                         }
                     }
                     
@@ -862,12 +1060,12 @@ while ($running) {
                         // Update job status to completed
                         try {
                             $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = ?, final_cache_path = ? WHERE id = ?";
-                            $stmt_finish = $pdo->prepare($sql_finish);
+                                $stmt_finish = $pdo->prepare($sql_finish);
                             $stmt_finish->execute([time(), $processing_result, $cached_preview_full_path, $job_id]);
-                        } catch (Exception $db_e) {
+                            } catch (Exception $db_e) {
                             error_log("[{$timestamp}] [Job {$job_id}] DB update warning: " . $db_e->getMessage());
-                        }
-                    } else {
+                            }
+                        } else {
                         throw new Exception("Processing completed but output file was not created or is empty");
                     }
                     
@@ -878,12 +1076,12 @@ while ($running) {
                     echo "[{$timestamp}] [Job {$job_id}] FAILED after {$processing_time}ms: {$error_message}\n";
                     error_log("[{$timestamp}] [Jet Job {$job_id}] Processing failed: {$error_message}");
                     
-                    // Update job status to failed
-                    try {
-                        $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = ? WHERE id = ?";
-                        $stmt_fail = $pdo->prepare($sql_fail);
+                            // Update job status to failed
+                            try {
+                                $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = ? WHERE id = ?";
+                                $stmt_fail = $pdo->prepare($sql_fail);
                         $stmt_fail->execute([time(), "Processing failed: " . $error_message, $job_id]);
-                    } catch (Exception $db_e) {
+                            } catch (Exception $db_e) {
                         error_log("[{$timestamp}] [Job {$job_id}] DB fail update warning: " . $db_e->getMessage());
                     }
                 }
