@@ -47,7 +47,15 @@ const JPEG_MAGIC_BYTES = [0xFF, 0xD8, 0xFF]; // JPEG file signature
 
 // --- Executable Paths ---
 $dcraw_executable_path = __DIR__ . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "dcraw.exe";
-$magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
+
+// Use system ImageMagick since local one is missing DLL dependencies
+$magick_executable_path = "C:\\Program Files\\ImageMagick-7.1.1-Q16-HDRI\\magick.exe";
+
+// Fallback to local if system not available
+if (!file_exists($magick_executable_path)) {
+    $magick_executable_path = __DIR__ . DIRECTORY_SEPARATOR . "exe" . DIRECTORY_SEPARATOR . "magick.exe";
+    error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker] System ImageMagick not found, using local version");
+}
 
 // --- Database Reconnect Configuration ---
 const MAX_DB_RECONNECT_ATTEMPTS = 1;
