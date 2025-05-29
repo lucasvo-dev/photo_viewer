@@ -171,7 +171,7 @@ function validate_raw_file_integrity($file_path, $timestamp, $job_id) {
         throw new Exception("Cannot open RAW file for validation: {$file_path}");
     }
     
-    $header = fread($handle, 16);
+    $header = fread($handle, 32); // Read more bytes for better format detection
     fclose($handle);
     
     if (strlen($header) < 4) {
@@ -182,8 +182,14 @@ function validate_raw_file_integrity($file_path, $timestamp, $job_id) {
     $is_valid_raw = false;
     $format_detected = 'unknown';
     
+    // Canon CR3: ISO Media container (ftyp box with "crx " brand)
+    if (substr($header, 4, 4) === 'ftyp' && 
+        (strpos($header, 'crx ') !== false || strpos($header, 'isom') !== false)) {
+        $is_valid_raw = true;
+        $format_detected = 'Canon CR3';
+    }
     // Canon CR2: "II" + 42 + "CR" 
-    if (substr($header, 0, 2) === 'II' && ord($header[2]) === 42 && substr($header, 8, 2) === 'CR') {
+    elseif (substr($header, 0, 2) === 'II' && ord($header[2]) === 42 && substr($header, 8, 2) === 'CR') {
         $is_valid_raw = true;
         $format_detected = 'Canon CR2';
     }
@@ -279,6 +285,69 @@ function validate_jpeg_output($file_path, $timestamp, $job_id) {
         'width' => $image_info[0],
         'height' => $image_info[1]
     ];
+}
+
+/**
+ * Process CR3 file using ImageMagick directly (fallback for dcraw compatibility)
+ * CR3 is not supported by dcraw 9.28, so we use ImageMagick's built-in CR3 support
+ */
+function process_cr3_with_imagemagick($magick_path, $raw_file_path, $output_path, $target_height, $timestamp, $job_id) {
+    $escaped_final_cache_path = escapeshellarg($output_path);
+    $escaped_raw_file_path = escapeshellarg($raw_file_path);
+    
+    try {
+        // ImageMagick options for CR3 processing
+        $magick_options = [];
+        $magick_options[] = "-resize x{$target_height}";   // Resize by height
+        $magick_options[] = "-quality " . JPEG_QUALITY;
+        $magick_options[] = "-sampling-factor 4:2:0";      // Optimize JPEG compression
+        $magick_options[] = "-colorspace sRGB";            // Ensure proper color space
+        $magick_options[] = "-auto-orient";                // Handle rotation properly
+        
+        // Speed optimizations for parallel processing
+        $magick_options[] = "-define jpeg:optimize-coding=false";  // Skip optimization for speed
+        $magick_options[] = "-define jpeg:dct-method=fast";        // Fast DCT method
+        $magick_options[] = "-interlace none";                     // No interlacing for speed
+        $magick_options[] = "-filter Lanczos";                     // Good quality filtering
+        $magick_options[] = "-limit memory 256MB";                 // Memory limits for parallel processing
+        $magick_options[] = "-limit map 256MB";                    // Memory mapping limits
+        
+        if (JPEG_STRIP_METADATA) {
+            $magick_options[] = "-strip";
+        }
+        
+        $magick_opts_string = implode(' ', $magick_options);
+        
+        // Direct CR3 to JPEG conversion using ImageMagick
+        $magick_cr3_cmd = "\"{$magick_path}\" {$escaped_raw_file_path} {$magick_opts_string} {$escaped_final_cache_path}";
+        
+        echo "[{$timestamp}] [Job {$job_id}] Processing CR3 with ImageMagick directly...\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] Processing CR3 with ImageMagick. CMD: {$magick_cr3_cmd}");
+        
+        // Execute ImageMagick with appropriate priority
+        $magick_isolated_cmd = "start /NORMAL /AFFINITY 0x3 /B /WAIT cmd /c \"" . $magick_cr3_cmd . "\"";
+        
+        error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 CMD: {$magick_isolated_cmd}");
+        $start_time = microtime(true);
+        $magick_output = shell_exec($magick_isolated_cmd);
+        $magick_time = round((microtime(true) - $start_time) * 1000, 2);
+        error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 execution time: {$magick_time}ms");
+        $trimmed_magick_output = trim((string)$magick_output);
+        
+        if (!file_exists($output_path) || filesize($output_path) === 0) {
+            error_log("[{$timestamp}] [Jet Job {$job_id}] ImageMagick CR3 processing FAILED: JPEG not created or empty. Output: " . ($trimmed_magick_output ?: "EMPTY"));
+            throw new Exception("ImageMagick CR3 processing failed. Output: " . $trimmed_magick_output);
+        }
+        
+        echo "[{$timestamp}] [Job {$job_id}] CR3 SUCCESS: Created cache file using ImageMagick: {$output_path}\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] CR3 SUCCESS: Created cache file with size: " . filesize($output_path));
+        
+        return "CR3 cache created successfully using ImageMagick direct processing.";
+        
+    } catch (Exception $e) {
+        error_log("[{$timestamp}] [Jet Job {$job_id}] CR3 processing error: " . $e->getMessage());
+        throw $e;
+    }
 }
 
 /**
@@ -512,142 +581,92 @@ while ($running) {
                 // Check if file already exists
                 if (file_exists($cached_preview_full_path) && filesize($cached_preview_full_path) > 0) {
                     echo "[{$timestamp}] [Job {$job_id}] Cache file already exists, skipping.\n";
+                    
+                    // Update job status to completed
+                    try {
+                        $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = 'Cache file already exists', final_cache_path = ? WHERE id = ?";
+                        $stmt_finish = $pdo->prepare($sql_finish);
+                        $stmt_finish->execute([time(), $cached_preview_full_path, $job_id]);
+                    } catch (Exception $db_e) {
+                        error_log("[{$timestamp}] [Job {$job_id}] DB update warning: " . $db_e->getMessage());
+                    }
                     continue;
                 }
                 
-                // Create balanced dcraw command with good speed/quality (5 processes)
-                $cpu_affinity = 0x1 << ($job_index % 5); // Distribute across 5 cores for 5 processes
-                $cpu_affinity_hex = dechex($cpu_affinity);
-                $dcraw_cmd = "start /HIGH /AFFINITY 0x{$cpu_affinity_hex} /B cmd /c \"" . 
-                    "\"{$dcraw_executable_path}\" -q 1 -a -o 1 -w -T -c \"{$full_raw_file_path_realpath}\" | " .
-                    "\"{$magick_executable_path}\" - -resize x{$cache_size} -quality " . JPEG_QUALITY . " " .
-                    "-sampling-factor 4:2:0 -colorspace sRGB -define jpeg:optimize-coding=false " .
-                    "-define jpeg:dct-method=fast -interlace none -filter Lanczos -limit memory 800MB " .
-                    "-limit map 800MB -limit thread 1 -strip \"{$cached_preview_full_path}\"\"";
-                
-                $parallel_processes[] = [
-                    'job_id' => $job_id,
-                    'cmd' => $dcraw_cmd,
-                    'output_path' => $cached_preview_full_path,
-                    'start_time' => microtime(true)
-                ];
-                
-                echo "[{$timestamp}] [Job {$job_id}] Queued for parallel processing (Core: " . ($job_index % 5) . ")\n";
-            }
-            
-            // Execute all processes in parallel using Windows background execution
-            echo "[{$timestamp}] Executing " . count($parallel_processes) . " dcraw processes in parallel...\n";
-            $process_handles = [];
-            foreach ($parallel_processes as $key => $process) {
-                // Use proc_open for true parallel execution on Windows
-                $descriptorspec = array(
-                    0 => array("pipe", "r"),  // stdin
-                    1 => array("pipe", "w"),  // stdout
-                    2 => array("pipe", "w")   // stderr
-                );
-                
-                $handle = proc_open($process['cmd'], $descriptorspec, $pipes);
-                if (is_resource($handle)) {
-                    $process_handles[$key] = [
-                        'handle' => $handle,
-                        'pipes' => $pipes,
-                        'job_id' => $process['job_id'],
-                        'output_path' => $process['output_path'],
-                        'start_time' => $process['start_time']
-                    ];
+                // Validate RAW file format and determine processing method
+                try {
+                    $file_validation = validate_raw_file_integrity($full_raw_file_path_realpath, $timestamp, $job_id);
+                    $detected_format = $file_validation['format'];
                     
-                    // Close stdin immediately as we don't need it
-                    fclose($pipes[0]);
+                    // Process based on detected format
+                    $processing_result = null;
+                    $processing_start_time = microtime(true);
                     
-                    echo "[{$timestamp}] [Job {$process['job_id']}] Process started in background\n";
-                } else {
-                    echo "[{$timestamp}] [Job {$process['job_id']}] ERROR: Failed to start process\n";
-                }
-            }
-            
-            // Wait for all processes to complete and update status (5 processes max)
-            $max_wait_time = 120; // 2 minutes max wait (reduced for 5 processes)
-            $start_wait = time();
-            
-            while (count($process_handles) > 0 && (time() - $start_wait) < $max_wait_time) {
-                foreach ($process_handles as $key => $proc_info) {
-                    $status = proc_get_status($proc_info['handle']);
+                    if ($detected_format === 'Canon CR3') {
+                        // Use ImageMagick directly for CR3 files (dcraw 9.28 doesn't support CR3)
+                        echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
+                        $processing_result = process_cr3_with_imagemagick(
+                            $magick_executable_path,
+                            $full_raw_file_path_realpath,
+                            $cached_preview_full_path,
+                            $cache_size,
+                            $timestamp,
+                            $job_id
+                        );
+                    } else {
+                        // Use dcraw + ImageMagick pipeline for other RAW formats
+                        echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw pipeline\n";
+                        $processing_result = process_raw_with_optimized_dcraw(
+                            $dcraw_executable_path,
+                            $magick_executable_path,
+                            $full_raw_file_path_realpath,
+                            $cached_preview_full_path,
+                            $cache_size,
+                            $timestamp,
+                            $job_id
+                        );
+                    }
                     
-                    // Check if process has finished
-                    if (!$status['running']) {
-                        $processing_time = round((microtime(true) - $proc_info['start_time']) * 1000, 2);
+                    $processing_time = round((microtime(true) - $processing_start_time) * 1000, 2);
+                    
+                    // Validate the output
+                    if (file_exists($cached_preview_full_path) && filesize($cached_preview_full_path) > 0) {
+                        // Additional JPEG validation
+                        $jpeg_validation = validate_jpeg_output($cached_preview_full_path, $timestamp, $job_id);
                         
-                        // Read any output/errors
-                        $stdout = stream_get_contents($proc_info['pipes'][1]);
-                        $stderr = stream_get_contents($proc_info['pipes'][2]);
+                        echo "[{$timestamp}] [Job {$job_id}] SUCCESS: Completed in {$processing_time}ms, output: {$jpeg_validation['width']}x{$jpeg_validation['height']}\n";
                         
-                        // Close pipes and process
-                        fclose($proc_info['pipes'][1]);
-                        fclose($proc_info['pipes'][2]);
-                        $return_code = proc_close($proc_info['handle']);
-                        
-                        // Check if output file was created successfully
-                        if (file_exists($proc_info['output_path']) && filesize($proc_info['output_path']) > 0) {
-                            echo "[{$timestamp}] [Job {$proc_info['job_id']}] SUCCESS: Completed in {$processing_time}ms\n";
-                            
-                            // Update job status to completed with final_cache_path
-                            try {
-                                $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = 'Parallel dcraw processing completed', final_cache_path = ? WHERE id = ?";
-                                $stmt_finish = $pdo->prepare($sql_finish);
-                                $stmt_finish->execute([time(), $proc_info['output_path'], $proc_info['job_id']]);
-                            } catch (Exception $db_e) {
-                                error_log("[{$timestamp}] [Job {$proc_info['job_id']}] DB update warning: " . $db_e->getMessage());
-                            }
-                        } else {
-                            echo "[{$timestamp}] [Job {$proc_info['job_id']}] FAILED: No output file (Code: {$return_code})\n";
-                            if ($stderr) {
-                                echo "[{$timestamp}] [Job {$proc_info['job_id']}] Error: " . trim($stderr) . "\n";
-                            }
-                            
-                            // Update job status to failed
-                            try {
-                                $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = ? WHERE id = ?";
-                                $stmt_fail = $pdo->prepare($sql_fail);
-                                $stmt_fail->execute([time(), "Process failed: " . trim($stderr ?: "Unknown error"), $proc_info['job_id']]);
-                            } catch (Exception $db_e) {
-                                error_log("[{$timestamp}] [Job {$proc_info['job_id']}] DB fail update warning: " . $db_e->getMessage());
-                            }
+                        // Update job status to completed
+                        try {
+                            $sql_finish = "UPDATE jet_cache_jobs SET status = 'completed', completed_at = ?, result_message = ?, final_cache_path = ? WHERE id = ?";
+                            $stmt_finish = $pdo->prepare($sql_finish);
+                            $stmt_finish->execute([time(), $processing_result, $cached_preview_full_path, $job_id]);
+                        } catch (Exception $db_e) {
+                            error_log("[{$timestamp}] [Job {$job_id}] DB update warning: " . $db_e->getMessage());
                         }
-                        
-                        unset($process_handles[$key]);
+                    } else {
+                        throw new Exception("Processing completed but output file was not created or is empty");
+                    }
+                    
+                } catch (Exception $processing_error) {
+                    $processing_time = round((microtime(true) - $processing_start_time) * 1000, 2);
+                    $error_message = $processing_error->getMessage();
+                    
+                    echo "[{$timestamp}] [Job {$job_id}] FAILED after {$processing_time}ms: {$error_message}\n";
+                    error_log("[{$timestamp}] [Jet Job {$job_id}] Processing failed: {$error_message}");
+                    
+                    // Update job status to failed
+                    try {
+                        $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = ? WHERE id = ?";
+                        $stmt_fail = $pdo->prepare($sql_fail);
+                        $stmt_fail->execute([time(), "Processing failed: " . $error_message, $job_id]);
+                    } catch (Exception $db_e) {
+                        error_log("[{$timestamp}] [Job {$job_id}] DB fail update warning: " . $db_e->getMessage());
                     }
                 }
-                
-                if (count($process_handles) > 0) {
-                    usleep(100000); // Wait 0.1 seconds before checking again (more responsive for 5 processes)
-                }
             }
             
-            // Handle any remaining processes that timed out
-            foreach ($process_handles as $proc_info) {
-                echo "[{$timestamp}] [Job {$proc_info['job_id']}] TIMEOUT: Terminating process\n";
-                
-                // Force terminate the process
-                if (is_resource($proc_info['handle'])) {
-                    // Try to read any remaining output before terminating
-                    $stderr = stream_get_contents($proc_info['pipes'][2]);
-                    
-                    fclose($proc_info['pipes'][1]);
-                    fclose($proc_info['pipes'][2]);
-                    proc_terminate($proc_info['handle']);
-                    proc_close($proc_info['handle']);
-                }
-                
-                try {
-                    $sql_fail = "UPDATE jet_cache_jobs SET status = 'failed', completed_at = ?, result_message = 'Processing timeout (>2 minutes)' WHERE id = ?";
-                    $stmt_fail = $pdo->prepare($sql_fail);
-                    $stmt_fail->execute([time(), $proc_info['job_id']]);
-                } catch (Exception $db_e) {
-                    error_log("[{$timestamp}] [Job {$proc_info['job_id']}] DB timeout update warning: " . $db_e->getMessage());
-                }
-            }
-            
-            echo "[{$timestamp}] Parallel batch processing completed.\n";
+            echo "[{$timestamp}] Batch processing completed.\n";
 
         } else {
             // No jobs found
