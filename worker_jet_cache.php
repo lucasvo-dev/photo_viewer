@@ -975,7 +975,8 @@ while ($running) {
                     }
                     
                     // SPEED OPTIMIZATION 2: Ultra-fast dcraw processing if embedded JPEG failed
-                    if ($processing_result === false && $magick_functional) {
+                    // Skip ultra-fast processing for CR3 since dcraw doesn't support CR3
+                    if ($processing_result === false && $magick_functional && $detected_format !== 'Canon CR3') {
                         echo "[{$timestamp}] [Job {$job_id}] Attempting ultra-fast RAW processing (dcraw-fast inspired)\n";
                         $processing_result = process_raw_ultra_fast(
                             $dcraw_executable_path,
@@ -994,34 +995,30 @@ while ($running) {
                         }
                     }
                     
+                    // SPEED OPTIMIZATION 3: Direct CR3 processing (skip ultra-fast for CR3)
+                    if ($processing_result === false && $detected_format === 'Canon CR3' && $magick_functional) {
+                        echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using direct ImageMagick processing (skip dcraw)\n";
+                        $processing_result = process_cr3_with_imagemagick(
+                            $magick_executable_path,
+                            $full_raw_file_path_realpath,
+                            $cached_preview_full_path,
+                            $cache_size,
+                            $timestamp,
+                            $job_id
+                        );
+                        
+                        if ($processing_result !== false) {
+                            echo "[{$timestamp}] [Job {$job_id}] SUCCESS: Used direct CR3 ImageMagick processing\n";
+                        }
+                    }
+                    
                     // FALLBACK: Original processing methods (only if all speed optimizations fail)
                     if ($processing_result === false) {
                         echo "[{$timestamp}] [Job {$job_id}] Using fallback processing methods\n";
                         
-                        if ($detected_format === 'Canon CR3') {
-                            // CR3 files require ImageMagick - use fallback if ImageMagick not functional
-                            if ($magick_functional) {
-                                echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
-                                $processing_result = process_cr3_with_imagemagick(
-                                    $magick_executable_path,
-                                    $full_raw_file_path_realpath,
-                                    $cached_preview_full_path,
-                                    $cache_size,
-                                    $timestamp,
-                                    $job_id
-                                );
-                } else {
-                                echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format but ImageMagick not functional - using dcraw+GD fallback\n";
-                                $processing_result = process_raw_with_dcraw_only(
-                                    $dcraw_executable_path,
-                                    $full_raw_file_path_realpath,
-                                    $cached_preview_full_path,
-                                    $cache_size,
-                                    $timestamp,
-                                    $job_id
-                                );
-                            }
-                        } else {
+                        // CR3 files are already handled above in SPEED OPTIMIZATION 3
+                        // Only process non-CR3 RAW formats here
+                        if ($detected_format !== 'Canon CR3') {
                             // Other RAW formats - use ImageMagick pipeline if available, fallback if not
                             if ($magick_functional) {
                                 echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw+ImageMagick pipeline\n";
@@ -1036,6 +1033,19 @@ while ($running) {
                                 );
                             } else {
                                 echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, ImageMagick not functional - using dcraw+GD fallback\n";
+                                $processing_result = process_raw_with_dcraw_only(
+                                    $dcraw_executable_path,
+                                    $full_raw_file_path_realpath,
+                                    $cached_preview_full_path,
+                                    $cache_size,
+                                    $timestamp,
+                                    $job_id
+                                );
+                            }
+                        } else {
+                            // CR3 fallback when ImageMagick not functional (rare case)
+                            if (!$magick_functional) {
+                                echo "[{$timestamp}] [Job {$job_id}] CR3 detected but ImageMagick not functional - using dcraw+GD fallback (may fail)\n";
                                 $processing_result = process_raw_with_dcraw_only(
                                     $dcraw_executable_path,
                                     $full_raw_file_path_realpath,
