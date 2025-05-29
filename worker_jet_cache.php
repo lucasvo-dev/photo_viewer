@@ -521,7 +521,109 @@ function process_raw_with_optimized_dcraw($dcraw_path, $magick_path, $raw_file_p
     }
 }
 
+/**
+ * Test if ImageMagick is working properly
+ */
+function test_imagemagick_availability($magick_path) {
+    // Quick test to see if ImageMagick executes at all
+    $test_cmd = "\"{$magick_path}\" -version 2>&1";
+    $test_output = shell_exec($test_cmd);
+    $trimmed_output = trim($test_output);
+    
+    // Check if we got any meaningful output
+    if (empty($trimmed_output)) {
+        return false; // ImageMagick not executing
+    }
+    
+    // Check if output contains version info (indicates successful execution)
+    if (stripos($trimmed_output, 'imagemagick') !== false || 
+        stripos($trimmed_output, 'version') !== false ||
+        stripos($trimmed_output, 'copyright') !== false) {
+        return true; // ImageMagick working
+    }
+    
+    return false; // ImageMagick executing but with errors
+}
 
+/**
+ * Fallback RAW processing using dcraw only (no ImageMagick resize)
+ * For when ImageMagick is completely broken
+ */
+function process_raw_with_dcraw_only($dcraw_path, $raw_file_path, $output_path, $target_height, $timestamp, $job_id) {
+    try {
+        // Use dcraw to output PPM format, then convert to JPEG using GD
+        $temp_ppm_filename = rtrim(sys_get_temp_dir(), DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'jet_fallback_' . uniqid() . '.ppm';
+        
+        // dcraw command to output PPM
+        $dcraw_options = [];
+        $dcraw_options[] = "-q 1";     // AHD interpolation
+        $dcraw_options[] = "-a";       // Auto white balance
+        $dcraw_options[] = "-o 1";     // sRGB color space
+        $dcraw_options[] = "-w";       // Use camera white balance
+        $dcraw_options[] = "-4";       // 16-bit linear output
+        $dcraw_options[] = "-h";       // Half-size output for speed
+        
+        $dcraw_opts_string = implode(' ', $dcraw_options);
+        $dcraw_cmd = "\"{$dcraw_path}\" {$dcraw_opts_string} -c \"{$raw_file_path}\" > \"{$temp_ppm_filename}\"";
+        
+        echo "[{$timestamp}] [Job {$job_id}] FALLBACK: Using dcraw-only processing...\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] FALLBACK dcraw command: {$dcraw_cmd}");
+        
+        $start_time = microtime(true);
+        $dcraw_output = shell_exec($dcraw_cmd . " 2>&1");
+        $dcraw_time = round((microtime(true) - $start_time) * 1000, 2);
+        error_log("[{$timestamp}] [Jet Job {$job_id}] FALLBACK dcraw execution time: {$dcraw_time}ms");
+        
+        if (!file_exists($temp_ppm_filename) || filesize($temp_ppm_filename) === 0) {
+            throw new Exception("dcraw fallback failed: " . trim($dcraw_output));
+        }
+        
+        // Use GD to resize and convert PPM to JPEG
+        $image = @imagecreatefromppm($temp_ppm_filename);
+        if (!$image) {
+            // Try alternative PPM loading
+            $image = @imagecreatefromstring(file_get_contents($temp_ppm_filename));
+        }
+        
+        if (!$image) {
+            throw new Exception("Failed to load PPM image for fallback processing");
+        }
+        
+        $original_width = imagesx($image);
+        $original_height = imagesy($image);
+        
+        // Calculate new dimensions maintaining aspect ratio
+        $new_height = $target_height;
+        $new_width = round(($original_width / $original_height) * $new_height);
+        
+        // Create resized image
+        $resized_image = imagecreatetruecolor($new_width, $new_height);
+        imagecopyresampled($resized_image, $image, 0, 0, 0, 0, $new_width, $new_height, $original_width, $original_height);
+        
+        // Save as JPEG
+        $success = imagejpeg($resized_image, $output_path, JPEG_QUALITY);
+        
+        // Cleanup
+        imagedestroy($image);
+        imagedestroy($resized_image);
+        @unlink($temp_ppm_filename);
+        
+        if (!$success) {
+            throw new Exception("Failed to save JPEG in fallback mode");
+        }
+        
+        echo "[{$timestamp}] [Job {$job_id}] FALLBACK SUCCESS: Created cache using dcraw+GD\n";
+        error_log("[{$timestamp}] [Jet Job {$job_id}] FALLBACK SUCCESS: Created cache file with size: " . filesize($output_path));
+        
+        return "RAW cache created successfully using dcraw+GD fallback (ImageMagick unavailable)";
+        
+    } catch (Exception $e) {
+        if (isset($temp_ppm_filename) && file_exists($temp_ppm_filename)) {
+            @unlink($temp_ppm_filename);
+        }
+        throw $e;
+    }
+}
 
 // Reset stuck processing jobs on startup
 try {
@@ -540,20 +642,38 @@ try {
     error_log("[{$reset_fail_timestamp}] [Jet Worker Startup Error] Failed to reset processing jobs: " . $e->getMessage());
 }
 
-// Check tool availability
+// Check tool availability with enhanced testing
 $dcraw_available = check_dcraw_availability($dcraw_executable_path);
 $magick_available = file_exists($magick_executable_path);
+$magick_functional = false;
 
 echo "Tool availability check:\n";
 echo "  - dcraw: " . ($dcraw_available ? "AVAILABLE" : "NOT AVAILABLE") . "\n";
-echo "  - ImageMagick: " . ($magick_available ? "AVAILABLE" : "NOT AVAILABLE") . "\n";
+echo "  - ImageMagick file: " . ($magick_available ? "AVAILABLE" : "NOT AVAILABLE") . "\n";
 
-error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup] Tool availability - dcraw: " . ($dcraw_available ? "YES" : "NO") . ", ImageMagick: " . ($magick_available ? "YES" : "NO"));
+if ($magick_available) {
+    // Test if ImageMagick actually works
+    echo "  - Testing ImageMagick functionality...\n";
+    $magick_functional = test_imagemagick_availability($magick_executable_path);
+    echo "  - ImageMagick functional: " . ($magick_functional ? "YES" : "NO") . "\n";
+    
+    if (!$magick_functional) {
+        echo "  - ImageMagick detected but not working - FALLBACK MODE enabled\n";
+        error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup] ImageMagick exists but not functional - enabling fallback mode");
+    }
+}
 
-if (!$dcraw_available || !$magick_available) {
-    echo "ERROR: Required processing tools not available. Need dcraw AND ImageMagick.\n";
-    error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup Error] Required processing tools not available.");
+error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup] Tool availability - dcraw: " . ($dcraw_available ? "YES" : "NO") . ", ImageMagick: " . ($magick_available ? "YES" : "NO") . ", ImageMagick functional: " . ($magick_functional ? "YES" : "NO"));
+
+if (!$dcraw_available) {
+    echo "ERROR: dcraw is required but not available.\n";
+    error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup Error] dcraw not available - cannot process RAW files.");
     exit(1);
+}
+
+if (!$magick_available && !$magick_functional) {
+    echo "WARNING: ImageMagick not available or not functional - using dcraw+GD fallback mode\n";
+    error_log("[" . date('Y-m-d H:i:s') . "] [Jet Worker Startup Warning] ImageMagick not available - using fallback mode");
 }
 
 // Worker variables - optimized for 5 concurrent processes
@@ -669,33 +789,57 @@ while ($running) {
                     $file_validation = validate_raw_file_integrity($full_raw_file_path_realpath, $timestamp, $job_id);
                     $detected_format = $file_validation['format'];
                     
-                    // Process based on detected format
+                    // Process based on detected format and ImageMagick availability
                     $processing_result = null;
                     $processing_start_time = microtime(true);
                     
                     if ($detected_format === 'Canon CR3') {
-                        // Use ImageMagick directly for CR3 files (dcraw 9.28 doesn't support CR3)
-                        echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
-                        $processing_result = process_cr3_with_imagemagick(
-                            $magick_executable_path,
-                            $full_raw_file_path_realpath,
-                            $cached_preview_full_path,
-                            $cache_size,
-                            $timestamp,
-                            $job_id
-                        );
+                        // CR3 files require ImageMagick - use fallback if ImageMagick not functional
+                        if ($magick_functional) {
+                            echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format, using ImageMagick processing\n";
+                            $processing_result = process_cr3_with_imagemagick(
+                                $magick_executable_path,
+                                $full_raw_file_path_realpath,
+                                $cached_preview_full_path,
+                                $cache_size,
+                                $timestamp,
+                                $job_id
+                            );
+                        } else {
+                            echo "[{$timestamp}] [Job {$job_id}] Detected CR3 format but ImageMagick not functional - using dcraw+GD fallback\n";
+                            $processing_result = process_raw_with_dcraw_only(
+                                $dcraw_executable_path,
+                                $full_raw_file_path_realpath,
+                                $cached_preview_full_path,
+                                $cache_size,
+                                $timestamp,
+                                $job_id
+                            );
+                        }
                     } else {
-                        // Use dcraw + ImageMagick pipeline for other RAW formats
-                        echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw pipeline\n";
-                        $processing_result = process_raw_with_optimized_dcraw(
-                            $dcraw_executable_path,
-                            $magick_executable_path,
-                            $full_raw_file_path_realpath,
-                            $cached_preview_full_path,
-                            $cache_size,
-                            $timestamp,
-                            $job_id
-                        );
+                        // Other RAW formats - use ImageMagick pipeline if available, fallback if not
+                        if ($magick_functional) {
+                            echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, using dcraw+ImageMagick pipeline\n";
+                            $processing_result = process_raw_with_optimized_dcraw(
+                                $dcraw_executable_path,
+                                $magick_executable_path,
+                                $full_raw_file_path_realpath,
+                                $cached_preview_full_path,
+                                $cache_size,
+                                $timestamp,
+                                $job_id
+                            );
+                        } else {
+                            echo "[{$timestamp}] [Job {$job_id}] Detected format: {$detected_format}, ImageMagick not functional - using dcraw+GD fallback\n";
+                            $processing_result = process_raw_with_dcraw_only(
+                                $dcraw_executable_path,
+                                $full_raw_file_path_realpath,
+                                $cached_preview_full_path,
+                                $cache_size,
+                                $timestamp,
+                                $job_id
+                            );
+                        }
                     }
                     
                     $processing_time = round((microtime(true) - $processing_start_time) * 1000, 2);
