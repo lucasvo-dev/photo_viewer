@@ -43,6 +43,10 @@ return [
             'path' => 'G:\\RAW',
             'name' => 'G Drive RAW'
         ],
+        'my_raw_drive_e' => [
+            'path' => 'E:\\RAW',
+            'name' => 'E Drive RAW'
+        ],
         // Remove test configurations since we want to use the real RAW drive
     ],
     'cache_thumb_root' => __DIR__ . '/cache/thumbnails', // Use __DIR__ here, db_connect will resolve realpath
