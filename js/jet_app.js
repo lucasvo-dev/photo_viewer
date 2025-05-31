@@ -1,6 +1,15 @@
 // Jet Application Logic
 // This file will handle the Photo Culling App's frontend functionality.
 
+// Import from gallery app for ZIP functionality
+import { 
+    initializeZipManager, 
+    handleDownloadZipAction, 
+    addOrUpdateZipJob, 
+    startPanelPolling
+} from './zipManager.js';
+import { fetchDataApi } from './apiService.js';
+
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Jet Culling App Initialized.');
 
@@ -13,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentRelativePath = ''; // This will be path relative to the source_key (e.g., folder1/subfolder2)
                                  // For top-level folders, it will be just the folder name.
     let currentGridImages = []; // Store the currently displayed images array
+    let currentFilteredImages = []; // Store the currently filtered images array
     let currentUser = null;
 
     // Realtime polling for pick updates
@@ -94,6 +104,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             <button class="jet-filter-button color-filter" data-color="blue" aria-label="Lọc màu xanh dương"></button>
                             <button class="jet-filter-button color-filter" data-color="grey" aria-label="Lọc màu xám"></button>
                         </div>
+                        <div class="filter-group-actions" style="display: none;">
+                            <button class="jet-zip-button" id="zip-filtered-images" title="Tải ZIP những ảnh đã lọc">
+                                📦 Tải ZIP (<span id="zip-count">0</span>)
+                            </button>
+                        </div>
                     </div>
                     <div id="jet-sort-controls" style="display: none;">
                         <label for="sort-order">Sắp xếp theo:</label>
@@ -149,6 +164,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 applySortAndFilterAndRender();
             }
         });
+
+        // Add event listener for ZIP button
+        const zipButton = document.getElementById('zip-filtered-images');
+        if (zipButton) {
+            zipButton.addEventListener('click', handleZipFilteredImages);
+        }
     }
 
     // NEW: Function to add event listener to sort dropdown
@@ -215,6 +236,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 break;
         }
         renderImageGrid(filteredImages);
+        
+        // Store filtered images for ZIP functionality
+        currentFilteredImages = filteredImages;
+        
+        // Update ZIP button count and visibility
+        updateZipButtonState(filteredImages);
     }
 
     async function fetchAndRenderTopLevelFolders() {
@@ -1737,13 +1764,104 @@ document.addEventListener('DOMContentLoaded', () => {
             showFeedback(error.message, 'error');
         }
     }
+
+    // Initialize the app
+    initializeApp();
+    fetchAndRenderTopLevelFolders();
+    
+    // Initialize ZIP Manager for Jet app
+    initializeZipManager();
+
+    // Function to handle ZIP download
+    async function handleZipFilteredImages() {
+        if (!currentFilteredImages || currentFilteredImages.length === 0) {
+            showFeedback('Không có hình ảnh nào để tải ZIP.', 'warning');
+            return;
+        }
+
+        // Create list of image paths for ZIP - img.path already includes the relative path from source root
+        const imagePaths = currentFilteredImages.map(img => `${img.source_key}/${img.path}`);
+        
+        // Create filter name for ZIP filename
+        const filterName = getFilterDisplayName();
+        const zipFilenameHint = `jet_filtered_${filterName}_${imagePaths.length}_images.zip`;
+        
+        // Use the multi-file ZIP functionality from gallery app API
+        const formData = new FormData();
+        imagePaths.forEach(path => {
+            formData.append('file_paths[]', path);
+        });
+        formData.append('zip_filename_hint', zipFilenameHint);
+        formData.append('source_path', '_multiple_selected_');
+
+        try {
+            const result = await fetchDataApi('request_zip', {}, {
+                method: 'POST',
+                body: formData
+            });
+
+            if (result.status === 'success' && result.data && result.data.job_token) {
+                const initialJobData = result.data;
+                const jobToken = initialJobData.job_token;
+                if (!initialJobData.status) initialJobData.status = 'pending';
+
+                addOrUpdateZipJob(jobToken, { 
+                    jobData: initialJobData, 
+                    folderDisplayName: `Jet: ${filterName} (${imagePaths.length} ảnh)`, 
+                    lastUpdated: Date.now() 
+                });
+                
+                startPanelPolling();
+                showFeedback('Yêu cầu tạo ZIP đã được gửi. Kiểm tra bảng tiến trình bên dưới.', 'success');
+                
+            } else {
+                const errorMessage = result.message || result.data?.error || 'Không thể yêu cầu tạo ZIP cho các ảnh đã lọc.';
+                showFeedback(`Lỗi khi tạo ZIP: ${errorMessage}`, 'error');
+            }
+        } catch (error) {
+            console.error('[Jet] Error in handleZipFilteredImages:', error);
+            showFeedback(`Không thể tạo ZIP: ${error.message}`, 'error');
+        }
+    }
+
+    // NEW: ZIP-related helper functions
+    function updateZipButtonState(filteredImages) {
+        const zipButton = document.getElementById('zip-filtered-images');
+        const zipCount = document.getElementById('zip-count');
+        const filterActions = document.querySelector('.filter-group-actions');
+        
+        if (zipButton && zipCount && filterActions) {
+            const count = filteredImages ? filteredImages.length : 0;
+            zipCount.textContent = count;
+            
+            if (count > 0 && currentRawSourceKey) {
+                filterActions.style.display = 'block';
+                zipButton.disabled = false;
+            } else {
+                filterActions.style.display = 'none';
+                zipButton.disabled = true;
+            }
+        }
+    }
+
+    function getFilterDisplayName() {
+        switch (currentFilter) {
+            case 'all':
+                return 'tat_ca';
+            case 'picked-any':
+                return 'da_chon';
+            case 'not-picked':
+                return 'chua_chon';
+            case 'red':
+                return 'mau_do';
+            case 'green':
+                return 'mau_xanh_la';
+            case 'blue':
+                return 'mau_xanh_duong';
+            case 'grey':
+                return 'mau_xam';
+            default:
+                return 'loc_khac';
+        }
+    }
 });
-
-// TODO:
-// - Spacebar to open/close preview for the currentGridSelection.
-// - Ensure focus management is robust for keyboard navigation.
-// - Refine UI for selected grid item (e.g. border style).
-// - Review toggleImagePickAPI and setPickColorViaAPI for redundancy or merge. (setPickColorViaAPI is for preview, setGridItemPickColorAPI is for grid).
-// - CSS for .grid-item-selected
-
-// Initialize the app 

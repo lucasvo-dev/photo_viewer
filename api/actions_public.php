@@ -384,14 +384,33 @@ switch ($action) {
 
                 $validated_file_paths = [];
                 foreach ($file_paths_for_selection as $file_path) {
-                    // Use validate_source_and_FILE_path for individual files
-                    $path_info = validate_source_and_file_path($file_path); 
+                    // Detect if this is a RAW file path by checking if it uses RAW_IMAGE_SOURCES
+                    $path_parts = explode('/', $file_path, 2);
+                    $source_key = $path_parts[0] ?? '';
+                    
+                    $path_info = null;
+                    
+                    // Check if this source key exists in RAW_IMAGE_SOURCES first
+                    if (defined('RAW_IMAGE_SOURCES') && isset(RAW_IMAGE_SOURCES[$source_key])) {
+                        // Use RAW validation for RAW files
+                        $path_info = validate_raw_source_and_file_path($file_path);
+                    } else {
+                        // Use regular validation for normal image files
+                        $path_info = validate_source_and_file_path($file_path);
+                    }
 
-                    if (!$path_info) { // validate_source_and_file_path returns null on any validation failure (not found, not a file, not readable, not in source)
+                    if (!$path_info) {
                         json_error("Đường dẫn tệp không hợp lệ trong danh sách chọn: " . htmlspecialchars($file_path), 400);
                     }
                     
                     // Access check for the parent directory of the file
+                    // For RAW sources, we typically don't use password protection, so skip access check
+                    if (defined('RAW_IMAGE_SOURCES') && isset(RAW_IMAGE_SOURCES[$source_key])) {
+                        // RAW sources are typically not password protected, skip access check
+                        $validated_file_paths[] = $path_info['source_prefixed_path'];
+                        continue;
+                    }
+                    
                     // dirname() on a source-prefixed path like 'main/foo/bar.jpg' gives 'main/foo'
                     // If the path is 'main/bar.jpg', dirname gives 'main'.
                     // If the path is just 'main' (not possible for a file usually), dirname gives '.'.

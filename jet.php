@@ -56,6 +56,12 @@ if (!defined('RAW_IMAGE_SOURCES')) {
 
     </div>
 
+    <!-- ZIP Jobs Panel (reused from gallery app) -->
+    <div id="zip-jobs-panel-container" class="zip-jobs-panel-container">
+        <h4>📦 Tiến trình tạo ZIP</h4>
+        <div id="zip-jobs-list"></div>
+    </div>
+
     <script>
         // Pass PHP defined constants or configurations to JavaScript if needed
         // For example, if RAW_IMAGE_SOURCES keys were needed directly by JS (though API is better)

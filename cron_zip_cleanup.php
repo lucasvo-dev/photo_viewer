@@ -70,8 +70,7 @@ $cleanup_interval_minutes = 5;
 
 echo "ZIP Cache Directory: " . ZIP_CACHE_DIR . "
 ";
-echo "Cleanup interval: {$cleanup_interval_minutes} minutes after CREATION.
-";
+echo "Cleanup interval: {$cleanup_interval_minutes} minutes after CREATION.\n";
 echo "Max cleanup attempts for a single file: " . MAX_CLEANUP_ATTEMPTS . "
 ";
 
@@ -171,8 +170,7 @@ try {
 
     $terminal_statuses_placeholders = implode(',', array_fill(0, count($terminal_statuses_for_cron), '?'));
 
-    // Select jobs that are older than the interval, have a zip path, and are not already in a terminal state.
-    // Also select cleanup_attempts.
+    // Select jobs that are older than the interval, have a zip path, and are not already in a terminal state
     $sql_get_old_zips =
         "SELECT id, job_token, final_zip_path, created_at, status, cleanup_attempts FROM zip_jobs " .
         "WHERE final_zip_path IS NOT NULL AND final_zip_path != '' " .
@@ -266,9 +264,8 @@ try {
         error_log("[Cron ZIP Cleanup] Checking file for deletion by creation time: '{$zip_filepath_to_delete}' for job token {$job_token}");
 
         if (is_file($zip_filepath_to_delete) && is_readable($zip_filepath_to_delete)) {
-            echo "Attempting to delete ZIP file (due to age): {$zip_filepath_to_delete} for job token {$job_token}
-";
-            error_log("[Cron ZIP Cleanup] Attempting to delete ZIP file (due to age): {$zip_filepath_to_delete} for job token {$job_token}");
+            echo "Attempting to delete ZIP file (created {$cleanup_interval_minutes}+ minutes ago): {$zip_filepath_to_delete} for job token {$job_token}\n";
+            error_log("[Cron ZIP Cleanup] Attempting to delete ZIP file (created {$cleanup_interval_minutes}+ minutes ago): {$zip_filepath_to_delete} for job token {$job_token}");
             
             if (unlink($zip_filepath_to_delete)) {
                 echo "Successfully deleted ZIP file: {$zip_filepath_to_delete}

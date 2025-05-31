@@ -282,23 +282,28 @@ while ($running) {
 
                 if (is_array($selected_files_list) && !empty($selected_files_list)) {
                     foreach ($selected_files_list as $file_source_prefixed_path) {
-                        // Use validate_source_and_file_path for files
-                        $file_path_info = validate_source_and_file_path($file_source_prefixed_path);
+                        // Try RAW validation first, then regular validation
+                        $file_path_info = validate_raw_source_and_file_path($file_source_prefixed_path);
+                        $is_raw_file = ($file_path_info !== null);
+                        
+                        if (!$file_path_info) {
+                            // If RAW validation failed, try regular image validation
+                            $file_path_info = validate_source_and_file_path($file_source_prefixed_path);
+                        }
 
                         if ($file_path_info && is_file($file_path_info['absolute_path']) && is_readable($file_path_info['absolute_path'])) {
                             $disk_path = $file_path_info['absolute_path'];
-                            // Path inside ZIP: internal_base_folder / source_key / relative_path_to_file (which includes filename)
-                            $path_in_zip_parts = [];
-                            if (!empty($zip_internal_base_folder)) $path_in_zip_parts[] = $zip_internal_base_folder;
-                            if (!empty($file_path_info['source_key'])) $path_in_zip_parts[] = $file_path_info['source_key'];
-                            if (!empty($file_path_info['relative_path'])) $path_in_zip_parts[] = $file_path_info['relative_path'];
-                            $path_in_zip = implode('/', $path_in_zip_parts);
+                            // Path inside ZIP: internal_base_folder / filename_only (flat structure)
+                            $filename = basename($file_path_info['relative_path']);
+                            $path_in_zip = $zip_internal_base_folder . '/' . $filename;
                             $path_in_zip = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $path_in_zip), '/');
                             $path_in_zip = str_replace('../', '', $path_in_zip);
                             $files_to_add[] = ['disk_path' => $disk_path, 'zip_path' => $path_in_zip];
-                            error_log_worker($job, "Validated and added selected file: '{$disk_path}' as '{$path_in_zip}'");
+                            $file_type = $is_raw_file ? 'RAW' : 'regular';
+                            error_log_worker($job, "Validated and added selected file ({$file_type}): '{$disk_path}' as '{$path_in_zip}'");
                         } else {
-                            error_log_worker($job, "Skipping invalid or unreadable selected file: '{$file_source_prefixed_path}'. Validation: " . print_r($file_path_info, true));
+                            $validation_result = $file_path_info ? print_r($file_path_info, true) : 'null (both RAW and regular validation failed)';
+                            error_log_worker($job, "Skipping invalid or unreadable selected file: '{$file_source_prefixed_path}'. Validation: {$validation_result}");
                         }
                     }
                     $total_files_to_zip = count($files_to_add);
@@ -328,7 +333,8 @@ while ($running) {
                     if ($fileinfo->isFile() && $fileinfo->isReadable()) {
                         $real_file_path = $fileinfo->getRealPath();
                         // Path inside ZIP: internal_base_folder / relative_path_from_scanned_folder_root
-                        $path_in_zip = $zip_internal_base_folder . '/' . substr($real_file_path, strlen($absolute_folder_path) + 1);
+                        $relative_path_from_folder = substr($real_file_path, strlen($absolute_folder_path) + 1);
+                        $path_in_zip = $zip_internal_base_folder . '/' . $relative_path_from_folder;
                         $path_in_zip = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $path_in_zip), '/');
                         $files_to_add[] = ['disk_path' => $real_file_path, 'zip_path' => $path_in_zip];
                     }
@@ -394,7 +400,12 @@ while ($running) {
                     $report_processed_count = ($total_files_to_zip == 1) ? 1 : max(0, $total_files_to_zip - 1);
                 }
                 
-                $current_file_for_report = substr($disk_path, strlen($absolute_folder_path) + 1);
+                // For progress reporting, use just the filename for _multiple_selected_ or relative path for single folder
+                if ($source_path_from_job === '_multiple_selected_') {
+                    $current_file_for_report = basename($disk_path);
+                } else {
+                    $current_file_for_report = isset($absolute_folder_path) ? substr($disk_path, strlen($absolute_folder_path) + 1) : basename($disk_path);
+                }
                 update_zip_job_progress($pdo, $job_id, $report_processed_count, $current_file_for_report, $log_prefix);
             }
 

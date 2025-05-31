@@ -245,6 +245,93 @@ function validate_source_and_file_path(?string $source_prefixed_path)
     ];
 }
 
+/**
+ * Validate a RAW source-prefixed file path (for Jet Culling App)
+ * Similar to validate_source_and_file_path but uses RAW_IMAGE_SOURCES instead of IMAGE_SOURCES
+ * 
+ * @param string|null $source_prefixed_path Path in format "source_key/relative/path/to/file.raw"
+ * @return array|null Returns path info array or null if validation fails
+ */
+function validate_raw_source_and_file_path(?string $source_prefixed_path)
+{
+    // Access RAW constant directly
+    if (!defined('RAW_IMAGE_SOURCES')) {
+        error_log("[validate_raw_source_and_file_path] Error: RAW_IMAGE_SOURCES constant not defined.");
+        return null;
+    }
+
+    $normalized_input = normalize_path_input($source_prefixed_path);
+
+    if ($normalized_input === '') {
+        error_log("RAW file validation failed: Normalized path is empty.");
+        return null;
+    }
+
+    // 1. Split normalized path
+    $parts = explode('/', $normalized_input, 2);
+    $source_key = $parts[0];
+    $relative_path_in_source = $parts[1] ?? '';
+
+    if ($relative_path_in_source === '') {
+        error_log("RAW file validation failed: Path refers only to a source key, not a file: {$source_prefixed_path}");
+        return null;
+    }
+
+    // 2. Check RAW source key existence
+    if (!isset(RAW_IMAGE_SOURCES[$source_key])) {
+        error_log("RAW file validation failed: Invalid RAW source key '{$source_key}' in path '{$source_prefixed_path}'");
+        return null;
+    }
+    $source_config = RAW_IMAGE_SOURCES[$source_key];
+    $source_base_path = $source_config['path'];
+
+    // 3. Check source base path validity
+    $resolved_source_base_path = @realpath($source_base_path);
+    if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
+        error_log("[validate_raw_source_and_file_path] RAW source base path invalid/inaccessible for key '{$source_key}': {$source_base_path}");
+        return null;
+    }
+    $source_base_path = $resolved_source_base_path;
+
+    // 4. Construct target absolute path
+    $target_absolute_path = $source_base_path . DIRECTORY_SEPARATOR . str_replace('/', DIRECTORY_SEPARATOR, $relative_path_in_source);
+
+    // 5. Get real path of the target
+    $real_target_path = @realpath($target_absolute_path);
+
+    // 6. Final checks for RAW FILE: Must resolve, be a FILE, be READABLE, and within source base
+    if (
+        $real_target_path === false ||
+        !is_file($real_target_path) ||
+        !is_readable($real_target_path) ||
+        strpos($real_target_path, $source_base_path . DIRECTORY_SEPARATOR) !== 0
+    ) {
+        error_log("[validate_raw_source_and_file_path] RAW file validation failed for '{$source_prefixed_path}' - file not found, not readable, or outside source base");
+        return null;
+    }
+
+    // 7. Additional check: Verify it's actually a RAW file by extension
+    if (defined('RAW_IMAGE_EXTENSIONS')) {
+        $file_extension = strtolower(pathinfo($real_target_path, PATHINFO_EXTENSION));
+        $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+        if (!in_array($file_extension, $raw_extensions)) {
+            error_log("[validate_raw_source_and_file_path] File '{$source_prefixed_path}' is not a valid RAW file (extension: {$file_extension})");
+            return null;
+        }
+    }
+
+    // 8. Calculate final relative path based on realpath
+    $final_relative_path = substr($real_target_path, strlen($source_base_path));
+    $final_relative_path = ltrim(str_replace(DIRECTORY_SEPARATOR, '/', $final_relative_path), '/');
+
+    // 9. Return valid info
+    return [
+        'source_key' => $source_key,
+        'relative_path' => $final_relative_path,
+        'absolute_path' => $real_target_path,
+        'source_prefixed_path' => $source_key . '/' . $final_relative_path // Reconstruct canonical path
+    ];
+}
 
 /**
  * Kiểm tra quyền truy cập thư mục (dựa vào DB và Session)

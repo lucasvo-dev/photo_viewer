@@ -176,7 +176,12 @@ export function renderZipJobsPanel() {
     }
 
     zipJobsListEl.innerHTML = ''; 
-    jobTokens.sort((a,b) => (jobs[b].jobData?.created_at || 0) - (jobs[a].jobData?.created_at || 0));
+    // Sort by lastUpdated desc (most recent first), fallback to created_at
+    jobTokens.sort((a,b) => {
+        const timeA = jobs[a].lastUpdated || jobs[a].jobData?.created_at || 0;
+        const timeB = jobs[b].lastUpdated || jobs[b].jobData?.created_at || 0;
+        return timeB - timeA; // Desc order: newest first
+    });
 
     jobTokens.forEach(token => {
         const jobDetails = jobs[token];

@@ -270,7 +270,10 @@ function showDirectoryView() {
     document.getElementById('directory-view').style.display = 'block';
     hideImageViewUI(); // Use imported hide function
     document.getElementById('image-view').style.display = 'none'; // Ensure main container is hidden
-    document.getElementById('backButton').style.display = 'none';
+    const backButton = document.getElementById('backButton');
+    if (backButton) {
+        backButton.style.display = 'none';
+    }
     document.title = 'Thư viện Ảnh - Guustudio';
     
     // Clear hash if present
@@ -287,7 +290,10 @@ function showImageView() { // This function now mainly toggles the main view con
     document.getElementById('directory-view').style.display = 'none';
     document.getElementById('image-view').style.display = 'block';
     showImageViewUI(); // And calls the module to show its specific elements
-    document.getElementById('backButton').style.display = 'inline-block';
+    const backButton = document.getElementById('backButton');
+    if (backButton) {
+        backButton.style.display = 'inline-block';
+    }
     document.body.classList.add('gallery-view-active'); // << ADD class for album/image view
 }
 
@@ -663,10 +669,13 @@ function navigateToFolder(folderPath) {
 }
 
 // --- Back button --- 
-document.getElementById('backButton').onclick = () => {
-    // Use hash change to navigate back
-    history.back(); 
-};
+const backButton = document.getElementById('backButton');
+if (backButton) {
+    backButton.onclick = () => {
+        // Use hash change to navigate back
+        history.back(); 
+    };
+}
 
 // --- Hash Handling ---
 async function handleUrlHash() { // Make function async
@@ -863,7 +872,6 @@ async function initializeApp() {
     // Now initialize the ZIP Manager (must be after DOM elements are set)
     initializeZipManager();
     
-    document.getElementById('backButton').onclick = () => { history.back(); };
     // LoadMoreBtn listener is now in uiImageView.js
 
     if (!handleUrlHash()) { /* ... */ }
