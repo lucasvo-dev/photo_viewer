@@ -764,8 +764,9 @@ body.jet-app-active {
 
 .jet-app-active .jet-image-item-container.grid-item-selected {
     transform: translateY(-3px);
-    border-color: var(--jet-accent-color1);
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2), var(--jet-box-shadow-heavy);
+    border-color: var(--jet-border-secondary);
+    box-shadow: 0 0 0 2px rgba(139, 148, 158, 0.3), var(--jet-box-shadow-heavy);
+    background-color: var(--jet-bg-tertiary);
 }
 
 .jet-app-active .jet-preview-image {
@@ -776,7 +777,7 @@ body.jet-app-active {
     margin: 0 auto 8px auto;
     border-radius: 6px;
     background-color: var(--jet-bg-tertiary);
-    object-fit: cover;
+    object-fit: contain;
     aspect-ratio: 3/2;
 }
 
@@ -827,11 +828,13 @@ body.jet-app-active {
     flex-direction: column;
     gap: 2px;
     z-index: 10;
-    background: rgba(0, 0, 0, 0.8);
+    background: rgba(0, 0, 0, 0.85);
     padding: 6px 8px;
     border-radius: 6px;
     backdrop-filter: blur(4px);
-    border: 1px solid rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    max-width: calc(100% - 16px);
+    min-width: 80px;
 }
 
 .jet-app-active .pick-row {
@@ -839,6 +842,7 @@ body.jet-app-active {
     align-items: center;
     gap: 6px;
     margin-bottom: 2px;
+    min-height: 16px;
 }
 
 .jet-app-active .pick-dot {
@@ -856,6 +860,10 @@ body.jet-app-active {
     font-weight: 500;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
     white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 60px;
+    min-width: 30px;
 }
 
 .jet-app-active .pick-dot-red {
@@ -1168,44 +1176,97 @@ body.jet-app-active {
     width: 120px;
     height: 90px;
     position: relative;
-    border: 2px solid transparent;
+    border: 3px solid transparent;
     border-radius: 6px;
     overflow: hidden;
     cursor: pointer;
     transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .jet-filmstrip-thumb-container:hover {
     border-color: var(--jet-border-secondary);
     transform: scale(1.05);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .jet-filmstrip-thumb-container.active {
-    border-color: var(--jet-accent-color1);
-    box-shadow: 0 0 0 1px var(--jet-accent-color1);
+    border-color: var(--jet-border-secondary);
+    box-shadow: 0 0 0 2px rgba(139, 148, 158, 0.3), 0 4px 12px rgba(0, 0, 0, 0.4);
 }
 
 .jet-filmstrip-thumb {
     width: 100%;
     height: 100%;
-    object-fit: cover;
+    object-fit: contain;
     display: block;
 }
 
+/* Enhanced pick color borders for filmstrip */
 .jet-filmstrip-thumb-container.picked-red {
     border-color: var(--jet-color-picked-red);
+    box-shadow: 0 0 0 1px var(--jet-color-picked-red), 0 2px 8px rgba(220, 53, 69, 0.3);
 }
 
 .jet-filmstrip-thumb-container.picked-green {
     border-color: var(--jet-color-picked-green);
+    box-shadow: 0 0 0 1px var(--jet-color-picked-green), 0 2px 8px rgba(40, 167, 69, 0.3);
 }
 
 .jet-filmstrip-thumb-container.picked-blue {
     border-color: var(--jet-color-picked-blue);
+    box-shadow: 0 0 0 1px var(--jet-color-picked-blue), 0 2px 8px rgba(0, 123, 255, 0.3);
 }
 
 .jet-filmstrip-thumb-container.picked-grey {
     border-color: var(--jet-color-picked-grey-flag);
+    box-shadow: 0 0 0 1px var(--jet-color-picked-grey-flag), 0 2px 8px rgba(108, 117, 125, 0.3);
+}
+
+/* Enhanced all_picks indicator for filmstrip */
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
+    position: absolute;
+    top: 2px;
+    left: 2px;
+    background: rgba(0, 0, 0, 0.9) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    border-radius: 4px !important;
+    padding: 4px 6px !important;
+    z-index: 15 !important;
+    backdrop-filter: blur(3px) !important;
+    max-width: calc(100% - 8px) !important;
+    min-width: 60px !important;
+    font-size: 0.5rem !important;
+}
+
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-row {
+    display: flex !important;
+    align-items: center !important;
+    gap: 4px !important;
+    margin-bottom: 2px !important;
+    min-height: 14px !important;
+}
+
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
+    width: 7px !important;
+    height: 7px !important;
+    border-radius: 50% !important;
+    border: 1px solid rgba(255, 255, 255, 0.9) !important;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.6) !important;
+    flex-shrink: 0 !important;
+}
+
+.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-text {
+    color: white !important;
+    font-size: 0.5rem !important;
+    font-weight: 500 !important;
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.8) !important;
+    max-width: 50px !important;
+    min-width: 25px !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    white-space: nowrap !important;
+    line-height: 1.2 !important;
 }
 
 /* --- Error Messages --- */

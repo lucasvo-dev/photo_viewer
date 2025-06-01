@@ -449,12 +449,16 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // NEW: API helper to fetch list of images for a given source and path
-    async function listImagesAPI(sourceKey, relativePath) {
+    async function listImagesAPI(sourceKey, relativePath, silent = false) {
         const apiUrl = `api.php?action=jet_list_images&source_key=${encodeURIComponent(sourceKey)}&path=${encodeURIComponent(relativePath)}`;
-        showLoading('Đang tải danh sách ảnh...'); // Show loading specific to this action
+        if (!silent) {
+            showLoading('Đang tải danh sách ảnh...'); // Show loading specific to this action
+        }
         try {
             const response = await fetch(apiUrl, { credentials: 'include' });
-            hideLoading();
+            if (!silent) {
+                hideLoading();
+            }
             if (!response.ok) {
                 throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
             }
@@ -467,7 +471,9 @@ document.addEventListener('DOMContentLoaded', () => {
             }
             throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải danh sách ảnh.');
         } catch (error) {
-            hideLoading();
+            if (!silent) {
+                hideLoading();
+            }
             console.error('[Jet API] Failed to list images:', error);
             // Re-throw to be caught by the caller, which will update the UI with an error message
             throw error; 
@@ -1195,40 +1201,63 @@ document.addEventListener('DOMContentLoaded', () => {
                 const allPicksIndicator = document.createElement('div');
                 allPicksIndicator.classList.add('all-picks-indicator', 'filmstrip-picks');
                 allPicksIndicator.style.position = 'absolute';
-                allPicksIndicator.style.top = '3px';
-                allPicksIndicator.style.left = '3px';
-                allPicksIndicator.style.fontSize = '0.5rem';
-                allPicksIndicator.style.maxWidth = '110px'; // Limit width to fit in filmstrip
-                allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.75)'; // Dark background for contrast
-                allPicksIndicator.style.borderRadius = '3px';
-                allPicksIndicator.style.padding = '2px 3px';
-                allPicksIndicator.style.zIndex = '2'; // Below color indicator but above image
+                allPicksIndicator.style.top = '2px';
+                allPicksIndicator.style.left = '2px';
+                allPicksIndicator.style.fontSize = '0.45rem';
+                allPicksIndicator.style.maxWidth = '115px'; // Limit width to fit in filmstrip
+                allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.85)'; // Darker background for better contrast
+                allPicksIndicator.style.borderRadius = '4px';
+                allPicksIndicator.style.padding = '3px 4px';
+                allPicksIndicator.style.zIndex = '10'; // Higher z-index to ensure visibility
+                allPicksIndicator.style.border = '1px solid rgba(255, 255, 255, 0.2)'; // Subtle border
+                allPicksIndicator.style.backdropFilter = 'blur(2px)'; // Blur effect for better readability
                 
                 imageObject.all_picks.forEach((pick, index) => {
-                    if (index < 3) { // Limit to 3 picks for space reasons
+                    if (index < 2) { // Limit to 2 picks for filmstrip space
                         const pickRow = document.createElement('div');
                         pickRow.classList.add('pick-row');
                         pickRow.style.display = 'flex';
                         pickRow.style.alignItems = 'center';
                         pickRow.style.marginBottom = '1px';
+                        pickRow.style.gap = '3px';
                         
                         const pickDot = document.createElement('span');
                         pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
-                        pickDot.style.width = '5px';
-                        pickDot.style.height = '5px';
+                        pickDot.style.width = '6px';
+                        pickDot.style.height = '6px';
                         pickDot.style.borderRadius = '50%';
-                        pickDot.style.marginRight = '3px';
                         pickDot.style.flexShrink = '0';
+                        pickDot.style.border = '1px solid rgba(255, 255, 255, 0.8)';
+                        pickDot.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.5)';
+                        
+                        // Set pick dot colors to match CSS variables
+                        switch(pick.color) {
+                            case 'red':
+                                pickDot.style.backgroundColor = '#dc3545';
+                                break;
+                            case 'green':
+                                pickDot.style.backgroundColor = '#28a745';
+                                break;
+                            case 'blue':
+                                pickDot.style.backgroundColor = '#007bff';
+                                break;
+                            case 'grey':
+                                pickDot.style.backgroundColor = '#6c757d';
+                                break;
+                        }
                         
                         const pickText = document.createElement('span');
                         pickText.classList.add('pick-text');
-                        pickText.textContent = (pick.username || 'Unknown'); // Removed .substring(0, 6)
+                        pickText.textContent = (pick.username || 'Unknown').substring(0, 4); // Shorter for filmstrip
                         pickText.style.color = 'white';
-                        pickText.style.fontSize = '0.5rem';
+                        pickText.style.fontSize = '0.45rem';
                         pickText.style.lineHeight = '1';
+                        pickText.style.fontWeight = '500';
+                        pickText.style.textShadow = '0 1px 1px rgba(0, 0, 0, 0.7)';
                         pickText.style.overflow = 'hidden';
                         pickText.style.textOverflow = 'ellipsis';
                         pickText.style.whiteSpace = 'nowrap';
+                        pickText.style.maxWidth = '30px';
                         
                         pickRow.appendChild(pickDot);
                         pickRow.appendChild(pickText);
@@ -1236,13 +1265,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 });
                 
-                // Add overflow indicator if more than 3 picks
-                if (imageObject.all_picks.length > 3) {
+                // Add overflow indicator if more than 2 picks
+                if (imageObject.all_picks.length > 2) {
                     const moreIndicator = document.createElement('div');
                     moreIndicator.style.color = 'white';
-                    moreIndicator.style.fontSize = '0.45rem';
+                    moreIndicator.style.fontSize = '0.4rem';
                     moreIndicator.style.textAlign = 'center';
-                    moreIndicator.textContent = `+${imageObject.all_picks.length - 3}`;
+                    moreIndicator.style.fontWeight = 'bold';
+                    moreIndicator.style.textShadow = '0 1px 1px rgba(0, 0, 0, 0.7)';
+                    moreIndicator.style.marginTop = '1px';
+                    moreIndicator.textContent = `+${imageObject.all_picks.length - 2}`;
                     allPicksIndicator.appendChild(moreIndicator);
                 }
                 
@@ -1303,7 +1335,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
         const thumbContainers = filmstripContainer.querySelectorAll('.jet-filmstrip-thumb-container');
         
-        thumbContainers.forEach((thumbContainer, index) => {
+        thumbContainers.forEach((thumbContainer) => {
+            const index = parseInt(thumbContainer.dataset.index);
             if (images[index]) {
                 const imageObject = images[index];
                 
@@ -1325,40 +1358,66 @@ document.addEventListener('DOMContentLoaded', () => {
                     const allPicksIndicator = document.createElement('div');
                     allPicksIndicator.classList.add('all-picks-indicator', 'filmstrip-picks');
                     allPicksIndicator.style.position = 'absolute';
-                    allPicksIndicator.style.top = '3px';
-                    allPicksIndicator.style.left = '3px';
+                    allPicksIndicator.style.top = '2px';
+                    allPicksIndicator.style.left = '2px';
                     allPicksIndicator.style.fontSize = '0.5rem';
-                    allPicksIndicator.style.maxWidth = '110px';
-                    allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.75)';
-                    allPicksIndicator.style.borderRadius = '3px';
-                    allPicksIndicator.style.padding = '2px 3px';
-                    allPicksIndicator.style.zIndex = '2';
+                    allPicksIndicator.style.maxWidth = 'calc(100% - 8px)';
+                    allPicksIndicator.style.minWidth = '60px';
+                    allPicksIndicator.style.backgroundColor = 'rgba(0, 0, 0, 0.9)';
+                    allPicksIndicator.style.borderRadius = '4px';
+                    allPicksIndicator.style.padding = '4px 6px';
+                    allPicksIndicator.style.zIndex = '15';
+                    allPicksIndicator.style.border = '1px solid rgba(255, 255, 255, 0.3)';
+                    allPicksIndicator.style.backdropFilter = 'blur(3px)';
                     
-                    imageObject.all_picks.forEach((pick, pickIndex) => {
-                        if (pickIndex < 3) {
+                    imageObject.all_picks.forEach((pick, index) => {
+                        if (index < 2) { // Limit to 2 picks for filmstrip space
                             const pickRow = document.createElement('div');
                             pickRow.classList.add('pick-row');
                             pickRow.style.display = 'flex';
                             pickRow.style.alignItems = 'center';
-                            pickRow.style.marginBottom = '1px';
+                            pickRow.style.marginBottom = '2px';
+                            pickRow.style.gap = '4px';
+                            pickRow.style.minHeight = '14px';
                             
                             const pickDot = document.createElement('span');
                             pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
-                            pickDot.style.width = '5px';
-                            pickDot.style.height = '5px';
+                            pickDot.style.width = '7px';
+                            pickDot.style.height = '7px';
                             pickDot.style.borderRadius = '50%';
-                            pickDot.style.marginRight = '3px';
                             pickDot.style.flexShrink = '0';
+                            pickDot.style.border = '1px solid rgba(255, 255, 255, 0.9)';
+                            pickDot.style.boxShadow = '0 1px 2px rgba(0, 0, 0, 0.6)';
+                            
+                            // Set pick dot colors to match CSS variables
+                            switch(pick.color) {
+                                case 'red':
+                                    pickDot.style.backgroundColor = '#dc3545';
+                                    break;
+                                case 'green':
+                                    pickDot.style.backgroundColor = '#28a745';
+                                    break;
+                                case 'blue':
+                                    pickDot.style.backgroundColor = '#007bff';
+                                    break;
+                                case 'grey':
+                                    pickDot.style.backgroundColor = '#6c757d';
+                                    break;
+                            }
                             
                             const pickText = document.createElement('span');
                             pickText.classList.add('pick-text');
-                            pickText.textContent = (pick.username || 'Unknown'); // Removed .substring(0, 6)
+                            pickText.textContent = (pick.username || 'Unknown').substring(0, 6); // Slightly longer for better readability
                             pickText.style.color = 'white';
                             pickText.style.fontSize = '0.5rem';
-                            pickText.style.lineHeight = '1';
+                            pickText.style.lineHeight = '1.2';
+                            pickText.style.fontWeight = '500';
+                            pickText.style.textShadow = '0 1px 1px rgba(0, 0, 0, 0.8)';
                             pickText.style.overflow = 'hidden';
                             pickText.style.textOverflow = 'ellipsis';
                             pickText.style.whiteSpace = 'nowrap';
+                            pickText.style.maxWidth = '50px';
+                            pickText.style.minWidth = '25px';
                             
                             pickRow.appendChild(pickDot);
                             pickRow.appendChild(pickText);
@@ -1366,12 +1425,16 @@ document.addEventListener('DOMContentLoaded', () => {
                         }
                     });
                     
-                    if (imageObject.all_picks.length > 3) {
+                    // Add overflow indicator if more than 2 picks
+                    if (imageObject.all_picks.length > 2) {
                         const moreIndicator = document.createElement('div');
                         moreIndicator.style.color = 'white';
                         moreIndicator.style.fontSize = '0.45rem';
                         moreIndicator.style.textAlign = 'center';
-                        moreIndicator.textContent = `+${imageObject.all_picks.length - 3}`;
+                        moreIndicator.style.fontWeight = 'bold';
+                        moreIndicator.style.textShadow = '0 1px 1px rgba(0, 0, 0, 0.8)';
+                        moreIndicator.style.marginTop = '1px';
+                        moreIndicator.textContent = `+${imageObject.all_picks.length - 2}`;
                         allPicksIndicator.appendChild(moreIndicator);
                     }
                     
@@ -1849,11 +1912,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!currentRawSourceKey || currentRelativePath === null) return;
         
         try {
-            // Quietly fetch updated image data
-            const updatedImages = await listImagesAPI(currentRawSourceKey, currentRelativePath);
+            // Quietly fetch updated image data WITHOUT showing loading indicator
+            const updatedImages = await listImagesAPI(currentRawSourceKey, currentRelativePath, true);
             
             // Check if there are any pick changes
             let hasChanges = false;
+            let hasAllPicksChanges = false; // Track specifically all_picks changes
             const currentImageLookup = {};
             currentGridImages.forEach(img => {
                 const key = `${img.source_key}/${img.path}`;
@@ -1876,15 +1940,26 @@ document.addEventListener('DOMContentLoaded', () => {
                     const updatedPicksStr = JSON.stringify(updatedImg.all_picks || []);
                     if (currentPicksStr !== updatedPicksStr) {
                         hasChanges = true;
+                        hasAllPicksChanges = true;
                         currentImg.all_picks = updatedImg.all_picks;
                     }
                 }
             });
             
             if (hasChanges) {
-                // Update currentGridImages and re-render
+                // Update currentGridImages
                 currentGridImages = updatedImages;
-                applySortAndFilterAndRender();
+                
+                // OPTIMIZED: Always use lightweight updates for realtime polling
+                // Only do full re-render when user explicitly changes filters/sorts
+                updateGridPickColorsOnly(currentGridImages);
+                updateAllPicksIndicators(currentGridImages);
+                
+                // Update filter counts without full re-render
+                const filteredImages = applyCurrentFilter(currentGridImages);
+                currentFilteredImages = filteredImages; // Update filtered images state
+                updateStatsDisplay(currentGridImages.length, filteredImages.length);
+                updateZipButtonState(filteredImages);
                 
                 // If preview is open, update preview too
                 if (isPreviewOpen && currentPreviewImageObject) {
@@ -1900,12 +1975,82 @@ document.addEventListener('DOMContentLoaded', () => {
                     }
                 }
                 
-                console.log('[Jet Realtime] Pick changes detected and updated');
+                console.log('[Jet Realtime] Pick changes detected and updated (lightweight)');
             }
         } catch (error) {
             console.error('[Jet Realtime] Error updating picks:', error);
             // Don't show user feedback for polling errors to avoid spam
         }
+    }
+
+    // NEW: Lightweight function to update only pick colors without full re-render
+    function updateGridPickColorsOnly(images) {
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        
+        gridItems.forEach((gridItem, index) => {
+            const imagePath = gridItem.dataset.imagePath;
+            const sourceKey = gridItem.dataset.sourceKey;
+            
+            // Find matching image by path and source key instead of relying on index
+            const matchingImage = images.find(img => 
+                img.path === imagePath && img.source_key === sourceKey
+            );
+            
+            if (matchingImage) {
+                // Update pick color classes
+                gridItem.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
+                if (matchingImage.pick_color) {
+                    gridItem.classList.add(`picked-${matchingImage.pick_color}`);
+                }
+            }
+        });
+    }
+
+    // NEW: Function to update all_picks indicators without full re-render
+    function updateAllPicksIndicators(images) {
+        const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+        
+        gridItems.forEach((gridItem) => {
+            const imagePath = gridItem.dataset.imagePath;
+            const sourceKey = gridItem.dataset.sourceKey;
+            
+            // Find matching image by path and source key
+            const matchingImage = images.find(img => 
+                img.path === imagePath && img.source_key === sourceKey
+            );
+            
+            if (matchingImage) {
+                // Remove existing all_picks indicator
+                const existingIndicator = gridItem.querySelector('.all-picks-indicator');
+                if (existingIndicator) {
+                    existingIndicator.remove();
+                }
+                
+                // Add new all_picks indicator if needed
+                if (matchingImage.all_picks && matchingImage.all_picks.length > 0) {
+                    const allPicksIndicator = document.createElement('div');
+                    allPicksIndicator.classList.add('all-picks-indicator');
+                    
+                    matchingImage.all_picks.forEach(pick => {
+                        const pickRow = document.createElement('div');
+                        pickRow.classList.add('pick-row');
+                        
+                        const pickDot = document.createElement('span');
+                        pickDot.classList.add('pick-dot', `pick-dot-${pick.color}`);
+                        
+                        const pickText = document.createElement('span');
+                        pickText.classList.add('pick-text');
+                        pickText.textContent = pick.username || 'Unknown';
+                        
+                        pickRow.appendChild(pickDot);
+                        pickRow.appendChild(pickText);
+                        allPicksIndicator.appendChild(pickRow);
+                    });
+                    
+                    gridItem.appendChild(allPicksIndicator);
+                }
+            }
+        });
     }
 
     // Initialize app
@@ -2309,6 +2454,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     console.log('Jet Culling App fully initialized.');
+
+    // Helper function to apply current filter without re-rendering
+    function applyCurrentFilter(images) {
+        return images.filter(image => {
+            switch (currentFilter) {
+                case 'all':
+                    return true;
+                case 'picked-any':
+                    return image.pick_color !== null && image.pick_color !== undefined;
+                case 'not-picked':
+                    return !image.pick_color;
+                case 'red':
+                    return image.pick_color === 'red';
+                case 'green':
+                    return image.pick_color === 'green';
+                case 'blue':
+                    return image.pick_color === 'blue';
+                case 'grey':
+                    return image.pick_color === 'grey';
+                default:
+                    return true;
+            }
+        });
+    }
 });
 
 // Shared menu is now handled by shared-menu.js
