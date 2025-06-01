@@ -1130,7 +1130,7 @@ table tbody tr:hover td {
 
 .password-input-group input[type="password"] {
     background: var(--bg-primary);
-    border: 1px solid ;
+    border: 1px solid gray ;
     color: var(--text-primary);
     padding: 8px 12px;
     border-radius: 4px;
