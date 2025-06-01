@@ -1080,35 +1080,6 @@ body.jet-app-active {
     content: '';
 }
 
-.jet-preview-overlay-container::after {
-    content: 'Vuốt hoặc dùng phím ← → để chuyển ảnh nhé';
-    position: absolute;
-    top: 15px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: white;
-    padding: 8px 16px;
-    border-radius: 20px;
-    font-size: 0.8rem;
-    opacity: 0.4;
-    pointer-events: none;
-    z-index: 1000;
-    animation: fadeInOut 0.5s ease-in-out;
-}
-
-@keyframes fadeInOut {
-    0%, 100% { opacity: 0; }
-    20%, 80% { opacity: 0.8; }
-}
-
-/* Hide instruction on mobile since swipe is more intuitive */
-@media (max-width: 768px) {
-    .jet-preview-overlay-container::after {
-        content: 'Vuốt để chuyển ảnh';
-    }
-}
-
 #jet-preview-main-image {
     max-width: 100%;
     max-height: 100%;
