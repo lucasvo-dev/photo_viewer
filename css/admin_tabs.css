@@ -1043,7 +1043,7 @@ table tbody tr:hover td {
 .password-status-badge.protected {
     background: rgba(40, 167, 69, 0.1);
     color: var(--color-success);
-    border: 1px solid rgba(40, 167, 69, 0.3);
+    border: 1px solid rgba(40, 167, 69, 0.8);
 }
 
 .password-status-badge.unprotected {
