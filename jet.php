@@ -266,5 +266,23 @@ if (!defined('RAW_IMAGE_SOURCES')) {
     <script src="js/shared-menu.js"></script>
 
     <script type="module" src="js/jet_app.js"></script>
+    
+    <!-- Override logo click behavior for Jet app -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        // Override logo click to properly redirect to jet.php
+        const logoLink = document.querySelector('.logo-link');
+        if (logoLink) {
+            logoLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                // Simply redirect to jet.php to reload the app
+                window.location.href = 'jet.php';
+            });
+            console.log('[Jet] Logo click handler overridden');
+        }
+    });
+    </script>
 </body>
 </html> 
