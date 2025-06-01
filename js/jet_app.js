@@ -35,6 +35,13 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastClickedItemPath = null;
     const DOUBLE_CLICK_THRESHOLD = 400; // Milliseconds
 
+    // NEW: Variables for mobile touch support
+    let touchStartTime = 0;
+    let touchStartTarget = null;
+    let longPressTimer = null;
+    const LONG_PRESS_DURATION = 500; // 500ms for long press
+    let isMobileDevice = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+
     // State for Preview Mode
     let isPreviewOpen = false;
     let currentPreviewImageObject = null; // Will store the image object with its pick_color
@@ -641,6 +648,54 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
             });
 
+            // NEW: Mobile touch support for long press
+            if (isMobileDevice) {
+                imageItemContainer.addEventListener('touchstart', (e) => {
+                    touchStartTime = Date.now();
+                    touchStartTarget = imageItemContainer;
+                    
+                    // Clear any existing timer
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                    }
+                    
+                    // Set up long press timer
+                    longPressTimer = setTimeout(() => {
+                        if (touchStartTarget === imageItemContainer) {
+                            e.preventDefault();
+                            showMobileContextMenu(e, image, imageItemContainer);
+                        }
+                    }, LONG_PRESS_DURATION);
+                }, { passive: false });
+
+                imageItemContainer.addEventListener('touchend', (e) => {
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                    
+                    const touchDuration = Date.now() - touchStartTime;
+                    if (touchDuration < LONG_PRESS_DURATION && touchStartTarget === imageItemContainer) {
+                        // Short tap - treat as click
+                        const originalIndex = currentGridImages.findIndex(img => img.path === image.path && img.source_key === image.source_key);
+                        if (originalIndex !== -1) {
+                            selectImageInGrid(image, imageItemContainer, originalIndex);
+                        }
+                    }
+                    
+                    touchStartTarget = null;
+                });
+
+                imageItemContainer.addEventListener('touchmove', (e) => {
+                    // Cancel long press if user moves finger
+                    if (longPressTimer) {
+                        clearTimeout(longPressTimer);
+                        longPressTimer = null;
+                    }
+                    touchStartTarget = null;
+                });
+            }
+
             itemListContainer.appendChild(imageItemContainer);
 
             // Keep track of the first element to potentially auto-select it
@@ -939,12 +994,15 @@ document.addEventListener('DOMContentLoaded', () => {
     function closeImagePreview() {
         const overlay = document.getElementById('jet-image-preview-overlay');
         if (overlay) {
+            // Remove overlay-specific event listeners
+            overlay.removeEventListener('keydown', handlePreviewKeyPress);
             overlay.remove();
         }
         isPreviewOpen = false;
         currentPreviewImageObject = null;
         currentPreviewIndex = -1;
-        // Remove keyboard listeners
+        
+        // Remove keyboard listeners with specific handler
         document.removeEventListener('keydown', handlePreviewKeyPress);
         
         // Clean up any picks info elements
@@ -981,17 +1039,6 @@ document.addEventListener('DOMContentLoaded', () => {
         closeButton.textContent = 'Đóng (Esc)'; // Close (Esc)
         closeButton.addEventListener('click', closeImagePreview);
 
-        // Navigation buttons
-        const prevButton = document.createElement('button');
-        prevButton.id = 'jet-preview-prev-button';
-        prevButton.textContent = 'Trước (←)'; // Previous
-        // Event listeners added later
-
-        const nextButton = document.createElement('button');
-        nextButton.id = 'jet-preview-next-button';
-        nextButton.textContent = 'Sau (→)'; // Next
-        // Event listeners added later
-
         // Pick button
         const pickButton = document.createElement('button');
         pickButton.id = 'jet-preview-pick-button';
@@ -1000,6 +1047,40 @@ document.addEventListener('DOMContentLoaded', () => {
         const colorIndicator = document.createElement('span');
         colorIndicator.id = 'jet-preview-pick-color-indicator';
         pickButton.appendChild(colorIndicator);
+
+        // NEW: Add click listener for pick button (mobile only)
+        pickButton.addEventListener('click', () => {
+            if (isMobileDevice && currentPreviewImageObject) {
+                // Cycle through colors: none -> red -> green -> blue -> grey -> none
+                const currentColor = currentPreviewImageObject.pick_color;
+                let nextColor;
+                
+                switch (currentColor) {
+                    case null:
+                    case undefined:
+                    case PICK_COLORS.NONE:
+                        nextColor = PICK_COLORS.RED;
+                        break;
+                    case PICK_COLORS.RED:
+                        nextColor = PICK_COLORS.GREEN;
+                        break;
+                    case PICK_COLORS.GREEN:
+                        nextColor = PICK_COLORS.BLUE;
+                        break;
+                    case PICK_COLORS.BLUE:
+                        nextColor = PICK_COLORS.GREY;
+                        break;
+                    case PICK_COLORS.GREY:
+                        nextColor = PICK_COLORS.NONE;
+                        break;
+                    default:
+                        nextColor = PICK_COLORS.RED;
+                        break;
+                }
+                
+                setPickColorViaAPI(nextColor);
+            }
+        });
 
         // Info/Metadata area (placeholder)
         const imageNameDisplay = document.createElement('div');
@@ -1032,14 +1113,48 @@ document.addEventListener('DOMContentLoaded', () => {
         controlsTop.appendChild(centerControlArea);
         controlsTop.appendChild(rightControlArea);
 
-        // Assemble the nav controls
-         const controlsNav = document.createElement('div');
-        controlsNav.className = 'jet-preview-controls-nav';
-        // Append nav buttons later
-
-        // NEW: Append navigation buttons to controlsNav
-        controlsNav.appendChild(prevButton);
-        controlsNav.appendChild(nextButton);
+        // NEW: Add mobile pick controls for preview mode
+        let mobilePickControls = null;
+        if (isMobileDevice) {
+            mobilePickControls = document.createElement('div');
+            mobilePickControls.id = 'jet-mobile-pick-controls';
+            mobilePickControls.className = 'jet-mobile-pick-controls';
+            
+            const pickLabel = document.createElement('div');
+            pickLabel.className = 'mobile-pick-label';
+            pickLabel.textContent = 'Pick Màu:';
+            mobilePickControls.appendChild(pickLabel);
+            
+            const pickButtonsContainer = document.createElement('div');
+            pickButtonsContainer.className = 'mobile-pick-buttons';
+            
+            const mobileColors = [
+                { key: 'none', label: 'Bỏ', icon: 'fas fa-times', color: '#666' },
+                { key: 'red', label: 'Đỏ', icon: 'fas fa-circle', color: 'var(--jet-color-picked-red)' },
+                { key: 'green', label: 'Xanh lá', icon: 'fas fa-circle', color: 'var(--jet-color-picked-green)' },
+                { key: 'blue', label: 'Xanh dương', icon: 'fas fa-circle', color: 'var(--jet-color-picked-blue)' },
+                { key: 'grey', label: 'Xám', icon: 'fas fa-circle', color: 'var(--jet-color-picked-grey-flag)' }
+            ];
+            
+            mobileColors.forEach(colorInfo => {
+                const button = document.createElement('button');
+                button.className = 'mobile-pick-button';
+                button.dataset.color = colorInfo.key;
+                button.innerHTML = `
+                    <i class="${colorInfo.icon}" style="color: ${colorInfo.color}"></i>
+                    <span>${colorInfo.label}</span>
+                `;
+                
+                button.addEventListener('click', () => {
+                    const targetColor = colorInfo.key === 'none' ? PICK_COLORS.NONE : colorInfo.key;
+                    setPickColorViaAPI(targetColor);
+                });
+                
+                pickButtonsContainer.appendChild(button);
+            });
+            
+            mobilePickControls.appendChild(pickButtonsContainer);
+        }
 
         // Container for horizontal thumbnail filmstrip
         const thumbnailFilmstrip = document.createElement('div');
@@ -1049,51 +1164,75 @@ document.addEventListener('DOMContentLoaded', () => {
         // Append major sections to overlay
         overlay.appendChild(controlsTop);
         overlay.appendChild(imageContainer);
-        overlay.appendChild(controlsNav);
+        
+        // Insert mobile controls before filmstrip if on mobile
+        if (mobilePickControls) {
+            overlay.appendChild(mobilePickControls);
+        }
+        
         overlay.appendChild(thumbnailFilmstrip); // Add filmstrip container
 
         // Append overlay to body
         document.body.appendChild(overlay);
 
-        // Add navigation button event listeners now that buttons exist
-        document.getElementById('jet-preview-prev-button').addEventListener('click', navigatePreviewPrev);
-        document.getElementById('jet-preview-next-button').addEventListener('click', navigatePreviewNext);
+        // NEW: Add swipe gesture support to image container
+        addSwipeGestures(imageContainer);
     }
 
     // NEW: Function to update only the main preview image source and state
     function updatePreviewImage(imageObject) {
+        console.log('[Jet Preview] updatePreviewImage called with:', imageObject.name);
+        
         const imgPreview = document.getElementById('jet-preview-main-image');
         const imageNameDisplay = document.getElementById('jet-preview-image-name');
         const pickButtonInPreview = document.getElementById('jet-preview-pick-button');
-         const existingError = document.querySelector('#jet-image-preview-overlay .preview-load-error-message');
+        const existingError = document.querySelector('#jet-image-preview-overlay .preview-load-error-message');
 
-        if (!imgPreview || !imageNameDisplay || !pickButtonInPreview) return;
+        if (!imgPreview || !imageNameDisplay || !pickButtonInPreview) {
+            console.log('[Jet Preview] Missing elements:', {
+                imgPreview: !!imgPreview,
+                imageNameDisplay: !!imageNameDisplay,
+                pickButtonInPreview: !!pickButtonInPreview
+            });
+            return;
+        }
 
-         // Remove any previous error message
-         if (existingError) {
-             existingError.remove();
-              imgPreview.style.display = 'block'; // Show image again if it was hidden
-         }
+        // Remove any previous error message
+        if (existingError) {
+            existingError.remove();
+            imgPreview.style.display = 'block'; // Show image again if it was hidden
+        }
 
         // Set the image source
-        imgPreview.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}`;
+        const newSrc = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&t=${Date.now()}`;
+        console.log('[Jet Preview] Setting new image source:', newSrc);
+        console.log('[Jet Preview] Previous image source:', imgPreview.src);
+        
+        imgPreview.src = newSrc;
         imgPreview.alt = `Preview of ${imageObject.name}`;
 
         // Handle image load errors
         imgPreview.onerror = () => {
+            console.log('[Jet Preview] Image load error for:', imageObject.name);
             imgPreview.alt = 'Lỗi tải ảnh xem trước.';
             const errorPlaceholder = document.createElement('div');
             errorPlaceholder.className = 'preview-load-error-message';
             errorPlaceholder.textContent = 'Không thể tải ảnh xem trước. Nhấn Esc để đóng.';
-             const container = imgPreview.parentElement;
-             if(container) {
-                 imgPreview.style.display = 'none'; // Hide the broken image icon
-                 container.parentElement.insertBefore(errorPlaceholder, container); // Insert error before the container to affect layout
-             }
+            const container = imgPreview.parentElement;
+            if(container) {
+                imgPreview.style.display = 'none'; // Hide the broken image icon
+                container.parentElement.insertBefore(errorPlaceholder, container); // Insert error before the container to affect layout
+            }
+        };
+
+        // Add onload handler to confirm image loaded
+        imgPreview.onload = () => {
+            console.log('[Jet Preview] Image loaded successfully:', imageObject.name);
         };
 
         // Update image name display
         imageNameDisplay.textContent = imageObject.name;
+        console.log('[Jet Preview] Updated image name to:', imageObject.name);
 
         // Add all picks info display next to image name if available
         const existingPicksInfo = document.getElementById('jet-preview-all-picks-info');
@@ -1120,30 +1259,29 @@ document.addEventListener('DOMContentLoaded', () => {
         if (imageObject.pick_color) {
             pickButtonInPreview.classList.add(`picked-${imageObject.pick_color}`);
             if(colorIndicatorSpan) {
-                 colorIndicatorSpan.textContent = imageObject.pick_color.toUpperCase();
-                 // Background color and text color are now handled by the button's CSS classes
-                 // colorIndicatorSpan.style.backgroundColor = imageObject.pick_color;
-                 // if (imageObject.pick_color === PICK_COLORS.GREY || imageObject.pick_color === PICK_COLORS.BLUE) colorIndicatorSpan.style.color = 'white'; else colorIndicatorSpan.style.color = 'black';
+                colorIndicatorSpan.textContent = imageObject.pick_color.toUpperCase();
             }
         } else { // No color picked (null)
-             if(colorIndicatorSpan) {
+            if(colorIndicatorSpan) {
                 colorIndicatorSpan.textContent = 'NONE';
-                // Background color and text color are now handled by the button's CSS classes
-                // colorIndicatorSpan.style.backgroundColor = 'transparent';
-                // colorIndicatorSpan.style.color = '#ccc';
             }
         }
 
-         // Update the corresponding item in the main grid display (This logic might be redundant if handled elsewhere, but keep for sync)
+        // NEW: Update mobile pick controls if on mobile
+        if (isMobileDevice) {
+            updateMobilePickControls(imageObject.pick_color);
+        }
+
+        // Update the corresponding item in the main grid display (This logic might be redundant if handled elsewhere, but keep for sync)
         const gridItems = document.querySelectorAll('.jet-image-item-container');
         gridItems.forEach(gridItem => {
             // Use dataset.imagePath for more reliable matching
-             if (gridItem.dataset.imagePath === imageObject.path && gridItem.dataset.sourceKey === imageObject.source_key) {
+            if (gridItem.dataset.imagePath === imageObject.path && gridItem.dataset.sourceKey === imageObject.source_key) {
                 gridItem.classList.remove('picked-red', 'picked-green', 'picked-blue', 'picked-grey');
                 if (imageObject.pick_color) {
                     gridItem.classList.add(`picked-${imageObject.pick_color}`);
                 }
-             }
+            }
         });
     }
 
@@ -1167,8 +1305,26 @@ document.addEventListener('DOMContentLoaded', () => {
         // Render the thumbnail filmstrip initially
         renderThumbnailFilmstrip(currentGridImages, currentPreviewIndex);
 
+        // Remove any existing preview keyboard listeners first to avoid duplicates
+        document.removeEventListener('keydown', handlePreviewKeyPress);
         // Add event listeners for preview navigation (keyboard)
         document.addEventListener('keydown', handlePreviewKeyPress);
+
+        // NEW: Focus the overlay to ensure keyboard events work immediately
+        const overlay = document.getElementById('jet-image-preview-overlay');
+        if (overlay) {
+            overlay.tabIndex = -1; // Make it focusable
+            overlay.style.outline = 'none'; // Remove focus outline
+            
+            // Focus with a small delay to ensure DOM is ready
+            setTimeout(() => {
+                overlay.focus();
+                console.log('[Jet Preview] Overlay focused for keyboard navigation');
+            }, 50);
+            
+            // Also ensure the overlay captures all keyboard events
+            overlay.addEventListener('keydown', handlePreviewKeyPress);
+        }
     }
 
     // Function to render the horizontal thumbnail filmstrip (called once on open)
@@ -1289,8 +1445,16 @@ document.addEventListener('DOMContentLoaded', () => {
             // Add click listener to navigate on the CONTAINER
             thumbContainer.addEventListener('click', () => {
                  // Update state and UI without closing/reopening overlay
+                console.log('[Jet Filmstrip] Thumbnail clicked, navigating to index:', index);
+                console.log('[Jet Filmstrip] Current preview index before:', currentPreviewIndex);
+                console.log('[Jet Filmstrip] Image object:', images[index]);
+                
                 currentPreviewIndex = index;
                 currentPreviewImageObject = images[index];
+                
+                console.log('[Jet Filmstrip] Updated preview index to:', currentPreviewIndex);
+                console.log('[Jet Filmstrip] Updated preview image to:', currentPreviewImageObject.name);
+                
                 updatePreviewImage(currentPreviewImageObject); // Update main image
                 updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
             });
@@ -1451,20 +1615,34 @@ document.addEventListener('DOMContentLoaded', () => {
         if (nextIndex >= currentGridImages.length) {
             nextIndex = 0; // Loop to the beginning
         }
+        
+        console.log('[Jet Navigate] navigatePreviewNext - from index:', currentPreviewIndex, 'to index:', nextIndex);
+        console.log('[Jet Navigate] Current image before:', currentPreviewImageObject?.name);
+        console.log('[Jet Navigate] Next image will be:', currentGridImages[nextIndex]?.name);
+        
+        // Update state immediately
         currentPreviewIndex = nextIndex;
         currentPreviewImageObject = currentGridImages[currentPreviewIndex];
+
+        console.log('[Jet Navigate] State updated - new index:', currentPreviewIndex);
+        console.log('[Jet Navigate] State updated - new image:', currentPreviewImageObject?.name);
 
         // Update UI without re-rendering the whole overlay
         updatePreviewImage(currentPreviewImageObject); // Update main image
         updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
 
+        // NEW: Update mobile pick controls if on mobile
+        if (isMobileDevice) {
+            updateMobilePickControls(currentPreviewImageObject.pick_color);
+        }
+
         // Update grid selection to match preview (optional sync)
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
         // Use dataset for more reliable matching
         gridItems.forEach(gridItem => {
-             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
+            if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
                 selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
-             }
+            }
         });
     }
 
@@ -1475,54 +1653,72 @@ document.addEventListener('DOMContentLoaded', () => {
         if (prevIndex < 0) {
             prevIndex = currentGridImages.length - 1; // Loop to the end
         }
-        currentPreviewImageObject = currentGridImages[prevIndex];
+        
+        console.log('[Jet Navigate] navigatePreviewPrev - from index:', currentPreviewIndex, 'to index:', prevIndex);
+        console.log('[Jet Navigate] Current image before:', currentPreviewImageObject?.name);
+        console.log('[Jet Navigate] Previous image will be:', currentGridImages[prevIndex]?.name);
+        
+        // Update state immediately
         currentPreviewIndex = prevIndex;
+        currentPreviewImageObject = currentGridImages[prevIndex];
 
-         // Update UI without re-rendering the whole overlay
+        console.log('[Jet Navigate] State updated - new index:', currentPreviewIndex);
+        console.log('[Jet Navigate] State updated - new image:', currentPreviewImageObject?.name);
+
+        // Update UI without re-rendering the whole overlay
         updatePreviewImage(currentPreviewImageObject); // Update main image
         updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
 
         // Update grid selection to match preview (optional sync)
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-         // Use dataset for more reliable matching
+        // Use dataset for more reliable matching
         gridItems.forEach(gridItem => {
-             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
+            if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
                 selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
-             }
+            }
         });
     }
 
     function handlePreviewKeyPress(event) {
         if (!isPreviewOpen) return;
 
+        // Prevent default behavior for navigation keys to avoid conflicts
+        if (['Escape', 'ArrowLeft', 'ArrowRight', '0', '1', '2', '3'].includes(event.key)) {
+            event.preventDefault();
+            event.stopPropagation();
+        }
+
+        // Remove the event.repeat check to allow continuous navigation
+        // This allows holding down arrow keys to navigate quickly
+
         if (event.key === 'Escape') {
             closeImagePreview();
+            return;
         }
         if (event.key === 'ArrowLeft') {
             navigatePreviewPrev();
+            return;
         }
         if (event.key === 'ArrowRight') {
             navigatePreviewNext();
+            return;
         }
-        // Color pick hotkeys
-        switch (event.key) {
-            case '0':
-                setPickColorViaAPI(PICK_COLORS.GREY);
-                break;
-            case '1':
-                setPickColorViaAPI(PICK_COLORS.RED);
-                break;
-            case '2':
-                setPickColorViaAPI(PICK_COLORS.GREEN);
-                break;
-            case '3':
-                setPickColorViaAPI(PICK_COLORS.BLUE);
-                break;
-            // Potentially a dedicated unpick key like Backspace or Delete
-            // case 'Backspace':
-            // case 'Delete':
-            //     setPickColorViaAPI(PICK_COLORS.NONE); 
-            //     break;
+        // Color pick hotkeys - only trigger on keydown, not repeat
+        if (!event.repeat) {
+            switch (event.key) {
+                case '0':
+                    setPickColorViaAPI(PICK_COLORS.GREY);
+                    break;
+                case '1':
+                    setPickColorViaAPI(PICK_COLORS.RED);
+                    break;
+                case '2':
+                    setPickColorViaAPI(PICK_COLORS.GREEN);
+                    break;
+                case '3':
+                    setPickColorViaAPI(PICK_COLORS.BLUE);
+                    break;
+            }
         }
     }
 
@@ -1583,6 +1779,11 @@ document.addEventListener('DOMContentLoaded', () => {
                             colorIndicatorSpan.textContent = 'NONE';
                         }
                     }
+                }
+
+                // NEW: Update mobile pick controls if on mobile
+                if (isMobileDevice) {
+                    updateMobilePickControls(imageToUpdate.pick_color);
                 }
 
                 // Update the corresponding thumbnail in the filmstrip
@@ -2476,6 +2677,291 @@ document.addEventListener('DOMContentLoaded', () => {
                 default:
                     return true;
             }
+        });
+    }
+
+    // NEW: Mobile context menu for long press
+    function showMobileContextMenu(event, imageObject, itemElement) {
+        // Remove existing menu if any
+        const existingMenu = document.querySelector('.mobile-context-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+
+        const menu = document.createElement('div');
+        menu.className = 'mobile-context-menu';
+        
+        // Position menu at center of screen for better mobile UX
+        menu.style.position = 'fixed';
+        menu.style.left = '50%';
+        menu.style.top = '50%';
+        menu.style.transform = 'translate(-50%, -50%)';
+        menu.style.zIndex = '10000';
+        menu.style.background = 'var(--jet-bg-tertiary)';
+        menu.style.border = '1px solid var(--jet-border-primary)';
+        menu.style.borderRadius = '12px';
+        menu.style.padding = '16px';
+        menu.style.boxShadow = '0 8px 32px rgba(0, 0, 0, 0.4)';
+        menu.style.backdropFilter = 'blur(8px)';
+        menu.style.minWidth = '280px';
+        menu.style.maxWidth = '90vw';
+
+        // Menu title
+        const title = document.createElement('div');
+        title.style.fontSize = '1rem';
+        title.style.fontWeight = '600';
+        title.style.color = 'var(--jet-text-primary)';
+        title.style.marginBottom = '12px';
+        title.style.textAlign = 'center';
+        title.textContent = imageObject.name.length > 20 ? imageObject.name.substring(0, 20) + '...' : imageObject.name;
+        menu.appendChild(title);
+
+        // Preview button
+        const previewButton = document.createElement('button');
+        previewButton.className = 'mobile-menu-option preview-option';
+        previewButton.innerHTML = `
+            <i class="fas fa-eye"></i>
+            <span>Xem Preview</span>
+        `;
+        previewButton.addEventListener('click', () => {
+            const originalIndex = currentGridImages.findIndex(img => img.path === imageObject.path && img.source_key === imageObject.source_key);
+            if (originalIndex !== -1) {
+                openImagePreview(imageObject, originalIndex);
+            }
+            menu.remove();
+        });
+        menu.appendChild(previewButton);
+
+        // Color pick section
+        const colorSection = document.createElement('div');
+        colorSection.style.marginTop = '12px';
+        colorSection.style.paddingTop = '12px';
+        colorSection.style.borderTop = '1px solid var(--jet-border-primary)';
+
+        const colorLabel = document.createElement('div');
+        colorLabel.style.fontSize = '0.9rem';
+        colorLabel.style.color = 'var(--jet-text-tertiary)';
+        colorLabel.style.marginBottom = '8px';
+        colorLabel.style.textAlign = 'center';
+        colorLabel.textContent = 'Pick Màu:';
+        colorSection.appendChild(colorLabel);
+
+        const colorGrid = document.createElement('div');
+        colorGrid.style.display = 'grid';
+        colorGrid.style.gridTemplateColumns = 'repeat(3, 1fr)';
+        colorGrid.style.gap = '8px';
+
+        const colors = [
+            { key: 'none', label: 'Bỏ chọn', icon: 'fas fa-times', color: '#666' },
+            { key: 'red', label: 'Đỏ', icon: 'fas fa-circle', color: 'var(--jet-color-picked-red)' },
+            { key: 'green', label: 'Xanh lá', icon: 'fas fa-circle', color: 'var(--jet-color-picked-green)' },
+            { key: 'blue', label: 'Xanh dương', icon: 'fas fa-circle', color: 'var(--jet-color-picked-blue)' },
+            { key: 'grey', label: 'Xám', icon: 'fas fa-circle', color: 'var(--jet-color-picked-grey-flag)' }
+        ];
+
+        colors.forEach(colorInfo => {
+            const button = document.createElement('button');
+            button.className = 'mobile-color-option';
+            
+            // Highlight current color
+            if ((colorInfo.key === 'none' && !imageObject.pick_color) || 
+                (imageObject.pick_color === colorInfo.key)) {
+                button.classList.add('current-color');
+            }
+
+            button.innerHTML = `
+                <i class="${colorInfo.icon}" style="color: ${colorInfo.color}"></i>
+                <span>${colorInfo.label}</span>
+            `;
+
+            button.addEventListener('click', () => {
+                const targetColor = colorInfo.key === 'none' ? PICK_COLORS.NONE : colorInfo.key;
+                setGridItemPickColorAPI(imageObject, targetColor, itemElement);
+                menu.remove();
+            });
+
+            colorGrid.appendChild(button);
+        });
+
+        colorSection.appendChild(colorGrid);
+        menu.appendChild(colorSection);
+
+        // Cancel button
+        const cancelButton = document.createElement('button');
+        cancelButton.className = 'mobile-menu-option cancel-option';
+        cancelButton.style.marginTop = '12px';
+        cancelButton.innerHTML = `
+            <i class="fas fa-times"></i>
+            <span>Hủy</span>
+        `;
+        cancelButton.addEventListener('click', () => {
+            menu.remove();
+        });
+        menu.appendChild(cancelButton);
+
+        document.body.appendChild(menu);
+
+        // Add backdrop
+        const backdrop = document.createElement('div');
+        backdrop.className = 'mobile-menu-backdrop';
+        backdrop.style.position = 'fixed';
+        backdrop.style.top = '0';
+        backdrop.style.left = '0';
+        backdrop.style.right = '0';
+        backdrop.style.bottom = '0';
+        backdrop.style.background = 'rgba(0, 0, 0, 0.5)';
+        backdrop.style.zIndex = '9999';
+        backdrop.addEventListener('click', () => {
+            menu.remove();
+            backdrop.remove();
+        });
+        document.body.insertBefore(backdrop, menu);
+
+        // Auto-remove menu after 10 seconds
+        setTimeout(() => {
+            if (menu.parentNode) {
+                menu.remove();
+                if (backdrop.parentNode) {
+                    backdrop.remove();
+                }
+            }
+        }, 10000);
+    }
+
+    // NEW: Function to update mobile pick controls highlighting
+    function updateMobilePickControls(currentPickColor) {
+        const mobilePickControls = document.getElementById('jet-mobile-pick-controls');
+        if (!mobilePickControls) return;
+        
+        const pickButtons = mobilePickControls.querySelectorAll('.mobile-pick-button');
+        pickButtons.forEach(button => {
+            button.classList.remove('active');
+            const buttonColor = button.dataset.color;
+            
+            // Highlight current color
+            if ((buttonColor === 'none' && !currentPickColor) || 
+                (currentPickColor === buttonColor)) {
+                button.classList.add('active');
+            }
+        });
+    }
+
+    // NEW: Add swipe gesture support to image container
+    function addSwipeGestures(imageContainer) {
+        let startX = 0;
+        let startY = 0;
+        let startTime = 0;
+        let isSwipeActive = false;
+        
+        const MIN_SWIPE_DISTANCE = 50; // Minimum distance for swipe
+        const MAX_SWIPE_TIME = 300; // Maximum time for swipe (ms)
+        const MAX_VERTICAL_DISTANCE = 100; // Maximum vertical movement allowed
+
+        // Touch events
+        imageContainer.addEventListener('touchstart', (e) => {
+            if (e.touches.length === 1) {
+                startX = e.touches[0].clientX;
+                startY = e.touches[0].clientY;
+                startTime = Date.now();
+                isSwipeActive = true;
+            }
+        }, { passive: true });
+
+        imageContainer.addEventListener('touchmove', (e) => {
+            if (!isSwipeActive || e.touches.length !== 1) return;
+            
+            const currentX = e.touches[0].clientX;
+            const currentY = e.touches[0].clientY;
+            const deltaY = Math.abs(currentY - startY);
+            
+            // Cancel swipe if too much vertical movement
+            if (deltaY > MAX_VERTICAL_DISTANCE) {
+                isSwipeActive = false;
+            }
+        }, { passive: true });
+
+        imageContainer.addEventListener('touchend', (e) => {
+            if (!isSwipeActive) return;
+            
+            const endX = e.changedTouches[0].clientX;
+            const endY = e.changedTouches[0].clientY;
+            const endTime = Date.now();
+            
+            const deltaX = endX - startX;
+            const deltaY = Math.abs(endY - startY);
+            const deltaTime = endTime - startTime;
+            
+            // Check if it's a valid swipe
+            if (Math.abs(deltaX) >= MIN_SWIPE_DISTANCE && 
+                deltaY <= MAX_VERTICAL_DISTANCE && 
+                deltaTime <= MAX_SWIPE_TIME) {
+                
+                if (deltaX > 0) {
+                    // Swipe right - go to previous image
+                    navigatePreviewPrev();
+                } else {
+                    // Swipe left - go to next image
+                    navigatePreviewNext();
+                }
+            }
+            
+            isSwipeActive = false;
+        }, { passive: true });
+
+        // Mouse events for desktop
+        let isMouseDown = false;
+        let mouseStartX = 0;
+        let mouseStartY = 0;
+        let mouseStartTime = 0;
+
+        imageContainer.addEventListener('mousedown', (e) => {
+            isMouseDown = true;
+            mouseStartX = e.clientX;
+            mouseStartY = e.clientY;
+            mouseStartTime = Date.now();
+            e.preventDefault();
+        });
+
+        imageContainer.addEventListener('mousemove', (e) => {
+            if (!isMouseDown) return;
+            
+            const deltaY = Math.abs(e.clientY - mouseStartY);
+            if (deltaY > MAX_VERTICAL_DISTANCE) {
+                isMouseDown = false;
+            }
+        });
+
+        imageContainer.addEventListener('mouseup', (e) => {
+            if (!isMouseDown) return;
+            
+            const endX = e.clientX;
+            const endY = e.clientY;
+            const endTime = Date.now();
+            
+            const deltaX = endX - mouseStartX;
+            const deltaY = Math.abs(endY - mouseStartY);
+            const deltaTime = endTime - mouseStartTime;
+            
+            // Check if it's a valid swipe
+            if (Math.abs(deltaX) >= MIN_SWIPE_DISTANCE && 
+                deltaY <= MAX_VERTICAL_DISTANCE && 
+                deltaTime <= MAX_SWIPE_TIME) {
+                
+                if (deltaX > 0) {
+                    // Swipe right - go to previous image
+                    navigatePreviewPrev();
+                } else {
+                    // Swipe left - go to next image
+                    navigatePreviewNext();
+                }
+            }
+            
+            isMouseDown = false;
+        });
+
+        // Cancel on mouse leave
+        imageContainer.addEventListener('mouseleave', () => {
+            isMouseDown = false;
         });
     }
 });
