@@ -153,6 +153,9 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
             <div class="tab-header">
                 <h2>Quản lý Gallery & Cache</h2>
                 <p>Quản lý mật khẩu, xem lượt truy cập, lấy link chia sẻ và cache cho các thư mục ảnh.</p>
+                <div class="tab-actions">
+                    <button id="refresh-gallery-data" class="button">🔄 Làm mới & Đồng bộ</button>
+                </div>
             </div>
 
             <!-- Search Bar for Admin - Styled like homepage -->
@@ -173,8 +176,8 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                         <th>Trạng thái</th>
                         <th>Lượt xem</th>
                         <th>Lượt tải ZIP</th>
-                        <th>Link chia sẻ (Click để chọn)</th>
-                        <th>Hành động Mật khẩu</th>
+                        <th>Link chia sẻ</th>
+                        <th>Quản lý Mật khẩu</th>
                         <th>Trạng thái Cache</th>
                         <th>Hành động Cache</th>
                     </tr>
@@ -317,12 +320,21 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                     </button>
                 </div>
                 
-                <div id="users-table-container">
-                    <div class="users-loading">
-                        <i class="fas fa-spinner"></i>
-                        <p>Đang tải danh sách người dùng...</p>
-                    </div>
-                </div>
+                <table id="users-management-table">
+                    <thead>
+                        <tr>
+                            <th><i class="fas fa-user"></i> Tên đăng nhập</th>
+                            <th><i class="fas fa-shield-alt"></i> Vai trò</th>
+                            <th><i class="fas fa-calendar-plus"></i> Ngày tạo</th>
+                            <th><i class="fas fa-clock"></i> Lần đăng nhập cuối</th>
+                            <th><i class="fas fa-chart-bar"></i> Hoạt động Jet</th>
+                            <th><i class="fas fa-cogs"></i> Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="users-table-body">
+                        <tr><td colspan="6">Đang tải danh sách người dùng...</td></tr>
+                    </tbody>
+                </table>
             </div>
 
             <!-- User form modal placeholder -->

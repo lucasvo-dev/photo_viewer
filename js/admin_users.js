@@ -34,7 +34,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // Add event delegation for user action buttons
-    const usersTableContainer = document.getElementById('users-table-container');
+    const usersTableContainer = document.getElementById('users-management-table');
     if (usersTableContainer) {
         // Remove any existing listeners first
         usersTableContainer.removeEventListener('click', handleUserActionClick);
@@ -155,134 +155,130 @@ async function loadAllUsers() {
 }
 
 function showUsersLoading() {
-    const container = document.getElementById('users-table-container');
-    if (container) {
-        container.innerHTML = `
-            <div class="users-loading">
-                <i class="fas fa-spinner"></i>
-                <p>Đang tải danh sách người dùng...</p>
-            </div>
+    const tbody = document.getElementById('users-table-body');
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="loading-cell">
+                    <div class="users-loading">
+                        <i class="fas fa-spinner"></i>
+                        <span>Đang tải danh sách người dùng...</span>
+                    </div>
+                </td>
+            </tr>
         `;
     }
 }
 
 function showUsersError(message) {
-    const container = document.getElementById('users-table-container');
-    if (container) {
-        container.innerHTML = `
-            <div class="users-error">
-                <i class="fas fa-exclamation-triangle"></i>
-                <p><strong>Lỗi:</strong> ${message}</p>
-                <button class="button secondary" onclick="loadAllUsers()">
-                    <i class="fas fa-redo"></i> Thử lại
-                </button>
-            </div>
+    const tbody = document.getElementById('users-table-body');
+    if (tbody) {
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="error-cell">
+                    <div class="users-error">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        <p><strong>Lỗi:</strong> ${message}</p>
+                        <button class="button secondary" onclick="loadAllUsers()">
+                            <i class="fas fa-redo"></i> Thử lại
+                        </button>
+                    </div>
+                </td>
+            </tr>
         `;
     }
 }
 
 function renderUsersList(users) {
-    const container = document.getElementById('users-table-container');
+    const tbody = document.getElementById('users-table-body');
     
     if (!users || users.length === 0) {
-        container.innerHTML = `
-            <div class="users-empty">
-                <i class="fas fa-users"></i>
-                <p>Chưa có người dùng nào trong hệ thống</p>
-            </div>
+        tbody.innerHTML = `
+            <tr>
+                <td colspan="6" class="empty-cell">
+                    <div class="users-empty">
+                        <i class="fas fa-users"></i>
+                        <p>Chưa có người dùng nào trong hệ thống</p>
+                    </div>
+                </td>
+            </tr>
         `;
         return;
     }
 
-    const tableHtml = `
-        <table id="users-table">
-            <thead>
-                <tr>
-                    <th><i class="fas fa-user"></i> Tên đăng nhập</th>
-                    <th><i class="fas fa-shield-alt"></i> Vai trò</th>
-                    <th><i class="fas fa-calendar-plus"></i> Ngày tạo</th>
-                    <th><i class="fas fa-clock"></i> Lần đăng nhập cuối</th>
-                    <th><i class="fas fa-chart-bar"></i> Hoạt động Jet</th>
-                    <th><i class="fas fa-cogs"></i> Hành động</th>
-                </tr>
-            </thead>
-            <tbody>
-                ${users.map(user => {
-                    // Clean the data to avoid issues
-                    const cleanUserId = String(user.id || '').trim();
-                    const cleanUsername = String(user.username || '').trim();
-                    const cleanRole = String(user.role || '').trim();
-                    
-                    console.log('[Admin Users] Rendering user:', { 
-                        id: cleanUserId, 
-                        username: cleanUsername, 
-                        role: cleanRole 
-                    });
-                    
-                    // Get role display info
-                    let roleIcon, roleDisplay;
-                    switch(cleanRole) {
-                        case 'admin':
-                            roleIcon = 'crown';
-                            roleDisplay = 'Admin';
-                            break;
-                        case 'designer':
-                        default:
-                            roleIcon = 'palette';
-                            roleDisplay = 'Designer';
-                            break;
-                    }
-                    
-                    return `
-                    <tr>
-                        <td>
-                            <strong>${escapeHtml(user.username)}</strong>
-                        </td>
-                        <td>
-                            <span class="role-badge ${cleanRole}">
-                                <i class="fas fa-${roleIcon}"></i>
-                                ${roleDisplay}
-                            </span>
-                        </td>
-                        <td>${formatDate(user.created_at)}</td>
-                        <td>${formatDate(user.last_login)}</td>
-                        <td>${getUserJetActivity(user.id)}</td>
-                        <td>
-                            <div class="user-actions">
-                                <button class="button small info" 
-                                        data-action="stats" 
-                                        data-user-id="${cleanUserId}" 
-                                        data-username="${escapeHtml(cleanUsername)}"
-                                        data-user-role="${cleanRole}" 
-                                        title="Xem thống kê">
-                                    <i class="fas fa-chart-bar"></i>
-                                </button>
-                                <button class="button small warning" 
-                                        data-action="change-password" 
-                                        data-user-id="${cleanUserId}" 
-                                        data-username="${escapeHtml(cleanUsername)}"
-                                        data-user-role="${cleanRole}" 
-                                        title="Đổi mật khẩu">
-                                    <i class="fas fa-key"></i>
-                                </button>
-                                <button class="button small danger" 
-                                        data-action="delete" 
-                                        data-user-id="${cleanUserId}" 
-                                        data-username="${escapeHtml(cleanUsername)}"
-                                        data-user-role="${cleanRole}" 
-                                        title="Xóa người dùng">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </div>
-                        </td>
-                    </tr>
-                    `;
-                }).join('')}
-            </tbody>
-        </table>
-    `;
+    const rowsHtml = users.map(user => {
+        // Clean the data to avoid issues
+        const cleanUserId = String(user.id || '').trim();
+        const cleanUsername = String(user.username || '').trim();
+        const cleanRole = String(user.role || '').trim();
+        
+        console.log('[Admin Users] Rendering user:', { 
+            id: cleanUserId, 
+            username: cleanUsername, 
+            role: cleanRole 
+        });
+        
+        // Get role display info
+        let roleIcon, roleDisplay;
+        switch(cleanRole) {
+            case 'admin':
+                roleIcon = 'crown';
+                roleDisplay = 'Admin';
+                break;
+            case 'designer':
+            default:
+                roleIcon = 'palette';
+                roleDisplay = 'Designer';
+                break;
+        }
+        
+        return `
+        <tr>
+            <td>
+                <strong>${escapeHtml(user.username)}</strong>
+            </td>
+            <td>
+                <span class="role-badge ${cleanRole}">
+                    <i class="fas fa-${roleIcon}"></i>
+                    ${roleDisplay}
+                </span>
+            </td>
+            <td>${formatDate(user.created_at)}</td>
+            <td>${formatDate(user.last_login)}</td>
+            <td><span class="loading-activity">Đang tải...</span></td>
+            <td>
+                <div class="user-actions">
+                    <button class="button small info" 
+                            data-action="stats" 
+                            data-user-id="${cleanUserId}" 
+                            data-username="${escapeHtml(cleanUsername)}"
+                            data-user-role="${cleanRole}" 
+                            title="Xem thống kê">
+                        <i class="fas fa-chart-bar"></i>
+                    </button>
+                    <button class="button small warning" 
+                            data-action="change-password" 
+                            data-user-id="${cleanUserId}" 
+                            data-username="${escapeHtml(cleanUsername)}"
+                            data-user-role="${cleanRole}" 
+                            title="Đổi mật khẩu">
+                        <i class="fas fa-key"></i>
+                    </button>
+                    <button class="button small danger" 
+                            data-action="delete" 
+                            data-user-id="${cleanUserId}" 
+                            data-username="${escapeHtml(cleanUsername)}"
+                            data-user-role="${cleanRole}" 
+                            title="Xóa người dùng">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+        `;
+    }).join('');
     
-    container.innerHTML = tableHtml;
+    tbody.innerHTML = rowsHtml;
     
     console.log('[Admin Users] Table rendered with', users.length, 'users');
 }

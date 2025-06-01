@@ -411,14 +411,38 @@ document.addEventListener('DOMContentLoaded', () => {
                 <td data-label="Lượt xem">${views}</td>
                 <td data-label="Lượt tải ZIP">${zipDownloads}</td>
                 <td data-label="Link chia sẻ">
-                    <input type="text" class="share-link-input" value="${shareLink}" readonly title="Click để chọn và sao chép">
+                    <div class="share-link-cell">
+                        <div class="share-link-container">
+                            <input type="text" class="share-link-input" value="${shareLink}" readonly title="Click để chọn và sao chép">
+                            <button type="button" class="copy-link-button" title="Sao chép link">
+                                <i class="fas fa-copy"></i>
+                            </button>
+                        </div>
+                        <div class="copy-feedback">Đã sao chép!</div>
+                    </div>
                 </td>
-                <td data-label="Hành động Mật khẩu">
-                    <form class="action-form password-form" data-folder-path="${folderPath}">
-                        <input type="password" name="new_password" placeholder="Mật khẩu mới..." aria-label="Mật khẩu mới cho ${folderName}">
-                        <button type="submit" class="button set-button" title="Lưu mật khẩu mới (bỏ trống để xóa)">Lưu</button>
-                        ${isPasswordProtected ? `<button type="button" class="button remove-button" title="Xóa mật khẩu hiện tại">Xóa MK</button>` : ''}
-                    </form>
+                <td data-label="Quản lý Mật khẩu">
+                    <div class="password-management-cell">
+                        <div class="password-status">
+                            <span class="password-status-badge ${isPasswordProtected ? 'protected' : 'unprotected'}">
+                                <i class="fas fa-${isPasswordProtected ? 'lock' : 'lock-open'}"></i>
+                                ${isPasswordProtected ? 'Đã bảo vệ' : 'Công khai'}
+                            </span>
+                        </div>
+                        <form class="action-form password-form" data-folder-path="${folderPath}">
+                            <div class="password-input-group">
+                                <input type="password" name="new_password" placeholder="Mật khẩu mới..." aria-label="Mật khẩu mới cho ${folderName}">
+                                <div class="password-actions">
+                                    <button type="submit" class="button set-password" title="Lưu mật khẩu mới">
+                                        <i class="fas fa-save"></i>
+                                    </button>
+                                    ${isPasswordProtected ? `<button type="button" class="button remove-password" title="Xóa mật khẩu hiện tại">
+                                        <i class="fas fa-trash"></i>
+                                    </button>` : ''}
+                                </div>
+                            </div>
+                        </form>
+                    </div>
                 </td>
                 <td data-label="Trạng thái Cache">
                     ${renderCacheStatusCell(folder)}
@@ -459,14 +483,59 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             // === THÊM CODE GẮN EVENT LISTENER CHO NÚT XÓA MK ===
-            const removeButton = row.querySelector('.remove-button');
+            const removeButton = row.querySelector('.remove-password');
             if (removeButton) {
                  removeButton.addEventListener('click', handleRemovePassword);
             }
             // === KẾT THÚC THÊM CODE ===
 
+            // === THÊM CODE GẮN EVENT LISTENER CHO NÚT COPY LINK ===
+            const copyButton = row.querySelector('.copy-link-button');
+            if (copyButton) {
+                copyButton.addEventListener('click', handleCopyLink);
+            }
+
+            const shareInput = row.querySelector('.share-link-input');
+            if (shareInput) {
+                shareInput.addEventListener('click', handleShareLinkClick);
+            }
+            // === KẾT THÚC THÊM CODE ===
+
             folderListBody.appendChild(row);
         });
+    }
+    
+    // --- Handle Copy Link Button ---
+    function handleCopyLink(event) {
+        const button = event.target.closest('.copy-link-button');
+        const container = button.closest('.share-link-container');
+        const input = container.querySelector('.share-link-input');
+        const feedback = button.closest('.share-link-cell').querySelector('.copy-feedback');
+        
+        try {
+            input.select();
+            navigator.clipboard.writeText(input.value).then(() => {
+                // Show feedback animation
+                feedback.classList.add('show');
+                
+                // Change button icon temporarily
+                const icon = button.querySelector('i');
+                const originalClass = icon.className;
+                icon.className = 'fas fa-check';
+                
+                setTimeout(() => {
+                    feedback.classList.remove('show');
+                    icon.className = originalClass;
+                }, 2000);
+                
+            }).catch(err => {
+                console.error('Lỗi sao chép link:', err);
+                showFeedback('Lỗi: Không thể tự động sao chép.', 'error');
+            });
+        } catch (err) {
+            console.error('Lỗi clipboard API:', err);
+            showFeedback('Lỗi: Trình duyệt không hỗ trợ sao chép tự động.', 'error');
+        }
     }
     
     // --- Handle Share Link Click ---
@@ -666,53 +735,86 @@ document.addEventListener('DOMContentLoaded', () => {
     let refreshIntervalId = null; // Biến lưu ID của interval
     const REFRESH_INTERVAL_MS = 15000; // 15 giây
 
-    function startAutoRefresh() {
-        // Xóa interval cũ nếu có
-        if (refreshIntervalId) {
-            clearInterval(refreshIntervalId);
-        }
-        // Bắt đầu interval mới
-        refreshIntervalId = setInterval(() => {
-            // Chỉ refresh nếu người dùng không đang gõ tìm kiếm VÀ không có polling nào đang chạy
-            if (document.activeElement !== adminSearchInput && Object.keys(activePollers).length === 0) {
-                console.log('Auto-refreshing folder list...');
-                fetchAndRenderFolders(adminSearchInput.value.trim());
-             } else if (Object.keys(activePollers).length > 0) {
-                 console.log('Skipping auto-refresh because pollers are active.');
-             }
-        }, REFRESH_INTERVAL_MS);
-         console.log(`Auto-refresh started with interval ID: ${refreshIntervalId}`);
-    }
+    // REMOVED AUTO-REFRESH - Now using manual refresh button like Raw cache
+    // function startAutoRefresh() {
+    //     // Xóa interval cũ nếu có
+    //     if (refreshIntervalId) {
+    //         clearInterval(refreshIntervalId);
+    //     }
+    //     // Bắt đầu interval mới
+    //     refreshIntervalId = setInterval(() => {
+    //         // Chỉ refresh nếu người dùng không đang gõ tìm kiếm VÀ không có polling nào đang chạy
+    //         if (document.activeElement !== adminSearchInput && Object.keys(activePollers).length === 0) {
+    //             console.log('Auto-refreshing folder list...');
+    //             fetchAndRenderFolders(adminSearchInput.value.trim());
+    //          } else if (Object.keys(activePollers).length > 0) {
+    //              console.log('Skipping auto-refresh because pollers are active.');
+    //          }
+    //     }, REFRESH_INTERVAL_MS);
+    //      console.log(`Auto-refresh started with interval ID: ${refreshIntervalId}`);
+    // }
 
-    function stopAutoRefresh() {
-         if (refreshIntervalId) {
-            console.log(`Stopping auto-refresh interval ID: ${refreshIntervalId}`);
-            clearInterval(refreshIntervalId);
-            refreshIntervalId = null;
-        }
+    // function stopAutoRefresh() {
+    //      if (refreshIntervalId) {
+    //         console.log(`Stopping auto-refresh interval ID: ${refreshIntervalId}`);
+    //         clearInterval(refreshIntervalId);
+    //         refreshIntervalId = null;
+    //     }
+    // }
+
+    // Enhanced refresh button - manual refresh like Raw cache tab
+    const refreshGalleryButton = document.getElementById('refresh-gallery-data');
+    if (refreshGalleryButton) {
+        refreshGalleryButton.addEventListener('click', async () => {
+            console.log('Manual gallery refresh triggered');
+            
+            // Stop all active pollers temporarily
+            const activePollerKeys = Object.keys(activePollers);
+            activePollerKeys.forEach(key => {
+                clearInterval(activePollers[key]);
+                delete activePollers[key];
+            });
+            
+            // Visual feedback
+            refreshGalleryButton.disabled = true;
+            refreshGalleryButton.innerHTML = '🔄 Đang làm mới...';
+            
+            try {
+                // Load fresh data
+                console.log('[Manual Refresh] Loading fresh gallery data...');
+                
+                await fetchAndRenderFolders(adminSearchInput.value.trim());
+                
+                // Success message
+                showFeedback('📊 Dữ liệu Gallery đã được làm mới thành công!', 'success');
+                
+                // Note: Active polling for cache jobs will be automatically restarted 
+                // by renderFolderTable() when it detects jobs with 'pending' or 'processing' status
+                
+            } catch (error) {
+                console.error('[Manual Refresh] Error:', error);
+                showFeedback('❌ Lỗi khi làm mới dữ liệu: ' + error.message, 'error');
+            } finally {
+                refreshGalleryButton.disabled = false;
+                refreshGalleryButton.innerHTML = '🔄 Làm mới & Đồng bộ';
+            }
+        });
     }
 
     if (adminSearchInput) {
         const debouncedSearch = debounce(() => {
             console.log('Debounced search triggering fetch...');
-            stopAutoRefresh(); // Dừng refresh khi bắt đầu tìm kiếm
-            fetchAndRenderFolders(adminSearchInput.value.trim()).finally(() => {
-                 // Khởi động lại refresh sau khi tìm kiếm hoàn tất (hoặc sau debounce timeout)
-                 // Đảm bảo không start lại nếu đang gõ liên tục
-                 startAutoRefresh(); 
-            });
-        }, 500); // Tăng debounce lên 500ms
+            fetchAndRenderFolders(adminSearchInput.value.trim());
+        }, 500); // 500ms debounce
 
         adminSearchInput.addEventListener('input', () => {
-             stopAutoRefresh(); // Dừng refresh ngay khi bắt đầu gõ
              debouncedSearch(); // Kích hoạt debounce
         });
         
          // Xử lý trường hợp xóa sạch ô tìm kiếm
          adminSearchInput.addEventListener('search', () => {
               if(adminSearchInput.value === '') {
-                   stopAutoRefresh();
-                   fetchAndRenderFolders('').finally(startAutoRefresh);
+                   fetchAndRenderFolders('');
               }
          });
 
@@ -720,10 +822,7 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Admin search input not found!");
     }
 
-    // --- Initial Load and Start Refresh ---
-    fetchAndRenderFolders()
-    .finally(() => {
-         startAutoRefresh(); // Bắt đầu tự động refresh sau khi tải lần đầu
-    });
+    // --- Initial Load ---
+    fetchAndRenderFolders();
 
 }); // End DOMContentLoaded
