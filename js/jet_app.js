@@ -1472,6 +1472,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 // Load nearby thumbnails when user clicks
                 loadNearbyThumbnails(currentPreviewIndex);
+                
+                // NEW: Sync with grid selection
+                const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+                gridItems.forEach(gridItem => {
+                    if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
+                        // Find the correct index in currentFilteredImages
+                        const filteredIndex = currentFilteredImages.findIndex(img => 
+                            img.path === currentPreviewImageObject.path && img.source_key === currentPreviewImageObject.source_key
+                        );
+                        if (filteredIndex !== -1) {
+                            selectImageInGrid(currentPreviewImageObject, gridItem, filteredIndex);
+                        }
+                    }
+                });
             });
 
             // NEW: Add hover listener to preload main image for faster navigation
@@ -1718,10 +1732,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update grid selection to match preview (optional sync)
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        // Use dataset for more reliable matching
+        // Use dataset for more reliable matching and find correct filtered index
         gridItems.forEach(gridItem => {
             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
-                selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
+                // FIX: Find the correct index in currentFilteredImages instead of using currentPreviewIndex
+                const filteredIndex = currentFilteredImages.findIndex(img => 
+                    img.path === currentPreviewImageObject.path && img.source_key === currentPreviewImageObject.source_key
+                );
+                if (filteredIndex !== -1) {
+                    selectImageInGrid(currentPreviewImageObject, gridItem, filteredIndex);
+                }
             }
         });
     }
@@ -1751,10 +1771,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Update grid selection to match preview (optional sync)
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        // Use dataset for more reliable matching
+        // Use dataset for more reliable matching and find correct filtered index
         gridItems.forEach(gridItem => {
             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
-                selectImageInGrid(currentPreviewImageObject, gridItem, currentPreviewIndex); // Pass correct index
+                // FIX: Find the correct index in currentFilteredImages instead of using currentPreviewIndex
+                const filteredIndex = currentFilteredImages.findIndex(img => 
+                    img.path === currentPreviewImageObject.path && img.source_key === currentPreviewImageObject.source_key
+                );
+                if (filteredIndex !== -1) {
+                    selectImageInGrid(currentPreviewImageObject, gridItem, filteredIndex);
+                }
             }
         });
     }
@@ -1929,17 +1955,29 @@ document.addEventListener('DOMContentLoaded', () => {
                 return;
             } else {
                 // If no selection but we have images, try to select the first one
-                if (currentGridImages.length > 0) {
+                if (currentFilteredImages.length > 0) {
                     const firstImageElement = document.querySelector('#jet-item-list-container .jet-image-item-container');
                     if (firstImageElement) {
-                        console.log('[Jet Global KeyPress] Auto-selecting first image and opening preview');
-                        selectImageInGrid(currentGridImages[0], firstImageElement, 0);
-                        openImagePreview(currentGridImages[0], 0);
-                        event.preventDefault();
-                        return;
+                        console.log('[Jet Global KeyPress] Auto-selecting first filtered image and opening preview');
+                        const firstFilteredImage = currentFilteredImages[0];
+                        // Find the original index in currentGridImages for preview
+                        const originalIndex = currentGridImages.findIndex(img => 
+                            img.path === firstFilteredImage.path && img.source_key === firstFilteredImage.source_key
+                        );
+                        
+                        if (originalIndex !== -1) {
+                            selectImageInGrid(firstFilteredImage, firstImageElement, 0); // 0 is filtered index
+                            // Update currentGridSelection.index to store the original index for preview consistency
+                            currentGridSelection.index = originalIndex;
+                            openImagePreview(firstFilteredImage, originalIndex);
+                            event.preventDefault();
+                            return;
+                        } else {
+                            console.error('[Jet Global KeyPress] Could not find original index for first image');
+                        }
                     }
                 } else {
-                    console.log('[Jet Global KeyPress] Space key pressed but no images available');
+                    console.log('[Jet Global KeyPress] Space key pressed but no filtered images available');
                 }
             }
         }
@@ -1957,37 +1995,52 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Grid Navigation & Interaction (Preview is NOT open)
-        if (currentGridSelection.element && currentGridImages.length > 0) {
+        if (currentGridSelection.element && currentFilteredImages.length > 0) {
             console.log('[Jet Global KeyPress] Grid selection exists, handling grid keys for:', event.key);
-            let newIndex = currentGridSelection.index;
+            
+            // FIX: Work with currentFilteredImages and find current selection index in filtered list
+            let currentFilteredIndex = -1;
+            if (currentGridSelection.imageObject) {
+                currentFilteredIndex = currentFilteredImages.findIndex(img => 
+                    img.path === currentGridSelection.imageObject.path && 
+                    img.source_key === currentGridSelection.imageObject.source_key
+                );
+            }
+            
+            if (currentFilteredIndex === -1) {
+                console.warn('[Jet Navigation] Current selection not found in filtered images');
+                return;
+            }
+            
+            let newFilteredIndex = currentFilteredIndex;
             let handled = false;
 
             switch (event.key) {
                 case 'ArrowLeft':
-                    if (newIndex > 0) {
-                        newIndex--;
+                    if (newFilteredIndex > 0) {
+                        newFilteredIndex--;
                         handled = true;
                     }
                     break;
                 case 'ArrowRight':
-                    if (newIndex < currentGridImages.length - 1) {
-                        newIndex++;
+                    if (newFilteredIndex < currentFilteredImages.length - 1) {
+                        newFilteredIndex++;
                         handled = true;
                     }
                     break;
                 case 'ArrowUp':
                     const gridContainer = document.getElementById('jet-item-list-container');
-                    if (gridContainer && currentGridImages.length > 0) {
+                    if (gridContainer && currentFilteredImages.length > 0) {
                         const firstItem = gridContainer.querySelector('.jet-image-item-container');
                         if (firstItem) {
                             const containerWidth = gridContainer.offsetWidth;
                             const itemWidth = firstItem.offsetWidth + parseFloat(getComputedStyle(firstItem).marginLeft) + parseFloat(getComputedStyle(firstItem).marginRight);
                             const itemsPerRow = Math.max(1, Math.floor(containerWidth / itemWidth));
-                            if (newIndex - itemsPerRow >= 0) {
-                                newIndex -= itemsPerRow;
+                            if (newFilteredIndex - itemsPerRow >= 0) {
+                                newFilteredIndex -= itemsPerRow;
                                 handled = true;
                             } else { 
-                                newIndex = 0;
+                                newFilteredIndex = 0;
                                 handled = true;
                             }
                         }
@@ -1995,17 +2048,17 @@ document.addEventListener('DOMContentLoaded', () => {
                     break;
                 case 'ArrowDown':
                     const gridContainerDown = document.getElementById('jet-item-list-container');
-                    if (gridContainerDown && currentGridImages.length > 0) {
+                    if (gridContainerDown && currentFilteredImages.length > 0) {
                         const firstItemDown = gridContainerDown.querySelector('.jet-image-item-container');
                         if (firstItemDown) {
                             const containerWidthDown = gridContainerDown.offsetWidth;
                             const itemWidthDown = firstItemDown.offsetWidth + parseFloat(getComputedStyle(firstItemDown).marginLeft) + parseFloat(getComputedStyle(firstItemDown).marginRight);
                             const itemsPerRowDown = Math.max(1, Math.floor(containerWidthDown / itemWidthDown));
-                            if (newIndex + itemsPerRowDown < currentGridImages.length) {
-                                newIndex += itemsPerRowDown;
+                            if (newFilteredIndex + itemsPerRowDown < currentFilteredImages.length) {
+                                newFilteredIndex += itemsPerRowDown;
                                 handled = true;
                             } else { 
-                                newIndex = currentGridImages.length - 1;
+                                newFilteredIndex = currentFilteredImages.length - 1;
                                 handled = true;
                             }
                         }
@@ -2055,11 +2108,27 @@ document.addEventListener('DOMContentLoaded', () => {
 
             if (handled) {
                 event.preventDefault();
-                if (newIndex !== currentGridSelection.index) {
+                if (newFilteredIndex !== currentFilteredIndex) {
+                    // FIX: Work with filtered images and DOM elements
                     const allRenderedItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-                    if (allRenderedItems[newIndex]) {
-                        selectImageInGrid(currentGridImages[newIndex], allRenderedItems[newIndex], newIndex);
-                        allRenderedItems[newIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    const targetImageObject = currentFilteredImages[newFilteredIndex];
+                    const targetElement = allRenderedItems[newFilteredIndex];
+                    
+                    if (targetImageObject && targetElement) {
+                        // Find the original index in currentGridImages for the target image
+                        const originalIndex = currentGridImages.findIndex(img => 
+                            img.path === targetImageObject.path && img.source_key === targetImageObject.source_key
+                        );
+                        
+                        if (originalIndex !== -1) {
+                            selectImageInGrid(targetImageObject, targetElement, newFilteredIndex);
+                            targetElement.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                            
+                            // Update currentGridSelection.index to store the original index for preview consistency
+                            currentGridSelection.index = originalIndex;
+                        } else {
+                            console.error('[Jet Navigation] Could not find original index for target image');
+                        }
                     }
                 }
             }
@@ -2636,7 +2705,16 @@ document.addEventListener('DOMContentLoaded', () => {
                     
                     if (isDoubleClick) {
                         // Open preview on double-click
-                        openImagePreview(imageObject, imageIndex);
+                        // FIX: Find the correct original index in currentGridImages instead of using filtered index
+                        const originalIndex = currentGridImages.findIndex(img => 
+                            img.path === imageObject.path && img.source_key === imageObject.source_key
+                        );
+                        if (originalIndex !== -1) {
+                            openImagePreview(imageObject, originalIndex);
+                        } else {
+                            console.error('[Jet Debug] Could not find original index for image:', imageObject);
+                            showFeedback('Không thể mở preview: Không tìm thấy ảnh trong danh sách gốc', 'error');
+                        }
                     } else {
                         // Single click - select item
                         selectImageInGrid(imageObject, item, imageIndex);
