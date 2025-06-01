@@ -1,217 +1,844 @@
 /* === JET APP SPECIFIC STYLES === */
 
 body.jet-app-active {
-    --jet-bg-primary: #222;
-    --jet-bg-secondary: #2a2a2a;
-    --jet-bg-tertiary: #333;
-    --jet-bg-filter-button: #4a4a4a;
-    --jet-bg-filter-button-active: #6c6c6c;
-    --jet-bg-overlay: rgba(0,0,0,0.7);
-    --jet-bg-image-placeholder: var(--jet-bg-secondary); /* Or #2c2c2c if slightly different needed */
-    --jet-bg-preview-overlay: rgba(0, 0, 0, 0.85);
-    --jet-bg-button-hover: #5a5a5a;
+    --jet-bg-primary: #0d1117;
+    --jet-bg-secondary: #161b22;
+    --jet-bg-tertiary: #21262d;
+    --jet-bg-quaternary: #30363d;
+    --jet-bg-filter-button: #21262d;
+    --jet-bg-filter-button-active: #316dca;
+    --jet-bg-overlay: rgba(0,0,0,0.8);
+    --jet-bg-image-placeholder: var(--jet-bg-secondary);
+    --jet-bg-preview-overlay: rgba(0, 0, 0, 0.9);
+    --jet-bg-button-hover: #30363d;
     --jet-bg-button-close-hover: #c82333;
+    --jet-bg-welcome: #0d1117;
 
-
-    --jet-text-primary: #eee;
-    --jet-text-secondary: #ccc;
-    --jet-text-tertiary: #bbb;
-    --jet-text-filter-button: #ddd;
-    --jet-text-filter-button-active: #fff;
+    --jet-text-primary: #f0f6fc;
+    --jet-text-secondary: #e6edf3;
+    --jet-text-tertiary: #c9d1d9;
+    --jet-text-muted: #7d8590;
+    --jet-text-filter-button: #c9d1d9;
+    --jet-text-filter-button-active: #ffffff;
     --jet-text-on-dark-accent: white;
     --jet-text-warning-contrast: #333;
     --jet-text-button: #f0f0f0;
 
-    --jet-border-primary: #444;
-    --jet-border-secondary: #555;
-    --jet-border-tertiary-accent: #777;
-    --jet-border-hover-accent: #888;
+    --jet-border-primary: #30363d;
+    --jet-border-secondary: #444c56;
+    --jet-border-tertiary-accent: #6e7681;
+    --jet-border-hover-accent: #8b949e;
     --jet-border-overlay-element: rgba(0,0,0,0.4);
-    --jet-border-filter-button-active: #888;
+    --jet-border-filter-button-active: #316dca;
     --jet-border-select-focus: var(--jet-accent-color1);
-    --jet-border-button: #666;
-    --jet-border-button-hover: #777;
+    --jet-border-button: #444c56;
+    --jet-border-button-hover: #6e7681;
     --jet-border-button-close-hover: #bd2130;
 
+    --jet-accent-color1: #58a6ff;
+    --jet-accent-color-hover: #79c0ff;
 
-    --jet-accent-color1: #79bbff;
+    --jet-color-warning: #f85149;
+    --jet-color-success: #3fb950;
+    --jet-color-info: #58a6ff;
+    --jet-color-picked-red: #f85149;
+    --jet-color-picked-green: #3fb950;
+    --jet-color-picked-blue: #58a6ff;
+    --jet-color-picked-grey-flag: #8b949e;
+    --jet-color-picked-grey-indicator: #6e7681;
 
-    --jet-color-warning: #ffc107;
-    --jet-color-picked-red: #e53935;
-    --jet-color-picked-green: #43a047;
-    --jet-color-picked-blue: #1e88e5;
-    --jet-color-picked-grey-flag: #9e9e9e;
-    --jet-color-picked-grey-indicator: #757575;
+    --jet-color-picked-red-border: #fd7377;
+    --jet-color-picked-green-border: #56d364;
+    --jet-color-picked-blue-border: #79c0ff;
+    --jet-color-picked-grey-border: #8b949e;
 
-    --jet-color-picked-red-border: #ff7961;
-    --jet-color-picked-green-border: #76d275;
-    --jet-color-picked-blue-border: #6ab7ff;
-    --jet-color-picked-grey-border: #a4a4a4;
+    --jet-feedback-info-bg: #0969da;
+    --jet-feedback-success-bg: #1a7f37;
+    --jet-feedback-error-bg: #cf222e;
 
-    --jet-feedback-info-bg: #17a2b8;
-    --jet-feedback-success-bg: #28a745;
-    --jet-feedback-error-bg: #dc3545;
-
-    --jet-box-shadow-light: rgba(0,0,0,0.3);
-    --jet-box-shadow-medium: rgba(0,0,0,0.4);
-    --jet-box-shadow-dark: rgba(0,0,0,0.45);
-    --jet-box-shadow-feedback: rgba(0,0,0,0.2);
-    --jet-box-shadow-preview-image: 0 0 15px rgba(0,0,0,0.7);
-
+    --jet-box-shadow-light: 0 1px 3px rgba(0,0,0,0.12);
+    --jet-box-shadow-medium: 0 3px 6px rgba(0,0,0,0.15);
+    --jet-box-shadow-heavy: 0 8px 25px rgba(0,0,0,0.15);
+    --jet-box-shadow-feedback: 0 2px 8px rgba(0,0,0,0.1);
+    --jet-box-shadow-preview-image: 0 0 20px rgba(0,0,0,0.5);
 
     /* Base styles for Jet App Body */
     background-color: var(--jet-bg-primary);
     color: var(--jet-text-primary);
-    font-family: sans-serif; /* Or your preferred font stack */
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans", Helvetica, Arial, sans-serif;
     height: 100vh;
     display: flex;
     flex-direction: column;
-    overflow: auto; /* Allow body scroll if content exceeds viewport */
+    overflow-x: hidden;
+    margin: 0;
     padding: 0;
-    /* pointer-events: none; /* REVERTED DIAGNOSTIC */
 }
 
-.jet-app-active .header h1 { /* Assuming a general .header class might be on Jet's header */
-    color: var(--jet-text-primary);
-}
-
-.jet-app-active .logout-link { /* If a logout link is present in Jet view */
-    color: var(--jet-accent-color1);
-    border-color: var(--jet-accent-color1);
-}
-.jet-app-active .logout-link:hover {
-    color: var(--jet-text-on-dark-accent);
-    background-color: var(--jet-accent-color1);
-    border-color: var(--jet-accent-color1);
-}
-
-/* --- Jet Layout & Scrolling --- */
+/* --- Main Layout --- */
 .jet-app-active main.container.jet-view {
     flex-grow: 1;
     display: flex;
     flex-direction: column;
-    min-height: 0; /* Added to ensure proper flex shrinking for overflow */
-    /* padding: 10px; /* Padding is now on children or specific areas */
-    /* overflow: hidden; /* REMOVED - To allow child scroller to work */
+    min-height: 0;
+    padding: 0;
+    max-width: none;
+    width: 100%;
 }
 
+/* --- Main Header Section --- */
+.jet-main-header {
+    background: linear-gradient(135deg, var(--jet-bg-secondary) 0%, var(--jet-bg-tertiary) 100%);
+    border-bottom: 1px solid var(--jet-border-primary);
+    padding: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.jet-main-header h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: var(--jet-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.jet-main-header h1 i {
+    color: var(--jet-accent-color1);
+    font-size: 1.5rem;
+}
+
+.jet-stats-info {
+    display: flex;
+    gap: 20px;
+    align-items: center;
+}
+
+.stats-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--jet-text-tertiary);
+    font-size: 0.9rem;
+    background: var(--jet-bg-tertiary);
+    padding: 6px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--jet-border-primary);
+}
+
+.stats-item i {
+    color: var(--jet-accent-color1);
+}
+
+/* --- Welcome Message --- */
+.jet-welcome-message {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 400px;
+    text-align: center;
+    background: var(--jet-bg-welcome);
+}
+
+.welcome-content {
+    background: var(--jet-bg-secondary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 12px;
+    padding: 48px 32px;
+    box-shadow: var(--jet-box-shadow-heavy);
+    max-width: 500px;
+}
+
+.welcome-content i {
+    font-size: 4rem;
+    color: var(--jet-accent-color1);
+    margin-bottom: 20px;
+    display: block;
+}
+
+.welcome-content h2 {
+    margin: 0 0 16px 0;
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--jet-text-primary);
+}
+
+.welcome-content p {
+    margin: 0;
+    color: var(--jet-text-tertiary);
+    font-size: 1rem;
+    line-height: 1.5;
+}
+
+/* --- App Container Layout --- */
 .jet-app-active #jet-app-container {
     display: flex;
     flex-direction: column;
     flex-grow: 1;
     min-height: 0;
-    overflow: hidden; /* ADDED: Ensure this container clips its content if #jet-item-list-container tries to overflow it */
+    overflow: hidden;
 }
 
 .jet-app-active #jet-header-area {
     flex-shrink: 0;
+    background-color: var(--jet-bg-secondary);
+    border-bottom: 1px solid var(--jet-border-primary);
     position: sticky;
     top: 0;
-    background-color: var(--jet-bg-primary);
     z-index: 100;
 }
 
+/* --- Breadcrumb --- */
 .jet-app-active #jet-breadcrumb {
-    padding: 10px 15px;
+    padding: 16px 24px;
     background-color: var(--jet-bg-secondary);
-    border-bottom: 1px solid var(--jet-border-primary);
     font-size: 0.9em;
+    border-bottom: 1px solid var(--jet-border-primary);
 }
+
 .jet-app-active #jet-breadcrumb a {
     color: var(--jet-accent-color1);
+    text-decoration: none;
+    transition: color 0.2s ease;
 }
+
+.jet-app-active #jet-breadcrumb a:hover {
+    color: var(--jet-accent-color-hover);
+    text-decoration: underline;
+}
+
 .jet-app-active #jet-breadcrumb span {
-    color: var(--jet-text-tertiary);
+    color: var(--jet-text-muted);
 }
 
+/* --- Search Container --- */
+.jet-app-active .search-container {
+    margin: 16px 24px;
+    position: relative;
+}
+
+.jet-app-active .search-container input {
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    color: var(--jet-text-primary);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    width: 100%;
+    box-sizing: border-box;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.jet-app-active .search-container input:focus {
+    outline: none;
+    border-color: var(--jet-accent-color1);
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.1);
+}
+
+/* --- Controls Section --- */
 .jet-app-active #jet-controls {
-    padding: 10px 15px;
-    background-color: var(--jet-bg-secondary);
+    padding: 0 24px 16px 24px;
 }
 
+/* --- Filter Section --- */
+.jet-filter-section {
+    margin-bottom: 20px;
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.filter-section-header {
+    margin-bottom: 16px;
+}
+
+.filter-section-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--jet-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.filter-section-header i {
+    color: var(--jet-accent-color1);
+}
+
+.filter-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.filter-group-main {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-group-colors {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.filter-label {
+    color: var(--jet-text-tertiary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-right: 4px;
+}
+
+/* --- Action Section --- */
+.jet-action-section {
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 8px;
+    padding: 16px;
+}
+
+.action-section-header {
+    margin-bottom: 16px;
+}
+
+.action-section-header h3 {
+    margin: 0;
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--jet-text-primary);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.action-section-header i {
+    color: var(--jet-accent-color1);
+}
+
+.action-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.action-group-sort {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.action-group-sort label {
+    color: var(--jet-text-tertiary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 0;
+}
+
+.action-group-zip {
+    display: flex;
+    justify-content: flex-end;
+}
+
+/* --- Filter Buttons --- */
+.jet-app-active .jet-filter-button {
+    background: var(--jet-bg-filter-button);
+    border: 1px solid var(--jet-border-button);
+    color: var(--jet-text-filter-button);
+    padding: 8px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    white-space: nowrap;
+}
+
+.jet-app-active .jet-filter-button:hover {
+    background: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-button-hover);
+    transform: translateY(-1px);
+}
+
+.jet-app-active .jet-filter-button.active {
+    background: var(--jet-bg-filter-button-active);
+    border-color: var(--jet-border-filter-button-active);
+    color: var(--jet-text-filter-button-active);
+    box-shadow: var(--jet-box-shadow-medium);
+}
+
+.jet-app-active .jet-filter-button.color-filter {
+    padding: 8px 12px;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="red"] i {
+    color: var(--jet-color-picked-red);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="green"] i {
+    color: var(--jet-color-picked-green);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="blue"] i {
+    color: var(--jet-color-picked-blue);
+}
+
+.jet-app-active .jet-filter-button.color-filter[data-color="grey"] i {
+    color: var(--jet-color-picked-grey-flag);
+}
+
+.jet-app-active .jet-filter-button.color-filter.active {
+    transform: scale(1.1);
+}
+
+/* --- Sort Select --- */
+.jet-app-active .jet-sort-select {
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    color: var(--jet-text-primary);
+    padding: 8px 12px;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: border-color 0.2s ease;
+}
+
+.jet-app-active .jet-sort-select:focus {
+    outline: none;
+    border-color: var(--jet-accent-color1);
+}
+
+/* --- ZIP Button --- */
+.jet-app-active .jet-zip-button {
+    background: var(--jet-accent-color1);
+    border: 1px solid var(--jet-accent-color1);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.jet-app-active .jet-zip-button:hover:not(:disabled) {
+    background: var(--jet-accent-color-hover);
+    border-color: var(--jet-accent-color-hover);
+    transform: translateY(-1px);
+    box-shadow: var(--jet-box-shadow-medium);
+}
+
+.jet-app-active .jet-zip-button:disabled {
+    background: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-button);
+    color: var(--jet-text-muted);
+    cursor: not-allowed;
+    opacity: 0.6;
+}
+
+/* --- Item List Container --- */
 .jet-app-active #jet-item-list-container {
     flex-grow: 1;
     overflow-y: auto;
     min-height: 0;
-    /* height: auto !important; /* REMOVED: Let flexbox determine height */
-    padding: 10px;
+    padding: 24px;
     background-color: var(--jet-bg-primary);
-    /* pointer-events: auto; /* REVERTED DIAGNOSTIC */
 }
 
-/* --- Jet Image Grid --- */
+/* --- Loading and Feedback --- */
+.jet-app-active #jet-feedback {
+    position: fixed;
+    top: 80px;
+    right: 20px;
+    background-color: var(--jet-feedback-info-bg);
+    color: white;
+    padding: 12px 16px;
+    border-radius: 6px;
+    z-index: 1000;
+    box-shadow: var(--jet-box-shadow-heavy);
+    font-weight: 500;
+}
+
+.jet-app-active #jet-feedback.info { 
+    background-color: var(--jet-feedback-info-bg); 
+}
+
+.jet-app-active #jet-feedback.success { 
+    background-color: var(--jet-feedback-success-bg); 
+}
+
+.jet-app-active #jet-feedback.warning { 
+    background-color: var(--jet-color-warning); 
+    color: var(--jet-text-warning-contrast); 
+}
+
+.jet-app-active #jet-feedback.error { 
+    background-color: var(--jet-feedback-error-bg); 
+}
+
+/* Loading Spinner */
+.spinner {
+    border: 3px solid rgba(255, 255, 255, 0.3);
+    border-radius: 50%;
+    border-top: 3px solid var(--jet-accent-color1);
+    width: 24px;
+    height: 24px;
+    animation: spin 1s linear infinite;
+    margin: 0 auto 12px auto;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    color: white;
+    font-size: 1rem;
+}
+
+/* --- Responsive Design --- */
+@media (max-width: 768px) {
+    .jet-main-header {
+        padding: 16px;
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .jet-main-header h1 {
+        font-size: 1.5rem;
+    }
+
+    .jet-stats-info {
+        align-self: stretch;
+        justify-content: space-between;
+    }
+
+    .jet-app-active #jet-controls {
+        padding: 0 16px 16px 16px;
+    }
+
+    .jet-app-active #jet-breadcrumb {
+        padding: 12px 16px;
+    }
+
+    .jet-app-active .search-container {
+        margin: 12px 16px;
+    }
+
+    .jet-app-active #jet-item-list-container {
+        padding: 16px;
+    }
+
+    .filter-groups {
+        gap: 8px;
+    }
+
+    .filter-group-main {
+        flex-direction: column;
+    gap: 6px;
+    }
+
+    .action-group-sort {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+
+    .action-group-zip {
+        justify-content: center;
+    }
+
+    .welcome-content {
+        padding: 32px 24px;
+        margin: 0 16px;
+    }
+
+    .welcome-content i {
+        font-size: 3rem;
+    }
+
+    .welcome-content h2 {
+        font-size: 1.25rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .stats-item {
+        font-size: 0.8rem;
+        padding: 4px 8px;
+    }
+
+    .jet-app-active .jet-filter-button {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+
+    .jet-app-active .jet-filter-button.color-filter {
+        width: 36px;
+        height: 36px;
+        padding: 6px;
+    }
+}
+
+/* --- Folder Grid Layout --- */
+.jet-app-active .directory-list-styling {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 24px 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 16px;
+}
+
+.jet-app-active .directory-list-styling ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: contents; /* This makes the ul transparent to grid */
+}
+
+.jet-app-active .directory-list-styling li {
+    /* Let the grid container handle the layout */
+}
+
+.jet-app-active .directory-list-styling li a {
+    display: flex;
+    align-items: center;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    padding: 14px;
+    gap: 14px;
+    transition: background-color 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s;
+    color: #c9d1d9;
+    overflow: hidden;
+    text-decoration: none;
+    min-height: 60px; /* Ensure consistent height */
+}
+
+.jet-app-active .directory-list-styling li a:hover {
+    background: #21262d;
+    transform: translateY(-2px);
+    border-color: #404854;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+    text-decoration: none;
+    color: #f0f6fc;
+}
+
+.jet-app-active .folder-thumbnail {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #0d1117;
+    border: 1px solid #21262d;
+    border-radius: 6px;
+    flex-shrink: 0;
+}
+
+.jet-app-active .folder-thumbnail i {
+    color: #58a6ff;
+    font-size: 24px;
+}
+
+.jet-app-active .directory-list-styling span {
+    font-size: 0.95em;
+    font-weight: 500;
+    line-height: 1.4;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #c9d1d9;
+}
+
+.jet-app-active .directory-list-styling small {
+    display: block;
+    color: #8b949e;
+    font-size: 0.8em;
+    margin-top: 2px;
+}
+
+/* Mobile responsive for directory list */
+@media (min-width: 480px) and (max-width: 768px) {
+    .jet-app-active .directory-list-styling {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 479px) {
+    .jet-app-active .directory-list-styling {
+        grid-template-columns: 1fr;
+    }
+    
+    .jet-app-active .directory-list-styling li a {
+        padding: 12px;
+        gap: 12px;
+    }
+    
+    .jet-app-active .folder-thumbnail {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .jet-app-active .folder-thumbnail i {
+        font-size: 20px;
+    }
+}
+
+/* --- Image Grid Container --- */
 .jet-app-active .image-grid-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-    gap: 10px;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 16px;
+    padding: 0;
 }
 
+@media (max-width: 768px) {
+    .jet-app-active .image-grid-container {
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+        gap: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .jet-app-active .image-grid-container {
+        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+        gap: 8px;
+    }
+}
+
+/* --- Jet Image Items --- */
 .jet-app-active .jet-image-item-container {
-    background-color: var(--jet-bg-tertiary);
+    background-color: var(--jet-bg-secondary);
     border: 1px solid var(--jet-border-primary);
-    border-radius: 4px;
-    padding: 5px;
+    border-radius: 8px;
+    padding: 8px;
     text-align: center;
     cursor: pointer;
-    transition: transform 0.1s ease-in-out, box-shadow 0.1s ease-in-out, border-color 0.1s ease-in-out;
-    transform: translateY(0);
+    transition: all 0.2s ease;
     position: relative;
+    overflow: hidden;
 }
 
 .jet-app-active .jet-image-item-container:hover {
     transform: translateY(-2px);
-    box-shadow: 0 4px 8px var(--jet-box-shadow-light);
+    box-shadow: var(--jet-box-shadow-medium);
     border-color: var(--jet-border-secondary);
 }
 
 .jet-app-active .jet-image-item-container.grid-item-selected {
     transform: translateY(-3px);
-    border-color: var(--jet-border-tertiary-accent);
-    box-shadow: 0 6px 12px var(--jet-box-shadow-medium);
-}
-
-.jet-app-active .jet-image-item-container.grid-item-selected:hover {
-    transform: translateY(-3px);
-    border-color: var(--jet-border-hover-accent);
-    box-shadow: 0 7px 14px var(--jet-box-shadow-dark);
+    border-color: var(--jet-accent-color1);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.2), var(--jet-box-shadow-heavy);
 }
 
 .jet-app-active .jet-preview-image {
     max-width: 100%;
     height: auto;
-    max-height: 120px;
+    max-height: 140px;
     display: block;
-    margin: 0 auto 5px auto;
-    border-radius: 3px;
-    background-color: var(--jet-bg-image-placeholder);
+    margin: 0 auto 8px auto;
+    border-radius: 6px;
+    background-color: var(--jet-bg-tertiary);
+    object-fit: cover;
+    aspect-ratio: 3/2;
+}
+
+.jet-app-active .preview-error-placeholder {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-height: 100px;
+    color: var(--jet-text-muted);
+    background: var(--jet-bg-tertiary);
+    border-radius: 6px;
+    margin-bottom: 8px;
+    padding: 12px;
+}
+
+.jet-app-active .preview-error-placeholder i {
+    font-size: 1.5rem;
+    margin-bottom: 8px;
+    color: var(--jet-color-warning);
+}
+
+.jet-app-active .preview-error-placeholder span {
+    font-size: 0.8rem;
+    text-align: center;
 }
 
 .jet-app-active .image-item-name {
-    font-size: 0.8em;
+    font-size: 0.85rem;
     color: var(--jet-text-secondary);
     word-wrap: break-word;
-    padding: 0 2px;
+    line-height: 1.3;
+    padding: 0 4px;
+    max-height: 2.6em;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
 }
 
 /* All picks indicator for admin */
 .jet-app-active .all-picks-indicator {
     position: absolute;
-    top: 5px;
-    left: 5px;
+    top: 8px;
+    left: 8px;
     display: flex;
     flex-direction: column;
     gap: 2px;
     z-index: 10;
     background: rgba(0, 0, 0, 0.8);
-    padding: 4px 6px;
-    border-radius: 4px;
+    padding: 6px 8px;
+    border-radius: 6px;
+    backdrop-filter: blur(4px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .jet-app-active .pick-row {
     display: flex;
     align-items: center;
-    gap: 4px;
-    margin-bottom: 1px;
+    gap: 6px;
+    margin-bottom: 2px;
 }
 
 .jet-app-active .pick-dot {
@@ -228,7 +855,7 @@ body.jet-app-active {
     color: #fff;
     font-weight: 500;
     text-shadow: 0 1px 1px rgba(0, 0, 0, 0.7);
-    white-space: normal;
+    white-space: nowrap;
 }
 
 .jet-app-active .pick-dot-red {
@@ -247,701 +874,420 @@ body.jet-app-active {
     background-color: var(--jet-color-picked-grey-flag);
 }
 
-/* Styles for the container when there is a preview error */
-.jet-app-active .jet-image-item-container.preview-error {
-    align-items: center;
-    justify-content: center;
-    min-height: 100px; /* Ensure it has some height */
-    border: 1px dashed var(--jet-border-tertiary-accent); /* Visually indicate error state on container */
-    /* You might want to adjust padding or other properties if needed */
-}
-
-.jet-app-active .jet-image-item-container.preview-error span:not(.image-item-name) { /* The '!' span */
-    font-size: 2em;
-    color: var(--jet-color-warning); /* Warning yellow */
-    margin-bottom: 5px;
-    display: block; /* Ensure it takes space */
-}
-
-/* --- Jet Color Pick Styles (Grid & Preview Button) --- */
-/* Grid item flags */
+/* --- Pick Color Indicators --- */
 .jet-app-active .jet-image-item-container::after {
     content: '';
     position: absolute;
-    bottom: 4px;
-    right: 4px;
-    width: 12px;
-    height: 12px;
-    border-radius: 3px;
-    border: 1px solid var(--jet-border-overlay-element);
+    bottom: 8px;
+    right: 8px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(255, 255, 255, 0.9);
     box-sizing: border-box;
     display: none;
-    z-index: 1;
+    z-index: 5;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
 }
+
 .jet-app-active .jet-image-item-container.picked-red::after,
 .jet-app-active .jet-image-item-container.picked-green::after,
 .jet-app-active .jet-image-item-container.picked-blue::after,
 .jet-app-active .jet-image-item-container.picked-grey::after {
     display: block;
 }
+
 .jet-app-active .jet-image-item-container.picked-red::after {
     background-color: var(--jet-color-picked-red);
 }
+
 .jet-app-active .jet-image-item-container.picked-green::after {
     background-color: var(--jet-color-picked-green);
 }
+
 .jet-app-active .jet-image-item-container.picked-blue::after {
     background-color: var(--jet-color-picked-blue);
 }
+
 .jet-app-active .jet-image-item-container.picked-grey::after {
     background-color: var(--jet-color-picked-grey-flag);
 }
 
-/* Preview pick button indicator */
-.jet-app-active .jet-preview-pick-button-base .jet-preview-pick-color-indicator {
-    display: inline-block;
-    padding: 2px 8px;
-    margin-left: 5px;
-    border-radius: 3px;
-    font-weight: bold;
-    font-size: 0.9em;
-    border: 1px solid var(--jet-border-secondary);
-    min-width: 40px;
+/* --- Quick Pick Menu --- */
+.quick-pick-menu {
+    background: var(--jet-bg-tertiary) !important;
+    border: 1px solid var(--jet-border-primary) !important;
+    border-radius: 8px !important;
+    padding: 8px !important;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3) !important;
+    backdrop-filter: blur(8px);
+    min-width: 150px;
+}
+
+.quick-pick-option {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+    padding: 8px 12px !important;
+    border: none !important;
+    background: transparent !important;
+    color: var(--jet-text-primary) !important;
+    cursor: pointer !important;
+    border-radius: 6px !important;
+    transition: background-color 0.2s ease !important;
+    font-size: 0.9rem !important;
+    white-space: nowrap !important;
+}
+
+.quick-pick-option:hover {
+    background: var(--jet-bg-button-hover) !important;
+}
+
+.quick-pick-option i {
+    width: 16px;
     text-align: center;
-    color: var(--jet-text-on-dark-accent);
-}
-.jet-app-active .jet-preview-pick-button-base.picked-red .jet-preview-pick-color-indicator {
-    background-color: var(--jet-color-picked-red); border-color: var(--jet-color-picked-red-border);
-}
-.jet-app-active .jet-preview-pick-button-base.picked-green .jet-preview-pick-color-indicator {
-    background-color: var(--jet-color-picked-green); border-color: var(--jet-color-picked-green-border);
-}
-.jet-app-active .jet-preview-pick-button-base.picked-blue .jet-preview-pick-color-indicator {
-    background-color: var(--jet-color-picked-blue); border-color: var(--jet-color-picked-blue-border);
-}
-.jet-app-active .jet-preview-pick-button-base.picked-grey .jet-preview-pick-color-indicator {
-    background-color: var(--jet-color-picked-grey-indicator); border-color: var(--jet-color-picked-grey-border);
 }
 
-/* --- Jet UI Elements (Feedback, Loading) --- */
-.jet-app-active #jet-feedback {
-    padding: 10px;
-    margin: 10px auto;
-    max-width: 600px;
-    border-radius: 4px;
-    display: none;
-    text-align: center;
-    box-shadow: 0 2px 5px var(--jet-box-shadow-feedback);
-    color: var(--jet-text-on-dark-accent);
-}
-.jet-app-active #jet-feedback.info { background-color: var(--jet-feedback-info-bg); }
-.jet-app-active #jet-feedback.success { background-color: var(--jet-feedback-success-bg); }
-.jet-app-active #jet-feedback.warning { background-color: var(--jet-color-warning); color: var(--jet-text-warning-contrast); }
-.jet-app-active #jet-feedback.error { background-color: var(--jet-feedback-error-bg); }
-
-.jet-app-active #jet-loading-indicator {
-    position: fixed;
-    top: 10px;
-    right: 10px;
-    background-color: var(--jet-bg-overlay);
-    color: var(--jet-text-on-dark-accent);
-    padding: 8px 15px;
-    border-radius: 4px;
-    z-index: 10000; /* Above preview overlay */
-    display: none;
+/* --- Enhanced Filter Section Styling --- */
+.jet-app-active .action-group-zip {
+    margin-top: 8px;
+    padding-top: 12px;
+    border-top: 1px solid var(--jet-border-primary);
 }
 
-/* --- Jet Filter & Sort Controls --- */
-.jet-app-active #jet-filter-controls {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 8px;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-}
-
-.jet-app-active .filter-group-main,
-.jet-app-active .filter-group-colors {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-    flex-wrap: wrap;
-}
-
-.jet-app-active .filter-group-colors {
-    margin-right: 15px;
-}
-
-.jet-app-active .filter-group-actions {
-    display: flex;
-    gap: 8px;
-    align-items: center;
-}
-
-.jet-app-active .jet-zip-button {
-    padding: 8px 16px;
-    background-color: #238636;
-    color: #ffffff;
-    border: 1px solid #238636;
-    border-radius: 6px;
-    cursor: pointer;
-    font-size: 0.9em;
-    font-weight: 500;
-    transition: all 0.2s ease;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-}
-
-.jet-app-active .jet-zip-button:hover:not(:disabled) {
-    background-color: #2ea043;
-    border-color: #2ea043;
-    transform: translateY(-1px);
-}
-
-.jet-app-active .jet-zip-button:disabled {
-    background-color: #656d76;
-    border-color: #656d76;
-    cursor: not-allowed;
-    opacity: 0.6;
-}
-
-.jet-app-active .jet-filter-button {
-    background-color: var(--jet-bg-filter-button);
-    color: var(--jet-text-filter-button);
-    border: 1px solid var(--jet-border-secondary);
-    padding: 6px 12px;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background-color 0.2s, border-color 0.2s;
-}
-.jet-app-active .jet-filter-button:hover {
-    background-color: var(--jet-bg-button-hover);
-    border-color: var(--jet-border-tertiary-accent);
-}
-.jet-app-active .jet-filter-button.active {
-    background-color: var(--jet-bg-filter-button-active);
-    color: var(--jet-text-filter-button-active);
-    border-color: var(--jet-border-filter-button-active);
-    font-weight: bold;
-}
-
-/* Styles for Color Filter Buttons */
-.jet-app-active .jet-filter-button.color-filter {
-    width: 28px;  /* Increased from 24px */
-    height: 28px; /* Increased from 24px */
-    padding: 0;   /* Remove padding to rely on explicit width/height */
-    font-size: 0; /* Hide any accidental text or space if button markup is empty */
-    flex-shrink: 0; /* Prevent shrinking in flex layout */
-    vertical-align: middle; /* Align with text of other buttons if in same line */
-}
-
-.jet-app-active .jet-filter-button.color-filter[data-color="red"] {
-    background-color: var(--jet-color-picked-red);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="red"]:hover {
-    border-color: var(--jet-color-picked-red-border);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="red"].active {
-    border-color: var(--jet-color-picked-red-border);
-    box-shadow: 0 0 0 2px var(--jet-color-picked-red-border);
-}
-
-.jet-app-active .jet-filter-button.color-filter[data-color="green"] {
-    background-color: var(--jet-color-picked-green);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="green"]:hover {
-    border-color: var(--jet-color-picked-green-border);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="green"].active {
-    border-color: var(--jet-color-picked-green-border);
-    box-shadow: 0 0 0 2px var(--jet-color-picked-green-border);
-}
-
-.jet-app-active .jet-filter-button.color-filter[data-color="blue"] {
-    background-color: var(--jet-color-picked-blue);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="blue"]:hover {
-    border-color: var(--jet-color-picked-blue-border);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="blue"].active {
-    border-color: var(--jet-color-picked-blue-border);
-    box-shadow: 0 0 0 2px var(--jet-color-picked-blue-border);
-}
-
-.jet-app-active .jet-filter-button.color-filter[data-color="grey"] {
-    background-color: var(--jet-color-picked-grey-flag); /* Using -flag for the button swatch */
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="grey"]:hover {
-    border-color: var(--jet-color-picked-grey-border);
-}
-.jet-app-active .jet-filter-button.color-filter[data-color="grey"].active {
-    border-color: var(--jet-color-picked-grey-border);
-    box-shadow: 0 0 0 2px var(--jet-color-picked-grey-border);
-}
-/* End of Styles for Color Filter Buttons */
-
-.jet-app-active #jet-sort-controls {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 10px; /* Space to grid */
-}
-.jet-app-active .jet-sort-select {
-    background-color: var(--jet-bg-tertiary);
-    color: var(--jet-text-primary);
-    border: 1px solid var(--jet-border-secondary);
-    padding: 6px 10px;
-    border-radius: 4px;
-}
-.jet-app-active .jet-sort-select:focus {
-    outline: none;
-    border-color: var(--jet-border-select-focus);
-    box-shadow: 0 0 0 2px rgba(121, 187, 255, 0.25); /* Using accent color with alpha for focus glow */
-}
-
-/* --- Jet Preview Overlay (Non-PhotoSwipe, custom for RAW previews) --- */
-/* This is for the #jet-preview-area */
+/* --- Preview Overlay Styles --- */
 .jet-preview-overlay-container {
     position: fixed;
     top: 0;
     left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(0, 0, 0, 0.9);
+    right: 0;
+    bottom: 0;
+    background: var(--jet-bg-preview-overlay);
+    z-index: 10000;
     display: flex;
-    flex-direction: column; /* Arrange main preview, controls, and filmstrip vertically */
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 15px; /* Reduced padding */
-    box-sizing: border-box;
+    flex-direction: column;
+    overflow: hidden;
 }
 
 .jet-preview-controls-top {
-    width: 100%;
-    max-width: 1200px; /* Match max width of main content area */
-    display: flex; /* Use Flexbox */
-    justify-content: space-between; /* Distribute space */
+    display: flex;
+    justify-content: space-between;
     align-items: center;
-    margin-bottom: 8px; /* Reduced margin */
-    color: #ccc; /* Light gray text */
-    font-size: 0.9em;
+    padding: 16px 24px;
+    background: rgba(0, 0, 0, 0.9);
+    border-bottom: 1px solid var(--jet-border-primary);
+    flex-shrink: 0;
 }
 
-/* NEW: Styles for control area containers */
 .jet-preview-control-area {
     display: flex;
     align-items: center;
+    gap: 12px;
+    min-width: 0;
 }
 
 .jet-preview-control-area.left {
-    flex-grow: 1; /* Allow left area to take available space */
+    flex: 1;
     justify-content: flex-start;
-    margin-right: 10px; /* Space between left and center */
 }
 
 .jet-preview-control-area.center {
-    /* Center area for the pick button - doesn't need flex-grow */
+    flex: 0 0 auto;
     justify-content: center;
 }
 
 .jet-preview-control-area.right {
-    flex-grow: 1; /* Allow right area to take available space */
+    flex: 1;
     justify-content: flex-end;
-    margin-left: 10px; /* Space between center and right */
 }
 
-#jet-preview-image-name {
-    flex-grow: 1;
-    margin-right: 10px; /* Keep space from pick button if not using containers */
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-/* All picks info in preview */
-.jet-preview-all-picks-info {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 4px;
-    font-size: 0.8em;
-}
-
-.jet-preview-pick-info {
-    padding: 2px 6px;
-    border-radius: 3px;
-    font-weight: 500;
-    color: white;
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.5);
-}
-
-.jet-preview-pick-info.pick-info-red {
-    background-color: var(--jet-color-picked-red);
-}
-
-.jet-preview-pick-info.pick-info-green {
-    background-color: var(--jet-color-picked-green);
-}
-
-.jet-preview-pick-info.pick-info-blue {
-    background-color: var(--jet-color-picked-blue);
-}
-
-.jet-preview-pick-info.pick-info-grey {
-    background-color: var(--jet-color-picked-grey-indicator);
-    color: black;
-}
-
-.jet-preview-pick-button-base {
-     /* Base styles for the pick button */
-    /* background-color: rgba(255, 255, 255, 0.1); *//* Remove base background */
-    border: 1px solid #555;
-    color: #ccc; /* Base text color */
-    padding: 6px 12px; /* Adjusted padding */
-    border-radius: 4px;
-    cursor: pointer;
-    font-size: 1em; /* Increased font size */
-    display: inline-flex;
-    align-items: center;
-    transition: background-color 0.2s ease, border-color 0.2s ease, color 0.2s ease;
-    min-width: 80px; /* Ensure a minimum width */
-    justify-content: center; /* Center content inside button */
-}
-
-.jet-preview-pick-button-base:hover {
-    background-color: rgba(255, 255, 255, 0.2); /* Hover background */
-}
-
-#jet-preview-pick-color-indicator {
-    /* This span will now just hold the text */
-    display: inline-block;
-    /* width: 12px; *//* Remove fixed width */
-    height: auto; /* Auto height */
-    margin-left: 0; /* Remove margin */
-    border-radius: 0; /* Remove border radius */
-    border: none; /* Remove border */
-    vertical-align: middle;
-    font-weight: bold;
-    text-align: center;
-    /* Initial text color - will be overridden by picked classes */
-    color: #ccc; 
-    background-color: transparent; /* Ensure no background on indicator */
-    padding: 0; /* Remove padding */
-}
-
-/* Update pick button styles to fill the entire button */
-.jet-preview-pick-button-base.picked-red {
-    background-color: var(--jet-color-picked-red); border-color: var(--jet-color-picked-red); color: white; /* Text color for contrast */
-}
-.jet-preview-pick-button-base.picked-green {
-    background-color: var(--jet-color-picked-green); border-color: var(--jet-color-picked-green); color: white; /* Text color for contrast */
-}
-.jet-preview-pick-button-base.picked-blue {
-    background-color: var(--jet-color-picked-blue); border-color: var(--jet-color-picked-blue); color: white; /* Text color for contrast */
-}
-.jet-preview-pick-button-base.picked-grey {
-    background-color: var(--jet-color-picked-grey-indicator); border-color: var(--jet-color-picked-grey-indicator); color: black; /* Text color for contrast */
-}
-
-/* Ensure text color is correct within the indicator span when button is picked */
-.jet-preview-pick-button-base.picked-red #jet-preview-pick-color-indicator,
-.jet-preview-pick-button-base.picked-green #jet-preview-pick-color-indicator,
-.jet-preview-pick-button-base.picked-blue #jet-preview-pick-color-indicator,
-.jet-preview-pick-button-base.picked-grey #jet-preview-pick-color-indicator {
-    color: inherit; /* Inherit color from the parent button */
-}
-
-/* Style for the main image container */
 .jet-preview-image-container {
-    position: relative; /* For positioning nav buttons */
+    flex: 1;
     display: flex;
-    justify-content: center;
     align-items: center;
-    width: 100%;
-    flex-grow: 1; /* Allow image area to take available space */
-    max-height: calc(100vh - 160px); /* Adjusted based on increased filmstrip height and reduced spacing */
-    margin-bottom: 8px; /* Reduced margin */
-    /* Ensure clicks on the container itself don't interfere if buttons are overlaid */
-    pointer-events: none;
+    justify-content: center;
+    padding: 20px;
+    overflow: hidden;
 }
 
 #jet-preview-main-image {
-    display: block;
     max-width: 100%;
     max-height: 100%;
     object-fit: contain;
-    /* Prevent selecting image text */
-    user-select: none;
-    -webkit-user-drag: none;
+    border-radius: 8px;
+    box-shadow: var(--jet-box-shadow-preview-image);
 }
 
-.preview-load-error-message {
-    color: red;
-    text-align: center;
-    font-size: 1.1em;
-    padding: 20px;
-    border: 1px dashed red;
+#jet-preview-image-name {
+    font-size: 1rem;
+    font-weight: 500;
+    color: var(--jet-text-primary);
+    margin: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 300px;
 }
 
-/* Navigation Buttons (Prev/Next) */
-.preview-nav-button {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    background-color: rgba(0, 0, 0, 0.5); /* Semi-transparent black */
-    color: white;
-    border: none;
-    padding: 10px 15px;
-    font-size: 1.5em;
-    cursor: pointer;
-    z-index: 10; /* Ensure buttons are above the image */
-    transition: background-color 0.2s ease;
-    /* Ensure clicks on the buttons are captured */
-    pointer-events: auto;
-    /* Rounded corners on the side facing the image */
+.jet-preview-all-picks-info {
+    margin-top: 8px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.jet-preview-pick-info {
+    padding: 4px 8px;
     border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: white;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
 }
 
-.preview-nav-button:hover {
-    background-color: rgba(0, 0, 0, 0.8);
+.jet-preview-pick-info.pick-info-red {
+    background: var(--jet-color-picked-red);
 }
 
-#jet-preview-prev-button {
-    left: 10px;
-    border-top-right-radius: 0;
-    border-bottom-right-radius: 0;
+.jet-preview-pick-info.pick-info-green {
+    background: var(--jet-color-picked-green);
 }
 
-#jet-preview-next-button {
-    right: 10px;
-    border-top-left-radius: 0;
-    border-bottom-left-radius: 0;
+.jet-preview-pick-info.pick-info-blue {
+    background: var(--jet-color-picked-blue);
 }
 
-/* Remove or adjust .jet-preview-controls-nav as buttons are now positioned differently */
-.jet-preview-controls-nav {
-    display: none; /* Hide the container as buttons are now positioned absolutely */
+.jet-preview-pick-info.pick-info-grey {
+    background: var(--jet-color-picked-grey-flag);
 }
 
-/* NEW: Thumbnail Filmstrip Styles */
-#jet-thumbnail-filmstrip {
-    width: 100%;
-    max-width: 1200px; /* Match max width of main content area */
-    height: 140px; /* Increased height for the filmstrip */
-    display: flex; /* Arrange thumbnails horizontally */
-    overflow-x: auto; /* Enable horizontal scrolling */
-    overflow-y: hidden; /* Hide vertical scrollbar */
-    align-items: center; /* Vertically align thumbnails */
-    padding: 5px 0; /* Padding top/bottom */
-    margin-top: 8px; /* Reduced space above the filmstrip */
-    background-color: rgba(0, 0, 0, 0.3); /* Slightly darker background for the strip */
-    border-radius: 5px;
-    /* Custom scrollbar for webkit browsers */
-    scrollbar-width: thin;
-    scrollbar-color: #888 transparent; /* Thumb, Track */
-}
-
-#jet-thumbnail-filmstrip::-webkit-scrollbar {
-    height: 8px; /* Height of the horizontal scrollbar */
-}
-
-#jet-thumbnail-filmstrip::-webkit-scrollbar-track {
-    background: transparent; /* Transparent track */
-}
-
-#jet-thumbnail-filmstrip::-webkit-scrollbar-thumb {
-    background-color: #888; /* Gray thumb */
-    border-radius: 4px; /* Rounded thumb */
-    border: 2px solid transparent; /* Space around thumb */
-}
-
-/* NEW: Container for filmstrip thumbnail */
-.jet-filmstrip-thumb-container {
-    position: relative; /* Needed for absolute positioning of ::after */
-    height: 130px; /* Container height matches new filmstrip inner height */
-    width: auto; /* Allow container to size with image */
-    margin: 0 3px; /* Reduced space between containers */
+.jet-preview-pick-button-base {
+    padding: 8px 16px;
+    background: var(--jet-bg-tertiary);
+    border: 2px solid var(--jet-border-primary);
+    border-radius: 6px;
+    color: var(--jet-text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
     cursor: pointer;
-    border: 2px solid transparent; /* Default border for container */
-    transition: border-color 0.2s ease, transform 0.1s ease;
-    box-sizing: border-box;
-    display: flex; /* Use flex to center image within container if needed */
+    transition: all 0.2s ease;
+    display: flex;
     align-items: center;
+    gap: 8px;
+}
+
+.jet-preview-pick-button-base:hover {
+    background: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-button-hover);
+}
+
+.jet-preview-pick-button-base.picked-red {
+    background: var(--jet-color-picked-red);
+    border-color: var(--jet-color-picked-red-border);
+    color: white;
+}
+
+.jet-preview-pick-button-base.picked-green {
+    background: var(--jet-color-picked-green);
+    border-color: var(--jet-color-picked-green-border);
+    color: white;
+}
+
+.jet-preview-pick-button-base.picked-blue {
+    background: var(--jet-color-picked-blue);
+    border-color: var(--jet-color-picked-blue-border);
+    color: white;
+}
+
+.jet-preview-pick-button-base.picked-grey {
+    background: var(--jet-color-picked-grey-flag);
+    border-color: var(--jet-color-picked-grey-border);
+    color: white;
+}
+
+.jet-preview-controls-nav {
+    display: flex;
     justify-content: center;
-    flex-shrink: 0; /* Prevent containers from shrinking */
+    align-items: center;
+    gap: 20px;
+    padding: 16px 24px;
+    background: rgba(0, 0, 0, 0.9);
+    border-top: 1px solid var(--jet-border-primary);
+    flex-shrink: 0;
+}
+
+#jet-preview-prev-button,
+#jet-preview-next-button,
+#jet-preview-close-button {
+    padding: 8px 16px;
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 6px;
+    color: var(--jet-text-primary);
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+#jet-preview-prev-button:hover,
+#jet-preview-next-button:hover,
+#jet-preview-close-button:hover {
+    background: var(--jet-bg-button-hover);
+    border-color: var(--jet-border-button-hover);
+    transform: translateY(-1px);
+}
+
+#jet-preview-close-button:hover {
+    background: var(--jet-bg-button-close-hover);
+    border-color: var(--jet-border-button-close-hover);
+    color: white;
+}
+
+/* --- Thumbnail Filmstrip --- */
+#jet-thumbnail-filmstrip {
+    background: rgba(0, 0, 0, 0.95);
+    border-top: 1px solid var(--jet-border-primary);
+    padding: 12px 0;
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 8px;
+    padding-left: 12px;
+    padding-right: 12px;
+    flex-shrink: 0;
+    max-height: 140px;
+}
+
+.jet-filmstrip-thumb-container {
+    flex-shrink: 0;
+    width: 120px;
+    height: 90px;
+    position: relative;
+    border: 2px solid transparent;
+    border-radius: 6px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
 .jet-filmstrip-thumb-container:hover {
-     transform: scale(1.05); /* Slightly enlarge on hover */
-     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4); /* Enhanced shadow on hover */
+    border-color: var(--jet-border-secondary);
+    transform: scale(1.05);
 }
 
 .jet-filmstrip-thumb-container.active {
-    border-color: #007bff; /* Highlight color for active thumbnail container */
-    box-shadow: 0 0 12px rgba(0, 123, 255, 0.5); /* Blue glow for active item */
-    transform: scale(1.02); /* Slightly larger for active item */
+    border-color: var(--jet-accent-color1);
+    box-shadow: 0 0 0 1px var(--jet-accent-color1);
 }
 
-/* Enhanced hover effects for picked items */
-.jet-filmstrip-thumb-container.picked-red:hover,
-.jet-filmstrip-thumb-container.picked-green:hover,
-.jet-filmstrip-thumb-container.picked-blue:hover,
-.jet-filmstrip-thumb-container.picked-grey:hover {
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5); /* Enhanced shadow for picked items on hover */
-    transform: scale(1.08); /* Slightly more enlargement for picked items */
-}
-
-/* Active picked items get combined effects */
-.jet-filmstrip-thumb-container.active.picked-red,
-.jet-filmstrip-thumb-container.active.picked-green,
-.jet-filmstrip-thumb-container.active.picked-blue,
-.jet-filmstrip-thumb-container.active.picked-grey {
-    box-shadow: 0 0 12px rgba(0, 123, 255, 0.5), 0 2px 8px rgba(0, 0, 0, 0.3); /* Combined blue glow and shadow */
-}
-
-/* Style for the actual image inside the container */
-.jet-filmstrip-thumb-container .jet-filmstrip-thumb {
+.jet-filmstrip-thumb {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
     display: block;
-    max-width: 100%; /* Ensure image doesn't exceed container width */
-    max-height: 100%; /* Ensure image doesn't exceed container height */
-    object-fit: cover; /* Crop image to cover the container while maintaining aspect ratio */
-    border-radius: 2px;
-    /* Placeholder background */
-    background-color: var(--jet-bg-image-placeholder);
-    /* Add resizing for 750px image */
-    max-width: 120px;
-    height: auto;
 }
 
-/* Enhanced Pick color indicators for filmstrip thumbnail CONTAINER */
-.jet-filmstrip-thumb-container::after {
-    content: '';
-    position: absolute;
-    bottom: 3px; /* Adjust position as needed */
-    right: 3px; /* Adjust position as needed */
-    width: 16px; /* Increased size for better visibility */
-    height: 16px; /* Increased size for better visibility */
-    border-radius: 3px; /* Slightly larger radius */
-    border: 2px solid rgba(255, 255, 255, 0.8); /* White border for better contrast */
-    box-sizing: border-box;
-    display: none; /* Hidden by default */
-    z-index: 3; /* Above the image and all_picks indicator */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); /* Shadow for depth */
+.jet-filmstrip-thumb-container.picked-red {
+    border-color: var(--jet-color-picked-red);
 }
 
-.jet-filmstrip-thumb-container.picked-red::after,
-.jet-filmstrip-thumb-container.picked-green::after,
-.jet-filmstrip-thumb-container.picked-blue::after,
-.jet-filmstrip-thumb-container.picked-grey::after {
-    display: block; /* Show indicator if picked */
+.jet-filmstrip-thumb-container.picked-green {
+    border-color: var(--jet-color-picked-green);
 }
 
-/* Use the same color variables as the grid flags */
-.jet-filmstrip-thumb-container.picked-red::after { background-color: var(--jet-color-picked-red); }
-.jet-filmstrip-thumb-container.picked-green::after { background-color: var(--jet-color-picked-green); }
-.jet-filmstrip-thumb-container.picked-blue::after { background-color: var(--jet-color-picked-blue); }
-.jet-filmstrip-thumb-container.picked-grey::after { background-color: var(--jet-color-picked-grey-flag); }
+.jet-filmstrip-thumb-container.picked-blue {
+    border-color: var(--jet-color-picked-blue);
+}
 
-/* Enhanced border for picked filmstrip thumbnails */
-.jet-filmstrip-thumb-container.picked-red,
-.jet-filmstrip-thumb-container.picked-green,
-.jet-filmstrip-thumb-container.picked-blue,
 .jet-filmstrip-thumb-container.picked-grey {
-    border-width: 3px; /* Thicker border for picked items */
-    border-style: solid;
+    border-color: var(--jet-color-picked-grey-flag);
 }
 
-.jet-filmstrip-thumb-container.picked-red { border-color: var(--jet-color-picked-red-border); }
-.jet-filmstrip-thumb-container.picked-green { border-color: var(--jet-color-picked-green-border); }
-.jet-filmstrip-thumb-container.picked-blue { border-color: var(--jet-color-picked-blue-border); }
-.jet-filmstrip-thumb-container.picked-grey { border-color: var(--jet-color-picked-grey-border); }
-
-/* Enhanced styling for filmstrip all_picks indicator */
-.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
-    backdrop-filter: blur(2px); /* Modern browsers blur effect */
-    border: 1px solid rgba(255, 255, 255, 0.2); /* Subtle border */
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3); /* Subtle shadow for depth */
+/* --- Error Messages --- */
+.preview-load-error-message {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    color: var(--jet-text-muted);
+    background: var(--jet-bg-tertiary);
+    border: 1px solid var(--jet-border-primary);
+    border-radius: 8px;
+    padding: 40px 20px;
+    text-align: center;
+    max-width: 400px;
+    margin: 0 auto;
 }
 
-.jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
-    border: 1px solid rgba(255, 255, 255, 0.3); /* Subtle border around dots */
+.preview-load-error-message::before {
+    content: '\f071';
+    font-family: 'Font Awesome 6 Free';
+    font-weight: 900;
+    font-size: 3rem;
+    color: var(--jet-color-warning);
+    margin-bottom: 16px;
 }
 
-/* Enhance visibility of pick dots in filmstrip */
-.jet-filmstrip-thumb-container .pick-dot-red { background-color: var(--jet-color-picked-red) !important; }
-.jet-filmstrip-thumb-container .pick-dot-green { background-color: var(--jet-color-picked-green) !important; }
-.jet-filmstrip-thumb-container .pick-dot-blue { background-color: var(--jet-color-picked-blue) !important; }
-.jet-filmstrip-thumb-container .pick-dot-grey { background-color: var(--jet-color-picked-grey-flag) !important; }
-
-/* Media Query for Mobile Layout of Filters and Filmstrip */
+/* --- Mobile Responsive Preview --- */
 @media (max-width: 768px) {
-    .jet-app-active #jet-filter-controls {
-        flex-direction: column;
-        align-items: stretch;
-        justify-content: flex-start;
+    .jet-preview-controls-top {
+        padding: 12px 16px;
+        flex-wrap: wrap;
+        gap: 8px;
     }
-
-    .jet-app-active .filter-group-main {
-        justify-content: flex-start;
+    
+    .jet-preview-control-area.left,
+    .jet-preview-control-area.right {
+        flex: none;
+    }
+    
+    .jet-preview-control-area.center {
+        order: 3;
         width: 100%;
-        margin-bottom: 8px;
-    }
-
-    .jet-app-active .filter-group-colors {
         justify-content: center;
-        gap: 15px;
+        margin-top: 8px;
     }
-
-    .jet-app-active .filter-group-actions {
-        justify-content: center;
+    
+    #jet-preview-image-name {
+        max-width: 200px;
+        font-size: 0.9rem;
     }
-
-    .jet-app-active .jet-zip-button {
-        justify-content: center;
-        width: 100%;
+    
+    .jet-preview-controls-nav {
+        padding: 12px 16px;
+        gap: 12px;
     }
-
-    /* Mobile optimizations for filmstrip */
+    
     #jet-thumbnail-filmstrip {
-        height: 100px; /* Reduced height on mobile */
-        padding: 3px 0;
+        padding: 8px;
+        max-height: 100px;
     }
     
     .jet-filmstrip-thumb-container {
-        height: 90px; /* Reduced container height on mobile */
-        margin: 0 2px; /* Reduced spacing on mobile */
+        width: 80px;
+        height: 60px;
     }
-    
-    .jet-filmstrip-thumb-container .jet-filmstrip-thumb {
-        max-width: 90px; /* Smaller thumbnails on mobile */
-    }
-    
-    /* Adjust pick color indicators for mobile */
-    .jet-filmstrip-thumb-container::after {
-        width: 12px; /* Smaller indicator on mobile */
-        height: 12px;
-        bottom: 2px;
-        right: 2px;
-    }
-    
-    /* Simplified all_picks indicator for mobile */
-    .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks {
-        font-size: 0.45rem;
-        padding: 1px 2px;
-    }
-    
-    .jet-filmstrip-thumb-container .all-picks-indicator.filmstrip-picks .pick-dot {
-        width: 4px;
-        height: 4px;
-        margin-right: 2px;
-    }
+}
 
-    /* Optional: if buttons themselves should take more width on mobile */
-    /* .jet-app-active .filter-group-main .jet-filter-button {
-        flex-grow: 1; 
-        text-align: center;
-    } */
+@media (max-width: 480px) {
+    .jet-preview-image-container {
+        padding: 10px;
+    }
+    
+    .jet-preview-pick-button-base {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
+    
+    #jet-preview-prev-button,
+    #jet-preview-next-button,
+    #jet-preview-close-button {
+        padding: 6px 12px;
+        font-size: 0.8rem;
+    }
 }

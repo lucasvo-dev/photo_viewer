@@ -135,7 +135,7 @@ function findAllValidRawSourcePrefixedPaths(): array {
     }
 
     // Get RAW extensions
-    $raw_extensions = defined('RAW_IMAGE_EXTENSIONS') ? RAW_IMAGE_EXTENSIONS : ['arw', 'nef', 'cr2', 'cr3', 'raf', 'dng', 'orf', 'pef', 'rw2'];
+    $raw_extensions = defined('RAW_FILE_EXTENSIONS') ? RAW_FILE_EXTENSIONS : ['arw', 'nef', 'cr2', 'cr3', 'raf', 'dng', 'orf', 'pef', 'rw2'];
 
     foreach (RAW_IMAGE_SOURCES as $sourceKey => $sourceConfig) {
         $sourceBasePath = $sourceConfig['path'];

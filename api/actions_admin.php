@@ -12,10 +12,11 @@ if (!isset($action)) {
 }
 
 // Check if the user is logged in for all admin actions (except login itself)
-if ($action !== 'admin_login' && $action !== 'admin_check_auth' && (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin')) {
+if ($action !== 'admin_login' && $action !== 'admin_check_auth' && (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'designer']))) {
     // For admin_check_auth, it needs to run to report not logged in
     if ($action !== 'admin_check_auth') {
-        json_error("Yêu cầu đăng nhập Admin.", 403);
+        json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
+        exit;
     }
 }
 
@@ -57,8 +58,8 @@ switch ($action) {
         break;
 
     case 'admin_check_auth':
-        if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin') {
-            json_response(['logged_in' => true, 'username' => $_SESSION['username'] ?? '']);
+        if (isset($_SESSION['user_role']) && in_array($_SESSION['user_role'], ['admin', 'designer'])) {
+            json_response(['logged_in' => true, 'username' => $_SESSION['username'] ?? '', 'role' => $_SESSION['user_role']]);
         } else {
             json_response(['logged_in' => false]);
         }
@@ -605,6 +606,244 @@ switch ($action) {
         } catch (Throwable $e) {
             error_log("[admin_delete_cache_job] FATAL ERROR for job ID: {$job_id}: " . $e->getMessage());
             json_error('Lỗi server khi xóa công việc cache: ' . $e->getMessage(), 500);
+        }
+        break;
+
+    case 'admin_list_users':
+        try {
+            $sql = "SELECT id, username, role, created_at, last_login FROM users ORDER BY created_at DESC";
+            $stmt = $pdo->query($sql);
+            $users = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            json_response(['success' => true, 'users' => $users]);
+        } catch (PDOException $e) {
+            error_log("[admin_list_users] Database error: " . $e->getMessage());
+            json_error('Lỗi khi tải danh sách người dùng.', 500);
+        }
+        break;
+
+    case 'admin_create_user':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+        
+        $username = trim($_POST['username'] ?? '');
+        $password = $_POST['password'] ?? '';
+        $role = $_POST['role'] ?? 'designer';
+        
+        if (empty($username) || empty($password)) {
+            json_error('Tên đăng nhập và mật khẩu không được để trống.', 400);
+        }
+        
+        if (!in_array($role, ['admin', 'designer'])) {
+            json_error('Vai trò không hợp lệ.', 400);
+        }
+        
+        // Check permissions - only admin can create users
+        $current_user_role = $_SESSION['user_role'];
+        if ($current_user_role !== 'admin') {
+            json_error('Chỉ admin mới có thể tạo tài khoản người dùng.', 403);
+        }
+        
+        if (strlen($username) < 3 || strlen($username) > 20) {
+            json_error('Tên đăng nhập phải từ 3-20 ký tự.', 400);
+        }
+        
+        if (strlen($password) < 6) {
+            json_error('Mật khẩu phải có ít nhất 6 ký tự.', 400);
+        }
+        
+        try {
+            // Check if username already exists
+            $sql_check = "SELECT id FROM users WHERE username = ? LIMIT 1";
+            $stmt_check = $pdo->prepare($sql_check);
+            $stmt_check->execute([$username]);
+            
+            if ($stmt_check->fetch()) {
+                json_error('Tên đăng nhập đã tồn tại.', 409);
+            }
+            
+            // Create new user
+            $password_hash = password_hash($password, PASSWORD_DEFAULT);
+            $sql_insert = "INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, ?, NOW())";
+            $stmt_insert = $pdo->prepare($sql_insert);
+            
+            if ($stmt_insert->execute([$username, $password_hash, $role])) {
+                error_log("[admin_create_user] Created new user: {$username} with role: {$role} by {$current_user_role}: " . ($_SESSION['username'] ?? 'unknown'));
+                json_response(['success' => true, 'message' => "Đã tạo tài khoản {$role} '{$username}' thành công."]);
+            } else {
+                json_error('Không thể tạo tài khoản.', 500);
+            }
+            
+        } catch (PDOException $e) {
+            error_log("[admin_create_user] Database error: " . $e->getMessage());
+            json_error('Lỗi cơ sở dữ liệu khi tạo tài khoản.', 500);
+        }
+        break;
+
+    case 'admin_change_user_password':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+        
+        $user_id = $_POST['user_id'] ?? '';
+        $new_password = $_POST['new_password'] ?? '';
+        
+        if (empty($user_id) || empty($new_password)) {
+            json_error('Thiếu thông tin người dùng hoặc mật khẩu.', 400);
+        }
+        
+        if (strlen($new_password) < 6) {
+            json_error('Mật khẩu phải có ít nhất 6 ký tự.', 400);
+        }
+        
+        try {
+            // Check if user exists and get their role
+            $sql_check = "SELECT username, role FROM users WHERE id = ? LIMIT 1";
+            $stmt_check = $pdo->prepare($sql_check);
+            $stmt_check->execute([$user_id]);
+            $user = $stmt_check->fetch();
+            
+            if (!$user) {
+                json_error('Không tìm thấy người dùng.', 404);
+            }
+            
+            // Check permissions - only admin can change passwords
+            $current_user_role = $_SESSION['user_role'];
+            if ($current_user_role !== 'admin') {
+                json_error('Chỉ admin mới có thể đổi mật khẩu người dùng.', 403);
+            }
+            
+            // Update password
+            $password_hash = password_hash($new_password, PASSWORD_DEFAULT);
+            $sql_update = "UPDATE users SET password_hash = ? WHERE id = ?";
+            $stmt_update = $pdo->prepare($sql_update);
+            
+            if ($stmt_update->execute([$password_hash, $user_id])) {
+                error_log("[admin_change_user_password] Changed password for user: {$user['username']} by {$current_user_role}: " . ($_SESSION['username'] ?? 'unknown'));
+                json_response(['success' => true, 'message' => "Đã đổi mật khẩu cho '{$user['username']}' thành công."]);
+            } else {
+                json_error('Không thể đổi mật khẩu.', 500);
+            }
+            
+        } catch (PDOException $e) {
+            error_log("[admin_change_user_password] Database error: " . $e->getMessage());
+            json_error('Lỗi cơ sở dữ liệu khi đổi mật khẩu.', 500);
+        }
+        break;
+
+    case 'admin_get_user_stats':
+        $user_id = $_GET['user_id'] ?? '';
+        
+        if (empty($user_id)) {
+            json_error('Thiếu thông tin người dùng.', 400);
+        }
+        
+        try {
+            // Get user info
+            $sql_user = "SELECT username, role FROM users WHERE id = ? LIMIT 1";
+            $stmt_user = $pdo->prepare($sql_user);
+            $stmt_user->execute([$user_id]);
+            $user = $stmt_user->fetch();
+            
+            if (!$user) {
+                json_error('Không tìm thấy người dùng.', 404);
+            }
+            
+            $stats = [
+                'username' => $user['username'],
+                'role' => $user['role'],
+                'album_count' => 0,
+                'picks_by_color' => []
+            ];
+            
+            // If it's a designer, get their Jet stats
+            if ($user['role'] === 'designer') {
+                // Count albums worked on
+                $sql_albums = "SELECT COUNT(DISTINCT SUBSTRING_INDEX(source_prefixed_path, '/', -2)) as album_count 
+                              FROM jet_image_picks 
+                              WHERE user_id = ?";
+                $stmt_albums = $pdo->prepare($sql_albums);
+                $stmt_albums->execute([$user_id]);
+                $album_result = $stmt_albums->fetch();
+                $stats['album_count'] = $album_result['album_count'] ?? 0;
+                
+                // Get pick counts by color
+                $sql_picks = "SELECT pick_color, COUNT(*) as count 
+                             FROM jet_image_picks 
+                             WHERE user_id = ? AND pick_color IS NOT NULL 
+                             GROUP BY pick_color";
+                $stmt_picks = $pdo->prepare($sql_picks);
+                $stmt_picks->execute([$user_id]);
+                $stats['picks_by_color'] = $stmt_picks->fetchAll(PDO::FETCH_ASSOC);
+            }
+            
+            json_response(['success' => true] + $stats);
+            
+        } catch (PDOException $e) {
+            error_log("[admin_get_user_stats] Database error: " . $e->getMessage());
+            json_error('Lỗi khi tải thống kê người dùng.', 500);
+        }
+        break;
+
+    case 'admin_delete_user':
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+        
+        $user_id = $_POST['user_id'] ?? '';
+        
+        if (empty($user_id)) {
+            json_error('Thiếu thông tin người dùng.', 400);
+        }
+        
+        // Prevent admin from deleting themselves
+        if ($user_id == $_SESSION['user_id']) {
+            json_error('Không thể xóa tài khoản của chính mình.', 400);
+        }
+        
+        try {
+            // Check if user exists and get info
+            $sql_check = "SELECT username, role FROM users WHERE id = ? LIMIT 1";
+            $stmt_check = $pdo->prepare($sql_check);
+            $stmt_check->execute([$user_id]);
+            $user = $stmt_check->fetch();
+            
+            if (!$user) {
+                json_error('Không tìm thấy người dùng.', 404);
+            }
+            
+            // Check permissions - only admin can delete users
+            $current_user_role = $_SESSION['user_role'];
+            if ($current_user_role !== 'admin') {
+                json_error('Chỉ admin mới có thể xóa tài khoản người dùng.', 403);
+            }
+            
+            // Prevent deleting the last admin
+            if ($user['role'] === 'admin') {
+                $admin_count_stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'admin'");
+                $admin_count_stmt->execute();
+                $admin_count = $admin_count_stmt->fetchColumn();
+                
+                if ($admin_count <= 1) {
+                    json_error('Không thể xóa admin cuối cùng trong hệ thống.', 400);
+                }
+            }
+            
+            // Delete user (CASCADE will handle related records in jet_image_picks)
+            $sql_delete = "DELETE FROM users WHERE id = ?";
+            $stmt_delete = $pdo->prepare($sql_delete);
+            
+            if ($stmt_delete->execute([$user_id])) {
+                error_log("[admin_delete_user] Deleted user: {$user['username']} (ID: {$user_id}) by {$current_user_role}: " . ($_SESSION['username'] ?? 'unknown'));
+                json_response(['success' => true, 'message' => "Đã xóa người dùng '{$user['username']}' thành công."]);
+            } else {
+                json_error('Không thể xóa người dùng.', 500);
+            }
+            
+        } catch (PDOException $e) {
+            error_log("[admin_delete_user] Database error: " . $e->getMessage());
+            json_error('Lỗi cơ sở dữ liệu khi xóa người dùng.', 500);
         }
         break;
 

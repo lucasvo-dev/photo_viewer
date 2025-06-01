@@ -131,15 +131,15 @@ if (!defined('RAW_IMAGE_SOURCES')) {
 $default_raw_extensions = ['arw', 'nef', 'cr2', 'cr3', 'raf', 'dng', 'orf', 'pef', 'rw2']; 
 
 // Get from config or use the dot-less default
-$loaded_raw_extensions = $config['raw_image_extensions'] ?? $default_raw_extensions;
+$loaded_raw_extensions = $config['raw_file_extensions'] ?? $default_raw_extensions;
 
 // Ensure all extensions are lowercase and have no leading dots
 $processed_raw_extensions = array_map(function($ext) {
     return strtolower(ltrim(trim($ext), '.'));
 }, $loaded_raw_extensions);
 
-if (!defined('RAW_IMAGE_EXTENSIONS')) {
-    define('RAW_IMAGE_EXTENSIONS', $processed_raw_extensions);
+if (!defined('RAW_FILE_EXTENSIONS')) {
+    define('RAW_FILE_EXTENSIONS', $processed_raw_extensions);
 }
 
 // --- Cache and Thumbnail Configuration (Get from config) ---
@@ -343,15 +343,78 @@ try {
             cleanup_attempts TINYINT UNSIGNED DEFAULT 0 NOT NULL COMMENT 'Number of times cleanup has been attempted for this job ZIP file'
         )");
 
-        // Create users table if not exists
+        // Create users table if not exists (main unified table)
         $pdo->exec("CREATE TABLE IF NOT EXISTS users (
             id INT AUTO_INCREMENT PRIMARY KEY,
-            username VARCHAR(50) NOT NULL UNIQUE,
+            username VARCHAR(50) UNIQUE NOT NULL,
             password_hash VARCHAR(255) NOT NULL,
-            role ENUM('admin', 'designer') NOT NULL,
+            role ENUM('admin', 'designer') DEFAULT 'designer',
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             last_login TIMESTAMP NULL
         )");
+
+        // Migration: Copy data from admin_users to users if users is empty but admin_users has data
+        try {
+            $users_count_stmt = $pdo->query("SELECT COUNT(*) FROM users");
+            $users_count = $users_count_stmt->fetchColumn();
+            
+            // Check if admin_users table exists and has data
+            $admin_users_exists = false;
+            $admin_users_count = 0;
+            try {
+                $admin_users_count_stmt = $pdo->query("SELECT COUNT(*) FROM admin_users");
+                $admin_users_count = $admin_users_count_stmt->fetchColumn();
+                $admin_users_exists = true;
+            } catch (PDOException $e) {
+                // admin_users table doesn't exist, which is fine
+            }
+
+            if ($users_count == 0 && $admin_users_exists && $admin_users_count > 0) {
+                // Migrate data from admin_users back to users
+                error_log("Migrating users from 'admin_users' table back to 'users' table...");
+                
+                $migrate_stmt = $pdo->prepare("
+                    INSERT INTO users (username, password_hash, role, created_at, last_login)
+                    SELECT username, password_hash, role, 
+                           FROM_UNIXTIME(created_at), 
+                           CASE WHEN last_login_at IS NOT NULL THEN FROM_UNIXTIME(last_login_at) ELSE NULL END
+                    FROM admin_users
+                ");
+                $migrate_stmt->execute();
+                $migrated_count = $migrate_stmt->rowCount();
+                
+                error_log("Successfully migrated {$migrated_count} users from 'admin_users' back to 'users' table.");
+            }
+        } catch (PDOException $e) {
+            error_log("Migration error: " . $e->getMessage());
+        }
+
+        // Update jet_image_picks to use users instead of admin_users
+        try {
+            // Check if the foreign key constraint exists and points to admin_users
+            $fk_check = $pdo->query("
+                SELECT CONSTRAINT_NAME 
+                FROM information_schema.KEY_COLUMN_USAGE 
+                WHERE TABLE_NAME = 'jet_image_picks' 
+                AND COLUMN_NAME = 'user_id' 
+                AND REFERENCED_TABLE_NAME = 'admin_users'
+            ");
+            
+            if ($fk_check->fetch()) {
+                error_log("Updating jet_image_picks foreign key to reference users...");
+                
+                // Drop the old foreign key constraint
+                $pdo->exec("ALTER TABLE jet_image_picks DROP FOREIGN KEY jet_image_picks_ibfk_1");
+                
+                // Add new foreign key to users
+                $pdo->exec("ALTER TABLE jet_image_picks ADD CONSTRAINT jet_image_picks_ibfk_1 
+                    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE");
+                
+                error_log("Updated jet_image_picks foreign key to reference users.");
+            }
+        } catch (PDOException $e) {
+            error_log("Foreign key update error (this may be normal): " . $e->getMessage());
+        }
 
         // Create jet_image_picks table if not exists (for storing designer's picks)
         $pdo->exec("CREATE TABLE IF NOT EXISTS jet_image_picks (
@@ -522,9 +585,9 @@ try {
             // Hash the password
             $admin_password_hash = password_hash($admin_password, PASSWORD_DEFAULT);
             
-            // Insert admin user - use 'password_hash' column to match table schema
-            $create_admin_stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')");
-            $create_admin_stmt->execute([$admin_username, $admin_password_hash]);
+            // Insert admin user with Unix timestamp
+            $create_admin_stmt = $pdo->prepare("INSERT INTO users (username, password_hash, role, created_at) VALUES (?, ?, 'admin', ?)");
+            $create_admin_stmt->execute([$admin_username, $admin_password_hash, time()]);
             
             error_log("AUTO-SETUP: Created admin user '{$admin_username}' with default password. Please change password after first login.");
             

@@ -279,20 +279,22 @@
     gap: 4px;
     padding: 4px 8px;
     border-radius: 12px;
-    font-size: 0.75em;
+    font-size: 0.75rem;
     font-weight: 600;
     text-transform: uppercase;
     letter-spacing: 0.5px;
 }
 
 .role-badge.admin {
-    background: #dc3545;
-    color: white;
+    background-color: rgba(248, 81, 73, 0.15);
+    color: #f85149;
+    border: 1px solid rgba(248, 81, 73, 0.3);
 }
 
 .role-badge.designer {
-    background: #6f42c1;
-    color: white;
+    background-color: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
+    border: 1px solid rgba(88, 166, 255, 0.3);
 }
 
 .role-badge i {
@@ -315,10 +317,6 @@
     align-items: center;
     gap: 4px;
     transition: all 0.2s ease;
-    cursor: pointer;
-    position: relative;
-    z-index: 1;
-    pointer-events: auto;
 }
 
 .user-actions .button i {
@@ -357,15 +355,14 @@
 }
 
 .user-actions .button.danger {
-    background-color: #f85149;
-    border: 1px solid #f85149;
-    color: #ffffff;
+    background-color: rgba(248, 81, 73, 0.1);
+    border-color: rgba(248, 81, 73, 0.3);
+    color: #f85149;
 }
 
 .user-actions .button.danger:hover {
-    background-color: #da3633;
-    border-color: #da3633;
-    color: #ffffff;
+    background-color: rgba(248, 81, 73, 0.2);
+    border-color: #f85149;
     transform: translateY(-1px);
     box-shadow: 0 2px 4px rgba(248, 81, 73, 0.3);
 }

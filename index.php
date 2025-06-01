@@ -36,13 +36,99 @@ if (isset($_GET['folder'])) {
 <body class="<?php echo $is_admin ? 'admin-logged-in' : ''; ?>">
     <header class="app-header">
         <div class="container header-container">
-            <a href="#" class="logo-link" aria-label="Trang chủ Guustudio">
-                <!-- Updated Logo Path (Relative) -->
+            <a href="index.php" class="logo-link" aria-label="Trang chủ">
                 <img src="theme/logo.png" alt="Guustudio Logo" id="site-logo"> 
             </a>
+            
+            <!-- Unified Main Menu -->
+            <nav class="header-nav">
+                <div class="main-menu-toggle" id="main-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                    <span class="menu-text">Menu</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="main-menu-dropdown" id="main-menu-dropdown">
+                    <?php if (isset($_SESSION['user_role'])): ?>
+                    <!-- User Info Section -->
+                    <div class="menu-section">
+                        <div class="menu-user-info">
+                            <span class="menu-user-role-badge <?php echo htmlspecialchars($_SESSION['user_role']); ?>">
+                                <?php echo ucfirst(htmlspecialchars($_SESSION['user_role'])); ?>
+                            </span>
+                            <span class="menu-user-name"><?php echo htmlspecialchars($_SESSION['username'] ?? 'User'); ?></span>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Navigation Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Điều hướng</div>
+                        <a href="index.php" class="menu-item active">
+                            <i class="fas fa-images"></i>
+                            Thư viện Ảnh
+                        </a>
+                        <?php if (isset($_SESSION['user_role']) && ($_SESSION['user_role'] === 'admin' || $_SESSION['user_role'] === 'designer')): ?>
+                        <a href="jet.php" class="menu-item">
+                            <i class="fas fa-cut"></i>
+                            Jet Culling Workspace
+                        </a>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin'): ?>
+                    <!-- Admin Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Quản trị</div>
+                        <a href="admin.php" class="menu-item">
+                            <i class="fas fa-cog"></i>
+                            Bảng điều khiển Admin
+                        </a>
+                        <a href="admin.php#jet-cache-tab" class="menu-item">
+                            <i class="fas fa-database"></i>
+                            Quản lý Cache RAW
+                        </a>
+                        <a href="admin.php#users-tab" class="menu-item">
+                            <i class="fas fa-users"></i>
+                            Quản lý Người dùng
+                        </a>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if (isset($_SESSION['user_role'])): ?>
+                    <!-- User Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Tài khoản</div>
+                        <a href="index.php?action=logout" class="menu-item danger">
+                            <i class="fas fa-sign-out-alt"></i>
+                            Đăng xuất
+                        </a>
+                    </div>
+                    <?php else: ?>
+                    <!-- Guest Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Tài khoản</div>
+                        <a href="login.php" class="menu-item">
+                            <i class="fas fa-sign-in-alt"></i>
+                            Đăng nhập
+                        </a>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </nav>
+            
             <div class="header-actions">
-                 <button id="backButton" class="button back-button" style="display: none;">← Quay lại</button>
-                 <!-- Add other potential header links/buttons here -->
+                <button id="backButton" class="button back-button" style="display: none;">
+                    <i class="fas fa-arrow-left"></i> Quay lại
+                </button>
+                
+                <?php if (isset($_SESSION['user_role'])): ?>
+                <div class="user-info-display">
+                    <span class="user-role-badge <?php echo htmlspecialchars($_SESSION['user_role']); ?>">
+                        <?php echo ucfirst(htmlspecialchars($_SESSION['user_role'])); ?>
+                    </span>
+                    <span class="user-text"><?php echo htmlspecialchars($_SESSION['username'] ?? 'User'); ?></span>
+                </div>
+                <?php endif; ?>
             </div>
         </div>
     </header>
@@ -112,6 +198,9 @@ if (isset($_GET['folder'])) {
     <!-- PhotoSwipe JS module will be imported *within* app.js -->
     <script type="module" src="js/app.js"></script> 
 
+    <!-- Shared Menu Component -->
+    <script src="js/shared-menu.js"></script>
+
     <!-- REPLACED: Zip Progress Section (Replaces old overlay) -->
     <!-- ZIP Progress Bar -->
     <div id="zip-progress-bar-container" class="zip-progress-bar-container" style="display: none;">
@@ -133,11 +222,27 @@ if (isset($_GET['folder'])) {
     </div>
 
     <div id="zip-jobs-panel-container" class="zip-jobs-panel-container">
-        <h4>Hàng đợi nén ZIP</h4>
+        <h4><i class="fas fa-archive"></i> Tiến trình tạo ZIP</h4>
         <div id="zip-jobs-list">
             <!-- Job entries will be added here by JavaScript -->
         </div>
     </div>
 
+    <script>
+        // Define initial state for JavaScript
+        const initialState = {
+            view: '<?php echo $initial_view; ?>',
+            folderPath: '<?php echo addslashes($initial_folder_path); ?>',
+            isLoggedIn: <?php echo $is_logged_in ? 'true' : 'false'; ?>,
+            isAdmin: <?php echo $is_admin ? 'true' : 'false'; ?>
+        };
+    </script>
+    
+    <!-- Corrected PhotoSwipe 5 JavaScript CDN -->
+    <script src="https://unpkg.com/photoswipe@5/dist/umd/photoswipe.umd.min.js"></script>
+    <script src="https://unpkg.com/photoswipe@5/dist/umd/photoswipe-lightbox.umd.min.js"></script>
+    
+    <!-- Your app scripts -->
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>

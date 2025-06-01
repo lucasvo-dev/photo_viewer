@@ -1,35 +1,395 @@
 /* --- Header Styles --- */
 .app-header {
-    background-color: #161b22;
-    border-bottom: 1px solid #21262d; /* Slightly softer border */
-    padding: 12px 0; 
-    position: sticky; /* Make header sticky */
+    background: #161b22;
+    border-bottom: 1px solid #30363d;
+    padding: 0;
+    position: sticky;
     top: 0;
-    z-index: 900; /* Below overlays */
-    flex-shrink: 0; /* Prevent header from shrinking */
+    z-index: 1000;
 }
+
 .header-container {
     display: flex;
-    justify-content: space-between;
     align-items: center;
-    gap: 20px; /* Add gap between logo and actions */
+    justify-content: space-between;
+    padding: 12px 24px;
+    max-width: none;
+    margin: 0;
 }
-.logo-link { 
-    text-decoration: none; 
-    display: inline-block; 
+
+.logo-link {
+    display: flex;
+    align-items: center;
+    text-decoration: none;
 }
+
 #site-logo {
-    max-height: 60px; /* Further increased default max height */
+    height: 40px;
     width: auto;
-    vertical-align: middle; 
 }
-.header-actions {
+
+/* Unified Main Menu Dropdown - Moved to Right */
+.header-nav {
+    position: relative;
+    margin-left: auto; /* Push to right */
+}
+
+.main-menu-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    padding: 10px 16px;
+    color: #e6edf3;
+    text-decoration: none;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    cursor: pointer;
+    font-size: 0.95rem;
+}
+
+.main-menu-toggle:hover {
+    background: #30363d;
+    border-color: #404854;
+    color: #f0f6fc;
+    text-decoration: none;
+}
+
+.main-menu-toggle.active {
+    background: #0969da;
+    border-color: #1f6feb;
+    color: white;
+}
+
+.main-menu-dropdown {
+    position: absolute;
+    top: 100%;
+    right: 0; /* Align to right */
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+    min-width: 280px; /* Slightly wider for user info */
+    z-index: 1001;
+    display: none;
+    margin-top: 4px;
+}
+
+.main-menu-dropdown.show {
+    display: block;
+}
+
+.menu-section {
+    border-bottom: 1px solid #30363d;
+    padding: 8px 0;
+}
+
+.menu-section:last-child {
+    border-bottom: none;
+}
+
+.menu-section-title {
+    padding: 8px 16px 4px 16px;
+    color: #8b949e;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.menu-item {
+    display: block;
+    padding: 10px 16px;
+    color: #e6edf3;
+    text-decoration: none;
+    transition: background-color 0.2s ease;
+    font-size: 0.9rem;
+}
+
+.menu-item:hover {
+    background: #30363d;
+    color: #f0f6fc;
+    text-decoration: none;
+}
+
+.menu-item.active {
+    background: #0969da;
+    color: white;
+}
+
+.menu-item.danger:hover {
+    background: #da3633;
+    color: white;
+}
+
+.menu-item i {
+    width: 20px;
+    margin-right: 10px;
+    text-align: center;
+    font-size: 0.85rem;
+}
+
+/* User Info in Menu */
+.menu-user-info {
+    padding: 12px 16px;
+    background: #161b22;
+    border-radius: 4px;
+    margin: 8px;
     display: flex;
     align-items: center;
     gap: 10px;
 }
-.back-button {
-    /* Refine back button style */
-    padding: 6px 12px;
-    font-size: 0.9em;
+
+.menu-user-role-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.menu-user-role-badge.admin {
+    background: #da3633;
+    color: white;
+}
+
+.menu-user-role-badge.designer {
+    background: #0969da;
+    color: white;
+}
+
+.menu-user-name {
+    color: #e6edf3;
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Additional admin panel styling for user badges and stats */
+.user-role-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.user-role-badge.admin {
+    background: #da3633;
+    color: white;
+}
+
+.user-role-badge.designer {
+    background: #0969da;
+    color: white;
+}
+
+.color-stats {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+}
+
+.color-stat {
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+
+.color-stat.red {
+    background: #ffeaea;
+    color: #d73027;
+    border-left: 4px solid #d73027;
+}
+
+.color-stat.green {
+    background: #eafff0;
+    color: #2e7d32;
+    border-left: 4px solid #2e7d32;
+}
+
+.color-stat.blue {
+    background: #e3f2fd;
+    color: #1976d2;
+    border-left: 4px solid #1976d2;
+}
+
+.color-stat.grey {
+    background: #f5f5f5;
+    color: #616161;
+    border-left: 4px solid #616161;
+}
+
+.error-message {
+    color: #da3633;
+    font-style: italic;
+}
+
+.loading-activity {
+    color: #8b949e;
+    font-size: 0.8rem;
+}
+
+/* Remove header-actions since everything is in menu now */
+.header-actions {
+    display: none;
+}
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .header-container {
+        padding: 8px 16px;
+    }
+    
+    .main-menu-dropdown {
+        min-width: 240px;
+        font-size: 0.85rem;
+    }
+    
+    .main-menu-toggle {
+        padding: 8px 12px;
+        font-size: 0.9rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .header-container {
+        padding: 6px 12px;
+    }
+    
+    #site-logo {
+        height: 32px;
+    }
+    
+    .main-menu-toggle .menu-text {
+        display: none;
+    }
+    
+    .main-menu-dropdown {
+        min-width: 200px;
+        right: -8px; /* Adjust for mobile padding */
+    }
+}
+
+/* Legacy styles - hidden */
+.nav-dropdown-toggle,
+.nav-dropdown-menu,
+.user-menu-dropdown,
+.user-menu-toggle,
+.user-menu-dropdown-menu,
+.user-info-display {
+    display: none !important;
+}
+
+/* Admin Panel Specific Styles */
+body.admin-panel-active {
+    background-color: #0d1117;
+    color: #f0f6fc;
+}
+
+.admin-header {
+    background: linear-gradient(135deg, #161b22 0%, #21262d 100%);
+    border-bottom: 1px solid #30363d;
+    padding: 24px;
+    text-align: center;
+    margin-bottom: 24px;
+}
+
+.admin-header h1 {
+    margin: 0 0 8px 0;
+    font-size: 1.75rem;
+    font-weight: 600;
+    color: #f0f6fc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+}
+
+.admin-header h1 i {
+    color: #58a6ff;
+}
+
+.admin-header p {
+    margin: 0;
+    color: #c9d1d9;
+    font-size: 1rem;
+}
+
+.admin-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 24px;
+    padding: 0 24px;
+    flex-wrap: wrap;
+}
+
+.admin-tab-button {
+    padding: 12px 20px;
+    background: #21262d;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #c9d1d9;
+    font-size: 0.9rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+}
+
+.admin-tab-button:hover {
+    background: #30363d;
+    border-color: #444c56;
+    color: #f0f6fc;
+}
+
+.admin-tab-button.active {
+    background: #1f6feb;
+    border-color: #1f6feb;
+    color: white;
+}
+
+.admin-tab-button i {
+    font-size: 0.85rem;
+}
+
+@media (max-width: 768px) {
+    .admin-tabs {
+        padding: 0 16px;
+    }
+    
+    .admin-tab-button {
+        padding: 8px 16px;
+        font-size: 0.8rem;
+        flex: 1;
+        justify-content: center;
+    }
+}
+
+@media (max-width: 480px) {
+    .admin-header {
+        padding: 16px;
+    }
+    
+    .admin-header h1 {
+        font-size: 1.5rem;
+        flex-direction: column;
+        gap: 8px;
+    }
+    
+    .admin-tabs {
+        flex-direction: column;
+        gap: 6px;
+    }
+    
+    .admin-tab-button {
+        width: 100%;
+    }
 }

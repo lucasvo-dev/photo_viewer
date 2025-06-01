@@ -15,7 +15,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const appContainer = document.getElementById('jet-app-container');
     const feedbackElement = document.getElementById('jet-feedback');
-    const loadingIndicator = document.getElementById('jet-loading-indicator');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const loadingOverlay = document.getElementById('loading-overlay');
 
     // State for current view
     let currentRawSourceKey = null;
@@ -54,6 +55,10 @@ document.addEventListener('DOMContentLoaded', () => {
         imageObject: null // Store the full image object
     };
 
+    // NEW: State for Search - REMOVED since search is not needed in RAW workflow
+    // let currentSearchQuery = '';
+    // let searchTimeout = null;
+
     const PICK_COLORS = {
         NONE: 'none', // Represents unpicked or null in DB
         GREY: 'grey',
@@ -62,9 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
         BLUE: 'blue'
     };
 
-    function showLoading(message = 'Đang tải...') { // Changed default message to Vietnamese
+    function showLoading(message = 'Đang tải...') {
         if (loadingIndicator) {
-            loadingIndicator.textContent = message;
+            loadingIndicator.querySelector('p').textContent = message;
             loadingIndicator.style.display = 'block';
         }
     }
@@ -72,6 +77,19 @@ document.addEventListener('DOMContentLoaded', () => {
     function hideLoading() {
         if (loadingIndicator) {
             loadingIndicator.style.display = 'none';
+        }
+    }
+
+    function showLoadingOverlay(message = 'Đang xử lý...') {
+        if (loadingOverlay) {
+            loadingOverlay.querySelector('p').textContent = message;
+            loadingOverlay.style.display = 'flex';
+        }
+    }
+
+    function hideLoadingOverlay() {
+        if (loadingOverlay) {
+            loadingOverlay.style.display = 'none';
         }
     }
 
@@ -85,60 +103,117 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
+    function updateStatsDisplay(totalImages = 0, filteredImages = 0) {
+        const statsInfo = document.getElementById('jet-stats-info');
+        const totalImagesCount = document.getElementById('total-images-count');
+        const filteredImagesCount = document.getElementById('filtered-images-count');
+        
+        if (totalImagesCount) totalImagesCount.textContent = totalImages;
+        if (filteredImagesCount) filteredImagesCount.textContent = filteredImages;
+        
+        if (statsInfo) {
+            statsInfo.style.display = totalImages > 0 ? 'flex' : 'none';
+        }
+    }
+
+    function hideWelcomeMessage() {
+        const welcomeMessage = document.getElementById('jet-welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.style.display = 'none';
+        }
+    }
+
+    function showWelcomeMessage() {
+        const welcomeMessage = document.getElementById('jet-welcome-message');
+        if (welcomeMessage) {
+            welcomeMessage.style.display = 'flex';
+        }
+    }
+
+    function showControls() {
+        const mainControls = document.getElementById('jet-main-controls');
+        
+        if (mainControls) {
+            mainControls.style.display = 'block';
+            console.log('[Jet Debug] Main controls shown');
+        }
+        
+        console.log('[Jet Debug] Controls shown');
+    }
+
+    function hideControls() {
+        const mainControls = document.getElementById('jet-main-controls');
+        
+        if (mainControls) {
+            mainControls.style.display = 'none';
+            console.log('[Jet Debug] Main controls hidden');
+        }
+        
+        console.log('[Jet Debug] Controls hidden');
+    }
+
     function initializeAppLayout() {
         if (!appContainer) return;
 
-        appContainer.innerHTML = `
-            <div id="jet-header-area">
-                <div id="jet-breadcrumb"></div>
-                <div id="jet-controls">
-                    <div id="jet-filter-controls" style="display: none;">
-                        <div class="filter-group-main">
-                            <button class="jet-filter-button active" id="filter-all">Tất cả</button>
-                            <button class="jet-filter-button" id="filter-picked-any">Đã chọn (Bất kỳ)</button>
-                            <button class="jet-filter-button" id="filter-not-picked">Chưa chọn</button>
-                        </div>
-                        <div class="filter-group-colors">
-                            <button class="jet-filter-button color-filter" data-color="red" aria-label="Lọc màu đỏ"></button>
-                            <button class="jet-filter-button color-filter" data-color="green" aria-label="Lọc màu xanh lá"></button>
-                            <button class="jet-filter-button color-filter" data-color="blue" aria-label="Lọc màu xanh dương"></button>
-                            <button class="jet-filter-button color-filter" data-color="grey" aria-label="Lọc màu xám"></button>
-                        </div>
-                        <div class="filter-group-actions" style="display: none;">
-                            <button class="jet-zip-button" id="zip-filtered-images" title="Tải ZIP những ảnh đã lọc">
-                                📦 Tải ZIP (<span id="zip-count">0</span>)
-                            </button>
-                        </div>
-                    </div>
-                    <div id="jet-sort-controls" style="display: none;">
-                        <label for="sort-order">Sắp xếp theo:</label>
-                        <select id="sort-order" class="jet-sort-select">
-                            <option value="default">Mặc định (Tên A-Z)</option>
-                            <option value="name-asc">Tên A-Z</option>
-                            <option value="name-desc">Tên Z-A</option>
-                            <option value="date-desc">Ngày mới nhất</option>
-                            <option value="date-asc">Ngày cũ nhất</option>
-                        </select>
-                    </div>
-                </div>
-            </div>
-            <div id="jet-item-list-container">
-                <!-- Content will be loaded here -->
-            </div>
-            <div id="jet-preview-area">
-                <!-- Preview will be loaded here if using a dedicated area -->
-            </div>
-        `;
+        // Initialize back button
+        initializeBackButton();
+        
         renderBreadcrumb(); // Initial breadcrumb for top level
         fetchAndRenderTopLevelFolders(); // Load initial view
         addFilterButtonListeners(); // Add listeners for filter buttons
         addSortControlListener(); // Add listener for sort dropdown
+        
+        // Initialize ZIP manager AFTER other DOM elements are ready
+        setTimeout(() => {
+            initializeZipManager();
+            startPanelPolling();
+        }, 100);
+        
+        // Fetch user info
+        fetchUserInfo();
+    }
+
+    function initializeBackButton() {
+        const backButton = document.getElementById('jet-back-button');
+        if (backButton) {
+            backButton.addEventListener('click', () => {
+                if (currentRawSourceKey && currentRelativePath) {
+                    // Go back to parent directory or root
+                    const pathParts = currentRelativePath.split('/').filter(part => part);
+                    if (pathParts.length > 1) {
+                        pathParts.pop();
+                        const newPath = pathParts.join('/');
+                        fetchAndRenderImages(currentRawSourceKey, newPath);
+                    } else {
+                        // Go back to top level
+                        currentRawSourceKey = null;
+                        currentRelativePath = '';
+                        fetchAndRenderTopLevelFolders();
+                    }
+                } else {
+                    // Already at top level, maybe hide the button
+                    backButton.style.display = 'none';
+                }
+            });
+        }
+    }
+
+    function updateBackButton() {
+        const backButton = document.getElementById('jet-back-button');
+        if (backButton) {
+            const shouldShow = currentRawSourceKey || currentRelativePath;
+            backButton.style.display = shouldShow ? 'inline-flex' : 'none';
+        }
     }
 
     // NEW: Function to add event listeners to filter buttons
     function addFilterButtonListeners() {
-        const filterControls = document.getElementById('jet-filter-controls');
-        if (!filterControls) return;
+        // Look for filter controls in both old and new layout
+        const filterControls = document.getElementById('jet-main-controls') || document.getElementById('jet-filter-controls');
+        if (!filterControls) {
+            console.warn('[Jet] Filter controls container not found');
+            return;
+        }
 
         filterControls.addEventListener('click', (event) => {
             const target = event.target;
@@ -161,14 +236,18 @@ document.addEventListener('DOMContentLoaded', () => {
                     currentFilter = target.dataset.color; // e.g., 'red', 'green'
                 }
                 
+                console.log('[Jet Debug] Filter changed to:', currentFilter);
                 applySortAndFilterAndRender();
             }
         });
 
-        // Add event listener for ZIP button
+        // Add event listener for ZIP button - check both locations
         const zipButton = document.getElementById('zip-filtered-images');
         if (zipButton) {
             zipButton.addEventListener('click', handleZipFilteredImages);
+            console.log('[Jet Debug] ZIP button listener added');
+        } else {
+            console.warn('[Jet Debug] ZIP button not found');
         }
     }
 
@@ -235,6 +314,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 }
                 break;
         }
+        
         renderImageGrid(filteredImages);
         
         // Store filtered images for ZIP functionality
@@ -245,46 +325,99 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     async function fetchAndRenderTopLevelFolders() {
-        showLoading('Đang tải danh sách thư mục RAW gốc...');
+        showLoading('Đang tải danh sách thư mục RAW...');
         currentRawSourceKey = null; // Reset context
         currentRelativePath = '';
+        
+        // Reset state
+        currentGridImages = [];
+        currentFilteredImages = [];
         
         // Stop realtime polling when leaving image view
         stopRealtimePolling();
         
+        // Update UI elements
+        showWelcomeMessage();
+        hideControls();
+        updateStatsDisplay(0, 0);
+        updateBackButton();
+        
         const itemListContainer = document.getElementById('jet-item-list-container');
-        if(itemListContainer) itemListContainer.innerHTML = ''; // Clear previous items
+        if(itemListContainer) {
+            itemListContainer.innerHTML = ''; // Clear previous items
+        }
         renderBreadcrumb(); // Render breadcrumb for the top level
 
-        // Hide filter and sort controls when showing top-level folders
-        const filterControls = document.getElementById('jet-filter-controls');
-        if (filterControls) filterControls.style.display = 'none';
-        const sortControls = document.getElementById('jet-sort-controls');
-        if (sortControls) sortControls.style.display = 'none';
-
         try {
+            console.log('[Jet Debug] Fetching raw sources...');
             const response = await fetch('api.php?action=jet_list_raw_sources', { credentials: 'include' }); 
+            console.log('[Jet Debug] Response status:', response.status);
+            console.log('[Jet Debug] Response ok:', response.ok);
+            
             hideLoading();
-            if (!response.ok) throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}`);
-            const data = await response.json();
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Jet Debug] HTTP Error response:', errorText);
+                throw new Error(`Lỗi HTTP! Trạng thái: ${response.status}. Chi tiết: ${errorText}`);
+            }
+            
+            const responseText = await response.text();
+            console.log('[Jet Debug] Raw response text:', responseText);
+            
+            let data;
+            try {
+                data = JSON.parse(responseText);
+                console.log('[Jet Debug] Parsed JSON data:', data);
+            } catch (parseError) {
+                console.error('[Jet Debug] JSON parse error:', parseError);
+                throw new Error(`Lỗi phân tích JSON: ${parseError.message}. Response: ${responseText.substring(0, 200)}`);
+            }
 
             if (data.folders && Array.isArray(data.folders)) {
+                console.log('[Jet Debug] Found', data.folders.length, 'folders');
                 if (data.folders.length === 0) {
                     showFeedback('Không tìm thấy thư mục RAW nào trong các nguồn đã cấu hình.', 'warning');
-                    if(itemListContainer) itemListContainer.innerHTML = '<p>Không có thư mục RAW nào được tìm thấy.</p>';
+                    if(itemListContainer) {
+                        itemListContainer.innerHTML = `
+                            <div class="jet-welcome-message">
+                                <div class="welcome-content">
+                                    <i class="fas fa-exclamation-triangle"></i>
+                                    <h2>Không tìm thấy thư mục RAW</h2>
+                                    <p>Không có thư mục RAW nào được tìm thấy trong hệ thống.</p>
+                                    <p><strong>Debug Info:</strong> API trả về danh sách trống.</p>
+                                </div>
+                            </div>
+                        `;
+                    }
                 } else {
+                    console.log('[Jet Debug] Rendering folder list...');
+                    hideWelcomeMessage();
                     renderItemList(data.folders, true); // true indicates these are top-level folders
                 }
             } else if (data.error) {
-                 showFeedback(`Lỗi tải thư mục RAW gốc: ${data.error}${data.details ? ' (' + data.details + ')' : ''}`, 'error');
+                console.error('[Jet Debug] API returned error:', data.error);
+                showFeedback(`Lỗi tải thư mục RAW: ${data.error}${data.details ? ' (' + data.details + ')' : ''}`, 'error');
             } else {
-                throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải thư mục RAW gốc.');
+                console.error('[Jet Debug] Invalid response format:', data);
+                throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải thư mục RAW.');
             }
         } catch (error) {
             hideLoading();
-            console.error('[Jet] Failed to fetch top-level RAW folders:', error);
-            showFeedback(`Không thể kết nối để tải thư mục RAW gốc: ${error.message}`, 'error');
-            if(itemListContainer) itemListContainer.innerHTML = `<p>Lỗi khi tải thư mục. ${error.message}</p>`;
+            console.error('[Jet Debug] Full error object:', error);
+            console.error('[Jet Debug] Error stack:', error.stack);
+            showFeedback(`Không thể kết nối để tải thư mục RAW: ${error.message}`, 'error');
+            if(itemListContainer) {
+                itemListContainer.innerHTML = `
+                    <div class="jet-welcome-message">
+                        <div class="welcome-content">
+                            <i class="fas fa-exclamation-circle"></i>
+                            <h2>Lỗi kết nối</h2>
+                            <p>Không thể tải danh sách thư mục RAW: ${error.message}</p>
+                            <p><strong>Debug:</strong> Xem Console (F12) để biết chi tiết.</p>
+                        </div>
+                    </div>
+                `;
+            }
         }
     }
 
@@ -348,12 +481,12 @@ document.addEventListener('DOMContentLoaded', () => {
         currentGridSelection.source_key = sourceKey; // Keep selection context updated
         renderBreadcrumb(); // Update breadcrumb
 
-        // Show filter and sort controls when showing images
-        const filterControls = document.getElementById('jet-filter-controls');
-        if (filterControls) filterControls.style.display = 'flex'; 
-        const sortControls = document.getElementById('jet-sort-controls');
-        if (sortControls) sortControls.style.display = 'flex'; 
-        if (sortControls) sortControls.style.alignItems = 'center'; // Vertically align label and select
+        // Hide welcome message since we're viewing images
+        hideWelcomeMessage();
+        
+        // Show controls when viewing images
+        showControls();
+        updateBackButton();
 
         const itemListContainer = document.getElementById('jet-item-list-container');
         if (!itemListContainer) return;
@@ -387,6 +520,7 @@ document.addEventListener('DOMContentLoaded', () => {
             itemListContainer.innerHTML = '<p class="empty-message">Không có hình ảnh nào khớp với bộ lọc hiện tại.</p>'; // Updated message
             // Clear selection if filter results in no images
             currentGridSelection = { source_key: currentRawSourceKey, image_path: null, element: null, index: -1, imageObject: null }; 
+            updateStatsDisplay(currentGridImages.length, 0);
             return;
         }
 
@@ -417,14 +551,24 @@ document.addEventListener('DOMContentLoaded', () => {
             
             // Handle loading errors for individual images (optional, but good UX)
             imgElement.onerror = () => {
-                imgElement.alt = `Preview not available for ${image.name}`;
-                // You could replace the img with a placeholder or error message in the container
+                console.warn(`[Jet] Failed to load image preview: ${image.path}`);
+                
+                // Create error placeholder
+                const errorPlaceholder = document.createElement('div');
+                errorPlaceholder.classList.add('preview-error-placeholder');
+                
+                const errorIcon = document.createElement('i');
+                errorIcon.classList.add('fas', 'fa-exclamation-triangle');
+                
+                const errorText = document.createElement('span');
+                errorText.textContent = 'Preview không khả dụng';
+                
+                errorPlaceholder.appendChild(errorIcon);
+                errorPlaceholder.appendChild(errorText);
+                
+                // Replace image with error placeholder
+                imageItemContainer.replaceChild(errorPlaceholder, imgElement);
                 imageItemContainer.classList.add('preview-error');
-                const errorSpan = document.createElement('span');
-                errorSpan.textContent = `!`; // Simple error indicator
-                errorSpan.title = `Preview not available for ${image.name}`;
-                imgElement.parentNode.insertBefore(errorSpan, imgElement.nextSibling);
-                imgElement.style.display = 'none'; // Hide broken image icon
             };
 
             const imageNameElement = document.createElement('span');
@@ -509,13 +653,33 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         // Automatically select the first image if available after rendering
-        // if (images.length > 0) { // OLD Condition
+        // Only auto-select if we don't currently have a valid selection
         if (imagesToRender.length > 0 && firstMatchingElement && firstMatchingImageObject && firstMatchingIndex !== -1) {
-            // const firstImageElement = itemListContainer.querySelector('.jet-image-item-container'); // This would get the first in DOM
-            // if (firstImageElement) {
-            //     selectImageInGrid(imagesToRender[0], firstImageElement, 0); // Index 0 of filtered array might not be correct for global state
-            // }
-            selectImageInGrid(firstMatchingImageObject, firstMatchingElement, firstMatchingIndex);
+            // Check if current selection is still valid
+            const hasValidSelection = (
+                currentGridSelection.imageObject && 
+                currentGridSelection.element && 
+                currentGridSelection.index >= 0 &&
+                imagesToRender.some(img => img.path === currentGridSelection.imageObject.path && img.source_key === currentGridSelection.imageObject.source_key)
+            );
+            
+            if (!hasValidSelection) {
+                selectImageInGrid(firstMatchingImageObject, firstMatchingElement, firstMatchingIndex);
+                console.log('[Jet] Auto-selected first image:', firstMatchingImageObject.name);
+            } else {
+                // Re-select the current selection to maintain it across filters
+                const currentImageInFiltered = imagesToRender.find(img => 
+                    img.path === currentGridSelection.imageObject.path && 
+                    img.source_key === currentGridSelection.imageObject.source_key
+                );
+                if (currentImageInFiltered) {
+                    const currentElementInFiltered = itemListContainer.querySelector(`[data-image-path="${currentGridSelection.imageObject.path}"][data-source-key="${currentGridSelection.imageObject.source_key}"]`);
+                    if (currentElementInFiltered) {
+                        selectImageInGrid(currentGridSelection.imageObject, currentElementInFiltered, currentGridSelection.index);
+                        console.log('[Jet] Maintained current selection:', currentGridSelection.imageObject.name);
+                    }
+                }
+            }
         } else if (imagesToRender.length === 0) {
              // If filter results in no images, explicitly clear currentGridSelection's details beyond source_key
             currentGridSelection.image_path = null;
@@ -523,6 +687,9 @@ document.addEventListener('DOMContentLoaded', () => {
             currentGridSelection.index = -1;
             currentGridSelection.imageObject = null;
         }
+        
+        // Update stats display
+        updateStatsDisplay(currentGridImages.length, imagesToRender.length);
     }
 
     // NEW: Function to handle selecting an image in the grid
@@ -612,67 +779,106 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function renderItemList(items, isTopLevel) {
-        const itemListContainer = document.getElementById('jet-item-list-container');
-        if (!itemListContainer) return;
-        itemListContainer.innerHTML = ''; 
+        console.log('[Jet Debug] renderItemList called with:', items, 'isTopLevel:', isTopLevel);
 
         if (!items || items.length === 0) {
-            const message = isTopLevel ? 'Không có thư mục RAW nào trong các nguồn đã cấu hình.' : 'Thư mục này trống.';
-            itemListContainer.innerHTML = `<p>${message}</p>`;
+            console.log('[Jet Debug] No items to render');
+            const itemListContainer = document.getElementById('jet-item-list-container');
+            if (itemListContainer) {
+                itemListContainer.innerHTML = `
+                    <div class="jet-welcome-message">
+                        <div class="welcome-content">
+                            <i class="fas fa-folder-open"></i>
+                            <h2>Thư mục trống</h2>
+                            <p>Không có thư mục con nào trong thư mục này.</p>
+                        </div>
+                    </div>
+                `;
+            }
             return;
         }
 
-        const ul = document.createElement('ul');
-        ul.className = 'jet-item-list jet-folder-list'; 
+        console.log('[Jet Debug] Rendering', items.length, 'items');
+        
+        const itemListContainer = document.getElementById('jet-item-list-container');
+        if (!itemListContainer) {
+            console.error('[Jet Debug] itemListContainer not found');
+            return;
+        }
 
-        items.forEach(item => {
-            if (item.type === 'folder') {
-                const li = document.createElement('li');
-                const button = document.createElement('button');
-                button.textContent = `📁 ${item.name}`;
-                // item.path from jet_list_raw_sources is already source_key/folder_name
-                // item.path from jet_list_folders_in_raw_source is relative_path/folder_name
-                button.dataset.folderPath = item.path; 
-                button.dataset.sourceKey = item.source_key; // Essential for top-level, useful for consistency
-                
-                button.addEventListener('click', () => {
-                    const clickedSourceKey = item.source_key;
-                    let clickedRelativePath;
+        // Create folder grid using gallery app structure
+        const foldersHTML = `
+            <div class="directory-list-styling">
+                <ul>
+                    ${items.map((item, index) => {
+                        console.log(`[Jet Debug] Item ${index}:`, item);
+                        return `
+                        <li>
+                            <a href="#" data-source-key="${isTopLevel ? item.source_key : currentRawSourceKey}" 
+                               data-folder-path="${isTopLevel ? item.name : (currentRelativePath ? currentRelativePath + '/' + item.name : item.name)}"
+                               data-item-name="${item.name}"
+                               data-is-top-level="${isTopLevel}">
+                                <div class="folder-thumbnail">
+                                    <i class="fas fa-folder"></i>
+                                </div>
+                                <span>
+                                    ${item.display_name || item.name}
+                                    ${item.image_count ? `<small>${item.image_count} ảnh</small>` : ''}
+                                </span>
+                            </a>
+                        </li>
+                    `;
+                    }).join('')}
+                </ul>
+            </div>
+        `;
 
-                    if (isTopLevel) {
-                        // item.path is 'source_key/folder_name', extract 'folder_name'
-                        clickedRelativePath = item.path.substring(item.source_key.length + 1);
-                    } else {
-                        // This case ('else') might not be hit with the current top-level folder display logic,
-                        // as 'jet_list_raw_sources' provides the initial set of "subfolders" directly.
-                        // If we re-introduce deeper folder navigation that calls renderItemList with isTopLevel=false,
-                        // this path logic would need to be robust for 'parentPath/currentFolder'.
-                        // For now, assuming 'item.path' is the full relative path from the source root for any folder item.
-                        // Example: if currentRelativePath = 'FolderA', and item.name = 'SubFolderB',
-                        // then item.path (from a hypothetical future API for sub-folders) might be 'FolderA/SubFolderB'.
-                        clickedRelativePath = item.path; // Assuming item.path is the full relative path from source root.
-                                                        // This needs to align with what the API (e.g. jet_list_folders_in_raw_source) returns for 'path'.
-                                                        // The old `loadItemsForCurrentPath` built this progressively.
-                                                        // The `jet_list_raw_sources` returns 'source_key/folder_name' as path for top level.
-                                                        // We need just the folder_name for the `path` param to `jet_list_images`.
-                         const sourcePrefix = item.source_key + '/';
-                         if (item.path.startsWith(sourcePrefix)) {
-                            clickedRelativePath = item.path.substring(sourcePrefix.length);
-                         } else {
-                            // Fallback or error if path format is unexpected
-                            console.warn("[Jet] Unexpected item path format for non-top-level folder:", item);
-                            clickedRelativePath = item.path; 
-                         }
-                    }
-                    // currentRawSourceKey = clickedSourceKey; // Set by fetchAndRenderImages
-                    // currentRelativePath = clickedRelativePath; // Set by fetchAndRenderImages
-                    fetchAndRenderImages(clickedSourceKey, clickedRelativePath);
+        itemListContainer.innerHTML = foldersHTML;
+        console.log('[Jet Debug] HTML rendered, adding event listeners...');
+
+        // Add event listeners for folder navigation
+        const folderLinks = itemListContainer.querySelectorAll('a[data-source-key]');
+        console.log('[Jet Debug] Found', folderLinks.length, 'folder links');
+        
+        folderLinks.forEach((link, index) => {
+            link.addEventListener('click', (event) => {
+                event.preventDefault();
+                const sourceKey = link.dataset.sourceKey;
+                const folderPath = link.dataset.folderPath;
+                const itemName = link.dataset.itemName;
+                const isTopLevelClick = link.dataset.isTopLevel === 'true';
+
+                console.log('[Jet Debug] Folder clicked:', {
+                    sourceKey,
+                    folderPath,
+                    itemName,
+                    isTopLevelClick,
+                    currentRawSourceKey,
+                    currentRelativePath
                 });
-                li.appendChild(button);
-                ul.appendChild(li);
-            }
+
+                if (isTopLevelClick) {
+                    // Navigate to the images in this top-level folder
+                    console.log('[Jet Debug] Navigating to top-level folder images');
+                    fetchAndRenderImages(sourceKey, itemName);
+                    } else {
+                    // Navigate to subfolder
+                    console.log('[Jet Debug] Navigating to subfolder');
+                    fetchAndRenderImages(sourceKey, folderPath);
+                }
+            });
+
+            // Add hover effects
+            link.addEventListener('mouseenter', () => {
+                link.style.transform = 'translateY(-2px)';
+            });
+
+            link.addEventListener('mouseleave', () => {
+                link.style.transform = 'translateY(0)';
+            });
         });
-        itemListContainer.appendChild(ul);
+        
+        console.log('[Jet Debug] Event listeners added successfully');
     }
 
     function renderBreadcrumb() {
@@ -943,12 +1149,6 @@ document.addEventListener('DOMContentLoaded', () => {
         currentPreviewImageObject = imageObject; // Store the full object
         currentPreviewIndex = imageIndexInGrid;  // Store its original index from currentGridImages
         isPreviewOpen = true;
-
-        const previewArea = document.getElementById('jet-preview-area');
-        if (!previewArea) {
-            console.error('Preview area element not found!');
-            return;
-        }
 
         // Create the initial overlay structure if it doesn't exist
         if (!document.getElementById('jet-image-preview-overlay')) {
@@ -1366,26 +1566,55 @@ document.addEventListener('DOMContentLoaded', () => {
     // This will handle grid navigation and color picking when preview is NOT open.
     // Preview mode has its own handler (handlePreviewKeyPress)
     function handleGlobalJetKeyPress(event) {
-        // console.log('[Jet Global KeyPress]', event.key, event.code, 'Target:', event.target);
+        console.log('[Jet Global KeyPress]', event.key, event.code, 'Target:', event.target.tagName, 'isPreviewOpen:', isPreviewOpen);
 
         // Prevent actions if typing in an input, textarea, etc.
         if (event.target.matches('input, textarea, select, [contenteditable="true"]')) {
+            console.log('[Jet Global KeyPress] Ignoring key - typing in input field');
             return;
         }
 
+        // Handle Space key to open preview - MOVED TO TOP for priority
+        if (event.code === 'Space' && !isPreviewOpen) {
+            console.log('[Jet Global KeyPress] Space key detected, checking selection...');
+            // Check if we have a valid selection
+            if (currentGridSelection.imageObject && currentGridSelection.index >= 0) {
+                console.log('[Jet Global KeyPress] Opening preview with Space key for:', currentGridSelection.imageObject.name);
+                openImagePreview(currentGridSelection.imageObject, currentGridSelection.index);
+                event.preventDefault();
+                return;
+            } else {
+                // If no selection but we have images, try to select the first one
+                if (currentGridImages.length > 0) {
+                    const firstImageElement = document.querySelector('#jet-item-list-container .jet-image-item-container');
+                    if (firstImageElement) {
+                        console.log('[Jet Global KeyPress] Auto-selecting first image and opening preview');
+                        selectImageInGrid(currentGridImages[0], firstImageElement, 0);
+                        openImagePreview(currentGridImages[0], 0);
+                        event.preventDefault();
+                        return;
+                    }
+                } else {
+                    console.log('[Jet Global KeyPress] Space key pressed but no images available');
+                }
+            }
+        }
+
         if (isPreviewOpen) {
+            console.log('[Jet Global KeyPress] Preview is open, handling preview keys');
             if (event.key === 'Escape') {
                 closeImagePreview();
-                event.preventDefault(); // RESTORED
+                event.preventDefault();
             } else if (event.code === 'Space') { 
                 closeImagePreview();
-                event.preventDefault(); // RESTORED
+                event.preventDefault();
             }
             return; 
         }
 
         // Grid Navigation & Interaction (Preview is NOT open)
-        if (currentGridSelection.element) {
+        if (currentGridSelection.element && currentGridImages.length > 0) {
+            console.log('[Jet Global KeyPress] Grid selection exists, handling grid keys for:', event.key);
             let newIndex = currentGridSelection.index;
             let handled = false;
 
@@ -1481,21 +1710,18 @@ document.addEventListener('DOMContentLoaded', () => {
             }
 
             if (handled) {
-                event.preventDefault(); // RESTORED
-                const allRenderedItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-                if (newIndex !== currentGridSelection.index && allRenderedItems[newIndex]) {
-                    selectImageInGrid(currentGridImages[newIndex], allRenderedItems[newIndex], newIndex);
-                    allRenderedItems[newIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                event.preventDefault();
+                if (newIndex !== currentGridSelection.index) {
+                    const allRenderedItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
+                    if (allRenderedItems[newIndex]) {
+                        selectImageInGrid(currentGridImages[newIndex], allRenderedItems[newIndex], newIndex);
+                        allRenderedItems[newIndex].scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                    }
                 }
             }
         }
-        
-        if (event.code === 'Space' && !isPreviewOpen && currentGridSelection.imageObject) {
-            openImagePreview(currentGridSelection.imageObject, currentGridSelection.index);
-            event.preventDefault(); // RESTORED
-        }
     }
-    
+
     // NEW: API call specifically for grid item color setting
     async function setGridItemPickColorAPI(imageObject, targetColor, itemContainerElement) {
         if (!imageObject) {
@@ -1685,6 +1911,15 @@ document.addEventListener('DOMContentLoaded', () => {
     // Initialize app
     initializeAppLayout();
     fetchUserInfo();
+    
+    // Initialize navigation highlighting
+    const navLinks = document.querySelectorAll('.nav-link');
+    navLinks.forEach(link => link.classList.remove('active'));
+    
+    const jetNav = document.getElementById('nav-jet');
+    if (jetNav) {
+        jetNav.classList.add('active');
+    }
 
     // Function to fetch user info
     async function fetchUserInfo() {
@@ -1765,10 +2000,6 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    // Initialize the app
-    initializeApp();
-    fetchAndRenderTopLevelFolders();
-    
     // Initialize ZIP Manager for Jet app
     initializeZipManager();
 
@@ -1779,34 +2010,66 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        // Create list of image paths for ZIP - img.path already includes the relative path from source root
-        const imagePaths = currentFilteredImages.map(img => `${img.source_key}/${img.path}`);
+        // Create list of image paths for ZIP
+        // For RAW images, the path format should be: source_key/relative_path
+        const imagePaths = currentFilteredImages.map(img => {
+            // img.path already contains the relative path from the source root
+            // We need to format it as source_key/relative_path for the API
+            return `${img.source_key}/${img.path}`;
+        });
         
         // Create filter name for ZIP filename
         const filterName = getFilterDisplayName();
-        const zipFilenameHint = `jet_filtered_${filterName}_${imagePaths.length}_images.zip`;
+        const timestamp = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+        const zipFilenameHint = `jet_${filterName}_${timestamp}_${imagePaths.length}images.zip`;
         
-        // Use the multi-file ZIP functionality from gallery app API
-        const formData = new FormData();
-        imagePaths.forEach(path => {
-            formData.append('file_paths[]', path);
+        console.log('[Jet ZIP] Creating ZIP request:', {
+            imageCount: imagePaths.length,
+            filterName: filterName,
+            zipFilenameHint: zipFilenameHint,
+            firstFewPaths: imagePaths.slice(0, 3)
         });
-        formData.append('zip_filename_hint', zipFilenameHint);
-        formData.append('source_path', '_multiple_selected_');
 
         try {
-            const result = await fetchDataApi('request_zip', {}, {
+            showLoading('Đang tạo yêu cầu ZIP...');
+            
+            // Use the multi-file ZIP functionality from gallery app API
+            const formData = new FormData();
+            imagePaths.forEach(path => {
+                formData.append('file_paths[]', path);
+            });
+            formData.append('zip_filename_hint', zipFilenameHint);
+            formData.append('source_path', '_multiple_selected_');
+
+            const response = await fetch('api.php?action=request_zip', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                credentials: 'include'
             });
 
-            if (result.status === 'success' && result.data && result.data.job_token) {
-                const initialJobData = result.data;
-                const jobToken = initialJobData.job_token;
-                if (!initialJobData.status) initialJobData.status = 'pending';
+            hideLoading();
 
-                addOrUpdateZipJob(jobToken, { 
-                    jobData: initialJobData, 
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error('[Jet ZIP] HTTP Error:', response.status, errorText);
+                showFeedback(`Lỗi HTTP khi tạo ZIP: ${response.status}`, 'error');
+                return;
+            }
+
+            const result = await response.json();
+            console.log('[Jet ZIP] API Response:', result);
+
+            if (result.job_token) {
+                // Successfully created ZIP job
+                const jobData = {
+                    job_token: result.job_token,
+                    status: result.status || 'pending',
+                    file_count: result.file_count || imagePaths.length,
+                    source_path: result.source_path || '_multiple_selected_'
+                };
+
+                addOrUpdateZipJob(result.job_token, { 
+                    jobData: jobData, 
                     folderDisplayName: `Jet: ${filterName} (${imagePaths.length} ảnh)`, 
                     lastUpdated: Date.now() 
                 });
@@ -1815,11 +2078,12 @@ document.addEventListener('DOMContentLoaded', () => {
                 showFeedback('Yêu cầu tạo ZIP đã được gửi. Kiểm tra bảng tiến trình bên dưới.', 'success');
                 
             } else {
-                const errorMessage = result.message || result.data?.error || 'Không thể yêu cầu tạo ZIP cho các ảnh đã lọc.';
+                const errorMessage = result.error || result.message || 'Không thể yêu cầu tạo ZIP cho các ảnh đã lọc.';
                 showFeedback(`Lỗi khi tạo ZIP: ${errorMessage}`, 'error');
             }
         } catch (error) {
-            console.error('[Jet] Error in handleZipFilteredImages:', error);
+            hideLoading();
+            console.error('[Jet ZIP] Error in handleZipFilteredImages:', error);
             showFeedback(`Không thể tạo ZIP: ${error.message}`, 'error');
         }
     }
@@ -1828,19 +2092,40 @@ document.addEventListener('DOMContentLoaded', () => {
     function updateZipButtonState(filteredImages) {
         const zipButton = document.getElementById('zip-filtered-images');
         const zipCount = document.getElementById('zip-count');
-        const filterActions = document.querySelector('.filter-group-actions');
+        const downloadRow = document.querySelector('.download-row');
         
-        if (zipButton && zipCount && filterActions) {
+        console.log('[Jet Debug] updateZipButtonState called:', {
+            filteredImages: filteredImages ? filteredImages.length : 0,
+            zipButton: !!zipButton,
+            zipCount: !!zipCount,
+            downloadRow: !!downloadRow,
+            currentRawSourceKey,
+            currentRelativePath
+        });
+        
+        if (zipButton && zipCount && downloadRow) {
             const count = filteredImages ? filteredImages.length : 0;
             zipCount.textContent = count;
             
-            if (count > 0 && currentRawSourceKey) {
-                filterActions.style.display = 'block';
+            // Show ZIP button if we have images to ZIP
+            if (count > 0 && (currentRawSourceKey || currentGridImages.length > 0)) {
+                downloadRow.style.display = 'flex';
                 zipButton.disabled = false;
+                console.log('[Jet Debug] ZIP button enabled with', count, 'images');
             } else {
-                filterActions.style.display = 'none';
+                downloadRow.style.display = 'none';
                 zipButton.disabled = true;
+                console.log('[Jet Debug] ZIP button hidden - count:', count, 'sourceKey:', currentRawSourceKey);
             }
+            
+            // Also update stats display when updating ZIP button
+            updateStatsDisplay(currentGridImages.length, count);
+        } else {
+            console.log('[Jet Debug] ZIP button elements not found - button:', !!zipButton, 'count:', !!zipCount, 'downloadRow:', !!downloadRow);
+            
+            // Still update stats even if ZIP button not found
+            const count = filteredImages ? filteredImages.length : 0;
+            updateStatsDisplay(currentGridImages.length, count);
         }
     }
 
@@ -1864,4 +2149,166 @@ document.addEventListener('DOMContentLoaded', () => {
                 return 'loc_khac';
         }
     }
+
+    function createImageItemHTML(imageObj, index) {
+        const { name, preview_url, pick_color } = imageObj;
+        const isCurrentUser = currentUser === imageObj.picked_by_user;
+        const pickClass = pick_color ? `picked-${pick_color}` : '';
+        
+        // Create admin indicator if user is admin and showing other users' picks
+        let adminIndicatorHTML = '';
+        if (currentUser && imageObj.all_picks && Object.keys(imageObj.all_picks).length > 0) {
+            const picks = Object.entries(imageObj.all_picks);
+            adminIndicatorHTML = `
+                <div class="all-picks-indicator">
+                    ${picks.map(([user, color]) => `
+                        <div class="pick-row">
+                            <div class="pick-dot pick-dot-${color}"></div>
+                            <span class="pick-text">${user}</span>
+                        </div>
+                    `).join('')}
+                </div>
+            `;
+        }
+        
+        return `
+            <div class="jet-image-item-container ${pickClass}" 
+                 data-image-index="${index}" 
+                 data-image-path="${imageObj.path || imageObj.name}"
+                 data-source-key="${currentRawSourceKey}">
+                ${adminIndicatorHTML}
+                <img class="jet-preview-image" 
+                     src="${preview_url}" 
+                     alt="${name}"
+                     loading="lazy"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='block';">
+                <div class="preview-error-placeholder" style="display: none;">
+                    <i class="fas fa-exclamation-triangle"></i>
+                    <span>Preview không khả dụng</span>
+                </div>
+                <div class="image-item-name">${name}</div>
+            </div>
+        `;
+    }
+
+    function addImageItemEventListeners() {
+        const imageItems = document.querySelectorAll('.jet-image-item-container');
+        
+        imageItems.forEach((item, index) => {
+            // Click for selection and navigation
+            item.addEventListener('click', (event) => {
+                event.stopPropagation();
+                
+                const imageIndex = parseInt(item.dataset.imageIndex);
+                const imageObject = currentFilteredImages[imageIndex];
+                
+                if (imageObject) {
+                    // Check for double-click
+                    const currentTime = Date.now();
+                    const isDoubleClick = currentTime - lastClickTime < DOUBLE_CLICK_THRESHOLD && 
+                                         lastClickedItemPath === imageObject.path;
+                    
+                    if (isDoubleClick) {
+                        // Open preview on double-click
+                        openImagePreview(imageObject, imageIndex);
+                    } else {
+                        // Single click - select item
+                        selectImageInGrid(imageObject, item, imageIndex);
+                    }
+                    
+                    lastClickTime = currentTime;
+                    lastClickedItemPath = imageObject.path;
+                }
+            });
+
+            // Context menu for quick color picking
+            item.addEventListener('contextmenu', (event) => {
+                event.preventDefault();
+                const imageIndex = parseInt(item.dataset.imageIndex);
+                const imageObject = currentFilteredImages[imageIndex];
+                
+                if (imageObject) {
+                    showQuickPickMenu(event, imageObject, item);
+                }
+            });
+        });
+    }
+
+    function showQuickPickMenu(event, imageObject, itemElement) {
+        // Remove existing menu if any
+        const existingMenu = document.querySelector('.quick-pick-menu');
+        if (existingMenu) {
+            existingMenu.remove();
+        }
+
+        const menu = document.createElement('div');
+        menu.className = 'quick-pick-menu';
+        menu.style.position = 'fixed';
+        menu.style.left = event.clientX + 'px';
+        menu.style.top = event.clientY + 'px';
+        menu.style.zIndex = '10000';
+        menu.style.background = 'var(--jet-bg-tertiary)';
+        menu.style.border = '1px solid var(--jet-border-primary)';
+        menu.style.borderRadius = '6px';
+        menu.style.padding = '8px';
+        menu.style.boxShadow = 'var(--jet-box-shadow-heavy)';
+
+        const colors = [
+            { key: 'none', label: 'Bỏ chọn', icon: 'fas fa-times', color: '#666' },
+            { key: 'red', label: 'Đỏ', icon: 'fas fa-circle', color: 'var(--jet-color-picked-red)' },
+            { key: 'green', label: 'Xanh lá', icon: 'fas fa-circle', color: 'var(--jet-color-picked-green)' },
+            { key: 'blue', label: 'Xanh dương', icon: 'fas fa-circle', color: 'var(--jet-color-picked-blue)' },
+            { key: 'grey', label: 'Xám', icon: 'fas fa-circle', color: 'var(--jet-color-picked-grey-flag)' }
+        ];
+
+        colors.forEach(colorInfo => {
+            const button = document.createElement('button');
+            button.className = 'quick-pick-option';
+            button.style.display = 'flex';
+            button.style.alignItems = 'center';
+            button.style.gap = '8px';
+            button.style.width = '100%';
+            button.style.padding = '6px 12px';
+            button.style.border = 'none';
+            button.style.background = 'transparent';
+            button.style.color = 'var(--jet-text-primary)';
+            button.style.cursor = 'pointer';
+            button.style.borderRadius = '4px';
+
+            button.innerHTML = `
+                <i class="${colorInfo.icon}" style="color: ${colorInfo.color}"></i>
+                <span>${colorInfo.label}</span>
+            `;
+
+            button.addEventListener('mouseenter', () => {
+                button.style.background = 'var(--jet-bg-button-hover)';
+            });
+
+            button.addEventListener('mouseleave', () => {
+                button.style.background = 'transparent';
+            });
+
+            button.addEventListener('click', () => {
+                toggleImagePickAPI(imageObject, colorInfo.key, itemElement);
+                menu.remove();
+            });
+
+            menu.appendChild(button);
+        });
+
+        document.body.appendChild(menu);
+
+        // Remove menu when clicking elsewhere
+        const removeMenu = (e) => {
+            if (!menu.contains(e.target)) {
+                menu.remove();
+                document.removeEventListener('click', removeMenu);
+            }
+        };
+        setTimeout(() => document.addEventListener('click', removeMenu), 0);
+    }
+
+    console.log('Jet Culling App fully initialized.');
 });
+
+// Shared menu is now handled by shared-menu.js

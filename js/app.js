@@ -886,6 +886,24 @@ async function initializeApp() {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('[app.js] DOMContentLoaded event fired.');
     initializeApp();
+    // Check initialState and navigate accordingly
+    if (initialState.view === 'image' && initialState.folderPath) {
+        loadSubItems(initialState.folderPath);
+    } else {
+        initializeHomePage();
+    }
+    
+    // Initialize navigation highlighting
+    document.addEventListener('DOMContentLoaded', () => {
+        // Set active navigation based on current page
+        const navLinks = document.querySelectorAll('.nav-link');
+        navLinks.forEach(link => link.classList.remove('active'));
+        
+        const galleryNav = document.getElementById('nav-gallery');
+        if (galleryNav) {
+            galleryNav.classList.add('active');
+        }
+    });
 });
 
 // =======================================
@@ -1221,4 +1239,78 @@ export function triggerDirectDownload(url, filename) {
 export function getCurrentImageListData() {
     return currentImageList;
 }
+
+// Dropdown Menu Handler
+document.addEventListener('DOMContentLoaded', function() {
+    initializeDropdownMenus();
+});
+
+function initializeDropdownMenus() {
+    // Navigation dropdown
+    const navToggle = document.getElementById('nav-dropdown-toggle');
+    const navMenu = document.getElementById('nav-dropdown-menu');
+    
+    if (navToggle && navMenu) {
+        navToggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isOpen = navMenu.classList.contains('show');
+            closeAllDropdowns();
+            if (!isOpen) {
+                navMenu.classList.add('show');
+                navToggle.classList.add('active');
+            }
+        });
+    }
+    
+    // User menu dropdown
+    const userToggle = document.getElementById('user-menu-toggle');
+    const userMenu = document.getElementById('user-menu-dropdown-menu');
+    
+    if (userToggle && userMenu) {
+        userToggle.addEventListener('click', function(e) {
+            e.stopPropagation();
+            const isOpen = userMenu.classList.contains('show');
+            closeAllDropdowns();
+            if (!isOpen) {
+                userMenu.classList.add('show');
+            }
+        });
+    }
+    
+    // Close dropdowns when clicking outside
+    document.addEventListener('click', closeAllDropdowns);
+    
+    // Close dropdowns when pressing Escape
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeAllDropdowns();
+        }
+    });
+}
+
+function closeAllDropdowns() {
+    const navMenu = document.getElementById('nav-dropdown-menu');
+    const navToggle = document.getElementById('nav-dropdown-toggle');
+    const userMenu = document.getElementById('user-menu-dropdown-menu');
+    
+    if (navMenu) navMenu.classList.remove('show');
+    if (navToggle) navToggle.classList.remove('active');
+    if (userMenu) userMenu.classList.remove('show');
+}
+
+// Export for global access
+window.closeAllDropdowns = closeAllDropdowns;
+
+function closeAllMenus() {
+    closeAllDropdowns();
+}
+
+// Export switchToTab globally for admin panel menu access
+window.switchToTab = function(tabId) {
+    if (typeof switchToTab === 'function') {
+        switchToTab(tabId);
+    } else {
+        console.error('[App] switchToTab function not found');
+    }
+};
   

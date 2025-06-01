@@ -1,9 +1,10 @@
 <?php
 session_start(); // Luôn bắt đầu session
+require_once 'db_connect.php';
 
 // --- KIỂM TRA ĐĂNG NHẬP ---
 if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
-    header('Location: login.php'); // Chưa đăng nhập hoặc không phải admin, chuyển về trang login
+    header('Location: login.php?redirect=admin'); // Chỉ admin mới được truy cập
     exit;
 }
 
@@ -11,7 +12,7 @@ if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
 if (isset($_GET['action']) && $_GET['action'] === 'logout') {
     session_unset();   // Xóa tất cả biến session
     session_destroy(); // Hủy session hoàn toàn
-    header('Location: login.php'); // Chuyển về trang login
+    header('Location: login.php?redirect=admin'); // Chuyển về trang login
     exit;
 }
 
@@ -24,32 +25,125 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Admin - Trang Quản Trị</title>
+    <title>Admin Panel - Thư viện Ảnh</title>
     <link rel="icon" type="image/png" href="theme/favicon.png"> <!-- Favicon -->
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/admin_tabs.css">
     <link rel="stylesheet" href="css/admin_jet.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
-<body>
-    <div class="container admin-view">
-        <div class="header">
-            <h1>Trang Quản Trị</h1>
-            <a href="admin.php?action=logout" class="button logout-link">Đăng xuất (<?php echo $admin_username; ?>)</a>
+<body class="admin-panel-active">
+    <header class="app-header">
+        <div class="container header-container">
+            <a href="index.php" class="logo-link" aria-label="Quay về Thư viện chính">
+                <img src="theme/logo.png" alt="Guustudio Logo" id="site-logo"> 
+            </a>
+            
+            <!-- Unified Main Menu -->
+            <nav class="header-nav">
+                <div class="main-menu-toggle" id="main-menu-toggle">
+                    <i class="fas fa-bars"></i>
+                    <span class="menu-text">Menu</span>
+                    <i class="fas fa-chevron-down"></i>
+                </div>
+                <div class="main-menu-dropdown" id="main-menu-dropdown">
+                    <?php if (isset($_SESSION['user_role'])): ?>
+                    <!-- User Info Section -->
+                    <div class="menu-section">
+                        <div class="menu-user-info">
+                            <span class="menu-user-role-badge <?php echo htmlspecialchars($_SESSION['user_role']); ?>">
+                                <?php echo ucfirst(htmlspecialchars($_SESSION['user_role'])); ?>
+                            </span>
+                            <span class="menu-user-name"><?php echo htmlspecialchars($admin_username); ?></span>
+                        </div>
+                    </div>
+                    <?php endif; ?>
+
+                    <!-- Navigation Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Điều hướng</div>
+                        <a href="index.php" class="menu-item">
+                            <i class="fas fa-images"></i>
+                            Thư viện Ảnh
+                        </a>
+                        <?php if (isset($_SESSION['user_role']) && ($_SESSION['user_role'] === 'admin' || $_SESSION['user_role'] === 'designer')): ?>
+                        <a href="jet.php" class="menu-item">
+                            <i class="fas fa-filter"></i>
+                            Jet Culling
+                        </a>
+                        <?php endif; ?>
+                    </div>
+
+                    <?php if (isset($_SESSION['user_role']) && $_SESSION['user_role'] === 'admin'): ?>
+                    <!-- Admin Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Quản trị</div>
+                        <a href="admin.php" class="menu-item active">
+                            <i class="fas fa-cog"></i>
+                            Bảng điều khiển Admin
+                        </a>
+                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('jet-cache-tab')">
+                            <i class="fas fa-database"></i>
+                            Quản lý Cache RAW
+                        </a>
+                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('users-tab')">
+                            <i class="fas fa-users"></i>
+                            Quản lý Người dùng
+                        </a>
+                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('system-tab')">
+                            <i class="fas fa-server"></i>
+                            Thông tin Hệ thống
+                        </a>
+                    </div>
+                    <?php endif; ?>
+
+                    <?php if (isset($_SESSION['user_role'])): ?>
+                    <!-- User Section -->
+                    <div class="menu-section">
+                        <div class="menu-section-title">Tài khoản</div>
+                        <a href="admin.php?action=logout" class="menu-item danger">
+                            <i class="fas fa-sign-out-alt"></i>
+                            Đăng xuất
+                        </a>
+                    </div>
+                    <?php endif; ?>
+                </div>
+            </nav>
+            
+            <div class="header-actions">
+                <?php if (isset($_SESSION['user_role'])): ?>
+                <div class="user-info-display">
+                    <span class="user-role-badge <?php echo htmlspecialchars($_SESSION['user_role']); ?>">
+                        <?php echo ucfirst(htmlspecialchars($_SESSION['user_role'])); ?>
+                    </span>
+                    <span class="user-text"><?php echo htmlspecialchars($admin_username); ?></span>
+                </div>
+                <?php endif; ?>
+            </div>
+        </div>
+    </header>
+
+    <main class="container admin-view">
+        <div class="admin-header">
+            <h1><i class="fas fa-cog"></i> Bảng điều khiển Admin</h1>
+            <p>Quản lý hệ thống thư viện ảnh và Jet Culling Workspace</p>
         </div>
 
-        <!-- Admin Tabs -->
+        <!-- Tab Navigation -->
         <div class="admin-tabs">
-            <button class="admin-tab active" data-tab="gallery">Quản lý Gallery & Cache</button>
-            <button class="admin-tab" data-tab="jet-cache">Quản lý Cache RAW</button>
-            <button class="admin-tab" data-tab="jet-admin">Dashboard Jet Admin</button>
+            <button class="admin-tab-button active" data-tab="gallery-tab">
+                <i class="fas fa-images"></i> Gallery & Cache
+            </button>
+            <button class="admin-tab-button" data-tab="jet-cache-tab">
+                <i class="fas fa-database"></i> RAW Cache
+            </button>
+            <button class="admin-tab-button" data-tab="users-tab">
+                <i class="fas fa-users"></i> Người dùng
+            </button>
+            <button class="admin-tab-button" data-tab="system-tab">
+                <i class="fas fa-server"></i> Hệ thống
+            </button>
         </div>
-
-        <!-- Cache Count Display REMOVED -->
-        <!-- 
-        <div class="cache-stats-display">
-            Tổng số ảnh cache đã tạo: <strong id="total-cache-count">...</strong>
-        </div> 
-        -->
 
         <!-- Global Feedback -->
         <div id="admin-feedback" class="feedback-message" style="display: none;"></div>
@@ -162,65 +256,174 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
             <div id="raw-cache-loading" class="loading-indicator" style="display: none;">Đang tải...</div>
         </div>
 
-        <!-- Jet Admin Dashboard Tab -->
-        <div class="admin-tab-content" id="jet-admin-tab">
+        <!-- Users Management Tab -->
+        <div class="admin-tab-content" id="users-tab">
             <div class="tab-header">
-                <h2>Dashboard Jet Admin</h2>
-                <p>Quản lý tài khoản designer và giám sát hoạt động Jet Culling Workspace.</p>
+                <h2><i class="fas fa-users"></i> Quản lý Người dùng</h2>
+                <p>Quản lý tài khoản admin và designer trong hệ thống.</p>
             </div>
 
             <div class="admin-section">
-                <h3>Jet Culling Workspace</h3>
-                <p>Truy cập không gian làm việc để lọc và chọn ảnh RAW.</p>
-                <a href="jet.php" class="button" target="_blank">Mở Jet Workspace</a>
-            </div>
-
-            <div class="admin-section">
-                <h3>Tổng quan Jet Culling</h3>
-                <div id="jet-overview-container">
-                    <!-- Jet overview will be loaded here -->
-                </div>
-            </div>
-
-            <div class="admin-section">
-                <h3>Quản lý Designer</h3>
+                <h3><i class="fas fa-user-plus"></i> Tạo tài khoản mới</h3>
                 <div class="admin-actions">
-                    <button class="button" onclick="showCreateUserForm()">Tạo Designer mới</button>
+                    <button class="button primary" onclick="showCreateUserForm()">
+                        <i class="fas fa-palette"></i> Tạo Designer mới
+                    </button>
+                    <button class="button secondary" onclick="showCreateAdminForm()">
+                        <i class="fas fa-user-shield"></i> Tạo Admin mới
+                    </button>
                 </div>
                 
                 <div id="create-user-form-container" style="display: none;">
                     <form id="create-user-form" class="admin-form">
                         <div class="form-group">
-                            <label for="username">Tên đăng nhập:</label>
+                            <label for="username"><i class="fas fa-user"></i> Tên đăng nhập:</label>
                             <input type="text" id="username" name="username" required 
                                    pattern="[a-zA-Z0-9_]{3,20}" 
-                                   title="Tên đăng nhập từ 3-20 ký tự, chỉ bao gồm chữ cái, số và dấu gạch dưới">
+                                   title="Tên đăng nhập từ 3-20 ký tự, chỉ bao gồm chữ cái, số và dấu gạch dưới"
+                                   placeholder="Nhập tên đăng nhập...">
                         </div>
                         <div class="form-group">
-                            <label for="password">Mật khẩu:</label>
+                            <label for="password"><i class="fas fa-lock"></i> Mật khẩu:</label>
                             <input type="password" id="password" name="password" required 
                                    minlength="6" 
-                                   title="Mật khẩu tối thiểu 6 ký tự">
+                                   title="Mật khẩu tối thiểu 6 ký tự"
+                                   placeholder="Nhập mật khẩu...">
+                        </div>
+                        <div class="form-group">
+                            <label for="user-role-select"><i class="fas fa-shield-alt"></i> Vai trò:</label>
+                            <select id="user-role-select" name="role" required>
+                                <option value="designer">Designer</option>
+                                <option value="admin">Admin</option>
+                            </select>
                         </div>
                         <div class="form-actions">
-                            <button type="submit" class="button">Tạo tài khoản</button>
-                            <button type="button" class="button secondary" onclick="hideCreateUserForm()">Hủy</button>
+                            <button type="submit" class="button primary">
+                                <i class="fas fa-save"></i> Tạo tài khoản
+                            </button>
+                            <button type="button" class="button secondary" onclick="hideCreateUserForm()">
+                                <i class="fas fa-times"></i> Hủy
+                            </button>
                         </div>
                     </form>
                 </div>
+            </div>
 
-                <div id="designers-list" class="admin-table-container">
-                    <!-- Danh sách designer sẽ được load động -->
+            <div class="admin-section">
+                <h3><i class="fas fa-list"></i> Danh sách Người dùng</h3>
+                <div class="admin-actions">
+                    <button id="refresh-users-button" class="button secondary">
+                        <i class="fas fa-sync"></i> Làm mới danh sách
+                    </button>
+                </div>
+                
+                <div id="users-table-container">
+                    <div class="users-loading">
+                        <i class="fas fa-spinner"></i>
+                        <p>Đang tải danh sách người dùng...</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- User form modal placeholder -->
+            <div id="user-form-modal" class="modal" style="display: none;">
+                <div class="modal-content">
+                    <span class="close">&times;</span>
+                    <h3 id="user-form-title">Chỉnh sửa người dùng</h3>
+                    <form id="user-form">
+                        <div class="form-group">
+                            <label for="user-username">Tên đăng nhập:</label>
+                            <input type="text" id="user-username" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="user-password">Mật khẩu mới (để trống nếu không đổi):</label>
+                            <input type="password" id="user-password" name="password">
+                        </div>
+                        <div class="form-group">
+                            <label for="user-role">Vai trò:</label>
+                            <select id="user-role" name="role" required>
+                                <option value="designer">Designer</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+                        <div class="form-actions">
+                            <button type="submit" class="button">Lưu</button>
+                            <button type="button" class="button secondary" onclick="closeUserModal()">Hủy</button>
+                        </div>
+                    </form>
                 </div>
             </div>
         </div>
 
-    </div>
+        <!-- System Tab -->
+        <div class="admin-tab-content" id="system-tab">
+            <div class="tab-header">
+                <h2>Thông tin Hệ thống</h2>
+                <p>Thông tin về hệ thống và cấu hình server.</p>
+            </div>
 
-    <script type="module" src="js/admin.js"></script>
+            <div class="admin-section">
+                <h3>Thông tin PHP</h3>
+                <div class="system-info-grid">
+                    <div class="system-info-item">
+                        <span class="info-label">Phiên bản PHP:</span>
+                        <span class="info-value" id="php-version"><?php echo PHP_VERSION; ?></span>
+                    </div>
+                    <div class="system-info-item">
+                        <span class="info-label">Giới hạn bộ nhớ:</span>
+                        <span class="info-value" id="memory-limit"><?php echo ini_get('memory_limit'); ?></span>
+                    </div>
+                    <div class="system-info-item">
+                        <span class="info-label">Thời gian tối đa thực thi:</span>
+                        <span class="info-value" id="max-execution-time"><?php echo ini_get('max_execution_time'); ?>s</span>
+                    </div>
+                    <div class="system-info-item">
+                        <span class="info-label">Kích thước upload tối đa:</span>
+                        <span class="info-value" id="upload-max-filesize"><?php echo ini_get('upload_max_filesize'); ?></span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h3>Extensions PHP</h3>
+                <div class="extensions-grid">
+                    <?php
+                    $required_extensions = ['pdo_mysql', 'gd', 'zip', 'mbstring', 'fileinfo'];
+                    foreach ($required_extensions as $ext) {
+                        $loaded = extension_loaded($ext);
+                        echo "<div class='extension-item " . ($loaded ? 'loaded' : 'missing') . "'>";
+                        echo "<i class='fas fa-" . ($loaded ? 'check' : 'times') . "'></i>";
+                        echo "<span>{$ext}</span>";
+                        echo "</div>";
+                    }
+                    ?>
+                </div>
+            </div>
+
+            <div class="admin-section">
+                <h3>Dung lượng Thư mục</h3>
+                <div id="directory-sizes">
+                    <div class="size-item">
+                        <span class="size-label">Cache thumbnails:</span>
+                        <span class="size-value" id="cache-size">Đang tính...</span>
+                    </div>
+                    <div class="size-item">
+                        <span class="size-label">Logs:</span>
+                        <span class="size-value" id="logs-size">Đang tính...</span>
+                    </div>
+                    <button id="calculate-sizes" class="button">Tính toán lại</button>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- Shared Menu Component -->
+    <script src="js/shared-menu.js"></script>
+
+    <script src="js/admin.js"></script>
     <script src="js/admin_users.js"></script>
     <script src="js/admin_tabs.js"></script>
-    <script src="js/admin_jet_overview.js"></script>
     <script src="js/admin_jet_cache.js"></script>
 </body>
 </html>

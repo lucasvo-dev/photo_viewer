@@ -311,9 +311,9 @@ function validate_raw_source_and_file_path(?string $source_prefixed_path)
     }
 
     // 7. Additional check: Verify it's actually a RAW file by extension
-    if (defined('RAW_IMAGE_EXTENSIONS')) {
+    if (defined('RAW_FILE_EXTENSIONS')) {
         $file_extension = strtolower(pathinfo($real_target_path, PATHINFO_EXTENSION));
-        $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+        $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
         if (!in_array($file_extension, $raw_extensions)) {
             error_log("[validate_raw_source_and_file_path] File '{$source_prefixed_path}' is not a valid RAW file (extension: {$file_extension})");
             return null;

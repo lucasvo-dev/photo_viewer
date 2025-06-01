@@ -1,7 +1,7 @@
 <?php
 // API actions for the Jet Culling App
 
-// Constants like RAW_IMAGE_SOURCES, RAW_IMAGE_EXTENSIONS and functions like json_error()
+// Constants like RAW_IMAGE_SOURCES, RAW_FILE_EXTENSIONS and functions like json_error()
 // are expected to be available globally via api/init.php and api/helpers.php, loaded by the main api.php router.
 
 if (!defined('RAW_IMAGE_SOURCES')) {
@@ -173,12 +173,12 @@ switch ($jet_action) {
             json_error("Nguồn RAW không hợp lệ hoặc không được cung cấp.", 400);
             exit;
         }
-        if (!defined('RAW_IMAGE_EXTENSIONS')) {
-            error_log("[JET_LIST_IMAGES] Error: RAW_IMAGE_EXTENSIONS not defined.");
-            json_error("Lỗi cấu hình: RAW_IMAGE_EXTENSIONS không được xác định.", 500);
+        if (!defined('RAW_FILE_EXTENSIONS')) {
+            error_log("[JET_LIST_IMAGES] Error: RAW_FILE_EXTENSIONS not defined.");
+            json_error("Lỗi cấu hình: RAW_FILE_EXTENSIONS không được xác định.", 500);
             exit;
         }
-        error_log("[JET_LIST_IMAGES] Source key and RAW_IMAGE_EXTENSIONS validated.");
+        error_log("[JET_LIST_IMAGES] Source key and RAW_FILE_EXTENSIONS validated.");
 
         $source_config = RAW_IMAGE_SOURCES[$source_key];
         $base_path = rtrim($source_config['path'], '/\\'); 
@@ -227,7 +227,7 @@ switch ($jet_action) {
         error_log("[JET_LIST_IMAGES] Path security check passed.");
 
         $images = [];
-        $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+        $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
         error_log("[JET_LIST_IMAGES] About to iterate directory: {$full_scan_path_realpath}");
 
         // Get current user for checking pick status
@@ -404,7 +404,7 @@ switch ($jet_action) {
         }
 
         $raw_extension = strtolower(pathinfo($full_raw_file_path_realpath, PATHINFO_EXTENSION));
-        if (!in_array($raw_extension, RAW_IMAGE_EXTENSIONS)) {
+        if (!in_array($raw_extension, RAW_FILE_EXTENSIONS)) {
             error_log("[JET_GET_RAW_PREVIEW] Error: File extension '{$raw_extension}' is not an allowed RAW extension for '{$full_raw_file_path_realpath}'");
             http_response_code(400);
             echo "Invalid file type (not an allowed RAW extension).";
@@ -618,7 +618,7 @@ switch ($jet_action) {
     // Get designer stats (admin only)
     case 'jet_get_designer_stats':
         if ($_SESSION['user_role'] !== 'admin') {
-            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
             exit;
         }
 
@@ -880,7 +880,7 @@ switch ($jet_action) {
                 exit;
             }
 
-            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+            $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
             $queued_count = 0;
             $existing_count = 0;
 
@@ -1084,7 +1084,7 @@ switch ($jet_action) {
                         foreach ($iterator as $fileinfo) {
                             if ($fileinfo->isFile()) {
                                 $extension = strtolower($fileinfo->getExtension());
-                                if (in_array($extension, RAW_IMAGE_EXTENSIONS)) {
+                                if (in_array($extension, RAW_FILE_EXTENSIONS)) {
                                     $total_raw_files++;
                                 }
                             }
@@ -1157,7 +1157,7 @@ switch ($jet_action) {
             }
 
             $queued_count = 0;
-            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+            $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
 
             // Scan entire source for RAW files
             $iterator = new RecursiveIteratorIterator(
@@ -1205,7 +1205,7 @@ switch ($jet_action) {
 
         try {
             $folders_with_stats = [];
-            $raw_extensions = array_map('strtolower', RAW_IMAGE_EXTENSIONS);
+            $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
             $auto_cleaned_count = 0; // Track auto-cleanup
 
             foreach (RAW_IMAGE_SOURCES as $source_key => $source_config) {
@@ -1372,6 +1372,66 @@ switch ($jet_action) {
         } catch (Exception $e) {
             error_log("[jet_list_raw_folders_with_cache_stats] Error: " . $e->getMessage());
             json_error("Lỗi khi lấy danh sách thư mục RAW: " . $e->getMessage(), 500);
+        }
+        exit;
+
+    // Delete user (admin only)
+    case 'jet_delete_user':
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Truy cập bị từ chối. Yêu cầu quyền admin.");
+            exit;
+        }
+
+        $user_id = $_POST['user_id'] ?? null;
+
+        if (!$user_id) {
+            json_error("Thiếu ID người dùng.");
+            exit;
+        }
+
+        // Prevent admin from deleting themselves
+        if ($user_id == $_SESSION['user_id']) {
+            json_error("Không thể xóa tài khoản của chính mình.");
+            exit;
+        }
+
+        try {
+            // Check if user exists and get info
+            $stmt = $pdo->prepare("SELECT username, role FROM users WHERE id = ?");
+            $stmt->execute([$user_id]);
+            $user = $stmt->fetch();
+
+            if (!$user) {
+                json_error("Không tìm thấy người dùng.");
+                exit;
+            }
+
+            // Prevent deleting the last admin
+            if ($user['role'] === 'admin') {
+                $admin_count_stmt = $pdo->prepare("SELECT COUNT(*) FROM users WHERE role = 'admin'");
+                $admin_count_stmt->execute();
+                $admin_count = $admin_count_stmt->fetchColumn();
+                
+                if ($admin_count <= 1) {
+                    json_error("Không thể xóa admin cuối cùng trong hệ thống.");
+                    exit;
+                }
+            }
+
+            // Delete user (CASCADE will handle related records in jet_image_picks)
+            $stmt = $pdo->prepare("DELETE FROM users WHERE id = ?");
+            $stmt->execute([$user_id]);
+
+            if ($stmt->rowCount() > 0) {
+                json_success([
+                    'message' => 'Đã xóa người dùng: ' . $user['username']
+                ]);
+            } else {
+                json_error("Không thể xóa người dùng.");
+            }
+        } catch (PDOException $e) {
+            error_log("Error deleting user: " . $e->getMessage());
+            json_error("Lỗi khi xóa người dùng: " . $e->getMessage());
         }
         exit;
 
