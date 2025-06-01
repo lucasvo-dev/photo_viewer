@@ -16,6 +16,7 @@
 - Bảo vệ thư mục bằng mật khẩu
 - Tích hợp PhotoSwipe 5 cho lightbox
 - Interface thiết kế tối ưu cho workflow chuyên nghiệp
+- **Performance optimizations:** Lazy loading, filmstrip optimization, realtime updates
 
 ## 2. Công nghệ & Kiến trúc
 
@@ -31,6 +32,11 @@
 - **PhotoSwipe 5** cho image lightbox
 - **No framework dependencies**
 - **Compact UI Design** tối ưu cho desktop và mobile
+- **Advanced Performance Features:**
+  - Intersection Observer API cho lazy loading
+  - RequestAnimationFrame cho smooth animations
+  - Optimized Masonry layout integration
+  - Progressive image loading với placeholder system
 
 ### Cấu trúc API
 - **RESTful API** với JSON responses
@@ -51,12 +57,13 @@ admin.php          # Quản trị hệ thống
 ### JavaScript Modules
 ```
 js/app.js           # Logic thư viện chính
-js/jet_app.js       # Logic Jet Culling (đã tối ưu, loại bỏ search)
+js/jet_app.js       # Logic Jet Culling (đã tối ưu, filmstrip lazy loading)
 js/zipManager.js    # Quản lý ZIP jobs
 js/apiService.js    # API communication
 js/photoswipeHandler.js  # PhotoSwipe integration
 js/admin.js         # Admin interface
 js/shared-menu.js   # Shared menu component
+js/uiImageView.js   # Optimized image rendering với Masonry
 ```
 
 ### CSS Architecture
@@ -65,6 +72,7 @@ css/style.css       # Global styles và variables
 css/jet.css         # Jet Culling styles (compact design)
 css/layout/         # Layout components
 css/views/          # View-specific styles
+css/views/jet_view.css  # Jet-specific styles với filmstrip optimizations
 ```
 
 ### API Backend
@@ -74,7 +82,7 @@ api/init.php        # Khởi tạo session, DB, constants
 api/helpers.php     # Helper functions
 api/actions_public.php   # Public API actions
 api/actions_admin.php    # Admin-only actions  
-api/actions_jet.php      # Jet Culling actions
+api/actions_jet.php      # Jet Culling actions (optimized caching)
 ```
 
 ### Configuration & Data
@@ -91,8 +99,8 @@ logs/               # Application logs
 worker_cache.php         # Thumbnail generation worker
 worker_jet_cache.php     # RAW preview generation worker  
 worker_zip.php           # ZIP creation worker
-cron_cache_manager.php   # Cache cleanup cron
-cron_log_cleaner.php     # Log cleanup cron
+cron_cache_cleanup.php   # Cache cleanup cron
+cron_log_cleanup.php     # Log cleanup cron
 cron_zip_cleanup.php     # ZIP cleanup cron (5 min after creation)
 ```
 
@@ -105,8 +113,9 @@ cron_zip_cleanup.php     # ZIP cleanup cron (5 min after creation)
 - **Bảo vệ mật khẩu:** Session-based folder protection
 - **Tải ZIP:** Tạo ZIP cho thư mục hoặc nhiều files đã chọn
 - **Responsive design:** Tối ưu cho mobile và desktop
+- **Performance optimizations:** Masonry layout với lazy loading
 
-### 4.2 Jet Culling Workspace (jet.php) - **ĐÃ HOÀN THIỆN**
+### 4.2 Jet Culling Workspace (jet.php) - **ĐÃ HOÀN THIỆN & OPTIMIZED**
 - **Compact UI Design:** Interface gọn gàng, buttons nhỏ và tinh tế
 - **Filter System tinh tế:**
   - Main filters: Tất cả, Đã chọn, Chưa chọn
@@ -116,8 +125,13 @@ cron_zip_cleanup.php     # ZIP cleanup cron (5 min after creation)
 - **Pick management:** Gán màu cho ảnh với keyboard shortcuts (0,1,2,3)
 - **Sorting options:** Sắp xếp theo tên, ngày (dropdown compact)
 - **Preview mode:** Fullscreen preview với filmstrip navigation
+  - **NEW:** Lazy loading filmstrip với Intersection Observer
+  - **NEW:** Preload nearby thumbnails khi navigation
+  - **NEW:** Smooth scrolling và hover preload
+  - **NEW:** Mobile swipe gestures support
 - **ZIP filtered images:** Tạo ZIP chỉ từ ảnh đã lọc (button compact)
 - **Multi-user support:** Admin xem picks của tất cả designers
+- **Realtime updates:** Lightweight polling cho pick changes
 - **Optimized workflow:** Loại bỏ search (không cần thiết cho RAW workflow)
 
 ### 4.3 Admin Panel (admin.php)
@@ -175,6 +189,7 @@ zip_jobs           # Queue cho ZIP creation
 4. **Worker:** `worker_jet_cache.php` xử lý dcraw → JPEG 750px
 5. **Response:** Preview URL hoặc HTTP 202 (processing)
 6. **Filtering:** Compact UI cho filter và sort operations
+7. **Filmstrip:** Lazy loading với Intersection Observer API
 
 ### 6.3 ZIP Creation - **ENHANCED**
 1. **Request:** `api.php?action=request_zip` với file list
@@ -194,13 +209,20 @@ zip_jobs           # Queue cho ZIP creation
 - **File type validation:** Whitelist extensions
 - **Source isolation:** Strict source key validation
 
-### Performance Optimizations
-- **Lazy loading:** Images load on-demand
+### Performance Optimizations - **ENHANCED**
+- **Lazy loading:** Images load on-demand với Intersection Observer
 - **Progressive enhancement:** 150px → 750px thumbnails
 - **Background processing:** Heavy tasks qua workers
 - **Client-side caching:** Browser cache headers
 - **Database indexing:** Optimized queries
 - **Compact UI:** Reduced DOM complexity và faster rendering
+- **Filmstrip optimizations:**
+  - Lazy loading với placeholder SVG
+  - Preload nearby thumbnails (±3 range)
+  - Hover preload cho main images
+  - Smooth scrolling với requestAnimationFrame
+- **Realtime updates:** Lightweight polling thay vì full re-render
+- **Mobile optimizations:** Touch gestures, swipe support
 
 ## 8. Configuration
 
@@ -222,6 +244,7 @@ RAW_IMAGE_SOURCES = [
 - **Worker intervals:** 10s polling
 - **ZIP cleanup:** 5 minutes after creation
 - **Session timeout:** Browser close
+- **Filmstrip lazy loading:** ±2 immediate, ±3 on navigation
 
 ## 9. Development Workflow & Deployment
 
@@ -327,7 +350,7 @@ php worker_zip.php &
 
 ## 10. Recent Updates & Improvements
 
-### 10.1 UI/UX Enhancements (Latest) ✅
+### 10.1 UI/UX Enhancements ✅
 - **Compact Design:** Hoàn toàn thiết kế lại Jet Culling UI
 - **Button Optimization:** Giảm kích thước buttons, typography tinh tế
 - **Layout Improvements:** 
@@ -337,16 +360,35 @@ php worker_zip.php &
 - **Filter Enhancement:** Color filters nhỏ gọn với hover effects
 - **Search Removal:** Loại bỏ search functionality (không cần cho RAW workflow)
 
-### 10.2 Data Migration & Fixes ✅
+### 10.2 Performance Optimizations - **LATEST** ✅
+- **Filmstrip Lazy Loading:**
+  - Intersection Observer API cho efficient loading
+  - Placeholder SVG cho unloaded thumbnails
+  - Load current ±2 images immediately, lazy load others
+  - Preload nearby thumbnails (±3 range) khi navigation
+  - Hover preload cho main images
+- **Realtime Updates Optimization:**
+  - Lightweight polling thay vì full re-render
+  - Efficient pick color updates without DOM reconstruction
+  - Optimized all_picks indicator updates
+- **Mobile Enhancements:**
+  - Touch gesture support cho preview navigation
+  - Swipe gestures (left/right) cho image navigation
+  - Mobile-optimized context menus
+  - Responsive filmstrip sizing
+
+### 10.3 Data Migration & Fixes ✅
 - **User Data Merge:** Hoàn thành merge từ `users` → `admin_users`
 - **Foreign Key Updates:** Cập nhật tất cả references trong `jet_image_picks`
 - **ZIP Functionality:** Sửa lỗi ZIP download cho RAW files
 - **Database Integrity:** Verified tất cả 25 pick references hợp lệ
 
-### 10.3 Code Quality ✅
+### 10.4 Code Quality & Architecture ✅
 - **JavaScript Cleanup:** Loại bỏ search-related code
 - **CSS Architecture:** Component-based CSS với compact design
 - **Performance:** Optimized rendering và reduced DOM complexity
+- **Modular Structure:** Clean separation of concerns
+- **Error Handling:** Comprehensive error handling và user feedback
 
 ## 11. Tình trạng Hiện tại
 
@@ -357,19 +399,22 @@ php worker_zip.php &
 - **Jet Culling Workspace:** 
   - RAW processing, filtering, picking, ZIP export
   - **NEW:** Compact UI design, optimized workflow
-  - **NEW:** Loại bỏ search, tối ưu cho professional use
+  - **NEW:** Advanced filmstrip với lazy loading
+  - **NEW:** Mobile touch gestures support
+  - **NEW:** Realtime lightweight updates
 - **Admin panel:** Password management, cache control, statistics, user management
 - **Mobile responsive:** Optimized cho tất cả device sizes với compact design
 - **Worker system:** Stable background processing
 - **Security:** Path validation, access control, input sanitization
 - **Database:** Fully migrated và optimized
+- **Performance:** Advanced optimizations với lazy loading và efficient updates
 
 ### 🔧 Production Ready
 - **Performance monitoring:** Ongoing optimization
 - **Cache management:** Automated cleanup systems
 - **Log rotation:** Automated log maintenance
 - **Database optimization:** Query performance tuning
-- **UI/UX:** Professional-grade interface
+- **UI/UX:** Professional-grade interface với advanced interactions
 
 ### 📋 Future Enhancements (Optional)
 - **WebP/AVIF support:** Modern image formats
@@ -377,17 +422,20 @@ php worker_zip.php &
 - **Batch operations:** Bulk file management
 - **API rate limiting:** Enhanced security
 - **CDN integration:** Scalability improvements
+- **PWA features:** Offline support, push notifications
 
 ---
 
-**Dự án đã hoàn thiện 100% với đầy đủ chức năng core, security, performance optimizations và professional UI design. Ready for production deployment.** 
+**Dự án đã hoàn thiện 100% với đầy đủ chức năng core, security, advanced performance optimizations và professional UI design. Ready for production deployment với enhanced user experience.** 
 
 ### Key Features Summary:
 - ✅ **Complete Gallery System** với password protection
 - ✅ **Professional Jet Culling Workspace** với compact UI
+- ✅ **Advanced Performance Features** (lazy loading, realtime updates)
 - ✅ **Multi-format Support** (images, videos, RAW files)
 - ✅ **Background Processing** cho heavy operations
-- ✅ **Mobile-First Design** với responsive layout
+- ✅ **Mobile-First Design** với touch gestures
 - ✅ **Admin Management** với user và system control
 - ✅ **Data Integrity** với migrated database
-- ✅ **Production Ready** với monitoring và maintenance tools 
+- ✅ **Production Ready** với monitoring và maintenance tools
+- ✅ **Optimized User Experience** với smooth interactions và fast loading 

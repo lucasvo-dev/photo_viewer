@@ -1343,8 +1343,20 @@ document.addEventListener('DOMContentLoaded', () => {
             // Create the image element
             const thumbElement = document.createElement('img');
             thumbElement.classList.add('jet-filmstrip-thumb'); // Class for the image styling
-            // Use preview size (750px) instead of filmstrip - CSS will handle resizing to 120px max-width
-            thumbElement.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=preview`;
+            
+            // OPTIMIZATION: Lazy loading - only load current image and nearby ones initially
+            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 2; // Load current + 2 on each side
+            
+            if (shouldLoadImmediately) {
+                // Load immediately for current and nearby images
+                thumbElement.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=preview`;
+            } else {
+                // Set placeholder and store actual src for lazy loading
+                thumbElement.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjkwIiB2aWV3Qm94PSIwIDAgMTIwIDkwIiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxyZWN0IHdpZHRoPSIxMjAiIGhlaWdodD0iOTAiIGZpbGw9IiMyMzI5MzAiLz48cGF0aCBkPSJNNDUgMzVMMzUgNDVMNDUgNTVMNTUgNDVMNDUgMzVaIiBmaWxsPSIjNkM3NTdEIi8+PHBhdGggZD0iTTc1IDM1TDY1IDQ1TDc1IDU1TDg1IDQ1TDc1IDM1WiIgZmlsbD0iIzZDNzU3RCIvPjwvc3ZnPg==';
+                thumbElement.dataset.lazySrc = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&size=preview`;
+                thumbElement.classList.add('lazy-load');
+            }
+            
             thumbElement.alt = `Thumbnail of ${imageObject.name}`;
 
             // Add pick color class to the CONTAINER if image is picked
@@ -1457,6 +1469,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 
                 updatePreviewImage(currentPreviewImageObject); // Update main image
                 updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
+                
+                // Load nearby thumbnails when user clicks
+                loadNearbyThumbnails(currentPreviewIndex);
+            });
+
+            // NEW: Add hover listener to preload main image for faster navigation
+            thumbContainer.addEventListener('mouseenter', () => {
+                // Preload the main preview image when hovering over thumbnail
+                const preloadImg = new Image();
+                preloadImg.src = `api.php?action=jet_get_raw_preview&source_key=${encodeURIComponent(imageObject.source_key)}&image_path=${encodeURIComponent(imageObject.path)}&t=${Date.now()}`;
             });
 
             // Append image to container, then container to filmstrip
@@ -1464,12 +1486,65 @@ document.addEventListener('DOMContentLoaded', () => {
             filmstripContainer.appendChild(thumbContainer);
         });
 
-        // Scroll the filmstrip to make the active thumbnail visible initially
-        updateFilmstripActiveThumbnail(currentIndex); // Use the new update function
+        // Set up intersection observer for lazy loading
+        setupFilmstripLazyLoading();
+
+        // Scroll the filmstrip to make the active thumbnail visible initially (instant for first load)
+        updateFilmstripActiveThumbnail(currentIndex, true); // Pass true for instant scroll
+    }
+
+    // NEW: Function to set up lazy loading for filmstrip thumbnails
+    function setupFilmstripLazyLoading() {
+        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+        if (!filmstripContainer) return;
+
+        // Create intersection observer for lazy loading
+        const lazyImageObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const img = entry.target;
+                    if (img.dataset.lazySrc && img.classList.contains('lazy-load')) {
+                        img.src = img.dataset.lazySrc;
+                        img.classList.remove('lazy-load');
+                        delete img.dataset.lazySrc;
+                        lazyImageObserver.unobserve(img);
+                    }
+                }
+            });
+        }, {
+            root: filmstripContainer,
+            rootMargin: '50px', // Load images 50px before they become visible
+            threshold: 0.1
+        });
+
+        // Observe all lazy load images
+        const lazyImages = filmstripContainer.querySelectorAll('img.lazy-load');
+        lazyImages.forEach(img => lazyImageObserver.observe(img));
+    }
+
+    // NEW: Function to load nearby thumbnails when navigating
+    function loadNearbyThumbnails(centerIndex) {
+        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
+        if (!filmstripContainer) return;
+
+        const range = 3; // Load 3 images on each side
+        const lazyImages = filmstripContainer.querySelectorAll('img.lazy-load');
+        
+        lazyImages.forEach(img => {
+            const container = img.closest('.jet-filmstrip-thumb-container');
+            if (container) {
+                const index = parseInt(container.dataset.index);
+                if (Math.abs(index - centerIndex) <= range && img.dataset.lazySrc) {
+                    img.src = img.dataset.lazySrc;
+                    img.classList.remove('lazy-load');
+                    delete img.dataset.lazySrc;
+                }
+            }
+        });
     }
 
     // Function to update the active thumbnail in the filmstrip and scroll
-    function updateFilmstripActiveThumbnail(newIndex) {
+    function updateFilmstripActiveThumbnail(newIndex, instantScroll = false) {
         const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
         if (!filmstripContainer) return;
 
@@ -1486,9 +1561,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
              // Scroll the filmstrip to make the active thumbnail visible
              newActiveThumbContainer.scrollIntoView({
-                behavior: 'smooth',
+                behavior: instantScroll ? 'auto' : 'smooth', // Use instant scroll for initial load
                 inline: 'center' // Scroll horizontally to center the thumbnail
             });
+            
+            // Load nearby thumbnails when scrolling to new position
+            if (!instantScroll) {
+                loadNearbyThumbnails(newIndex);
+            }
         }
     }
 

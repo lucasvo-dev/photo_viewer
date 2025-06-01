@@ -1277,6 +1277,34 @@ body.jet-app-active {
     height: 100%;
     object-fit: contain;
     display: block;
+    transition: opacity 0.3s ease;
+}
+
+/* Lazy loading styles for filmstrip thumbnails */
+.jet-filmstrip-thumb.lazy-load {
+    opacity: 0.7;
+    background: var(--jet-bg-tertiary);
+    border-radius: 4px;
+}
+
+.jet-filmstrip-thumb.lazy-load:hover {
+    opacity: 0.9;
+}
+
+/* Loading animation for lazy thumbnails */
+.jet-filmstrip-thumb.lazy-load::before {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 20px;
+    height: 20px;
+    margin: -10px 0 0 -10px;
+    border: 2px solid var(--jet-border-primary);
+    border-top: 2px solid var(--jet-text-primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+    z-index: 1;
 }
 
 /* Enhanced pick color borders for filmstrip */
