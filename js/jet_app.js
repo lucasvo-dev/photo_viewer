@@ -47,10 +47,6 @@ document.addEventListener('DOMContentLoaded', () => {
     let currentPreviewImageObject = null; // Will store the image object with its pick_color
     let currentPreviewIndex = -1;
 
-    // NEW: State for filmstrip auto-hide
-    let filmstripAutoHideTimer = null;
-    let isFilmstripVisible = true;
-
     // NEW: State for Filtering
     let currentFilter = 'all'; // Initial filter state
 
@@ -995,58 +991,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Image Preview Mode Functions ---
 
-    // NEW: Function to show filmstrip temporarily
-    function showFilmstripTemporarily() {
-        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
-        if (!filmstripContainer) return;
-
-        // Clear any existing timer
-        if (filmstripAutoHideTimer) {
-            clearTimeout(filmstripAutoHideTimer);
-            filmstripAutoHideTimer = null;
-        }
-
-        // Show filmstrip
-        filmstripContainer.style.transform = 'translateY(0)';
-        filmstripContainer.style.opacity = '1';
-        filmstripContainer.classList.remove('hidden');
-        isFilmstripVisible = true;
-
-        // Set timer to hide after 2 seconds
-        filmstripAutoHideTimer = setTimeout(() => {
-            if (filmstripContainer) {
-                filmstripContainer.style.transform = 'translateY(100%)';
-                filmstripContainer.style.opacity = '0';
-                filmstripContainer.classList.add('hidden');
-                isFilmstripVisible = false;
-            }
-            filmstripAutoHideTimer = null;
-        }, 2000);
-    }
-
-    // NEW: Function to toggle filmstrip visibility
-    function toggleFilmstripVisibility() {
-        const filmstripContainer = document.getElementById('jet-thumbnail-filmstrip');
-        if (!filmstripContainer) return;
-
-        if (isFilmstripVisible) {
-            // Hide filmstrip
-            filmstripContainer.style.transform = 'translateY(100%)';
-            filmstripContainer.style.opacity = '0';
-            filmstripContainer.classList.add('hidden');
-            isFilmstripVisible = false;
-            
-            // Clear auto-hide timer
-            if (filmstripAutoHideTimer) {
-                clearTimeout(filmstripAutoHideTimer);
-                filmstripAutoHideTimer = null;
-            }
-        } else {
-            // Show filmstrip temporarily
-            showFilmstripTemporarily();
-        }
-    }
-
     function closeImagePreview() {
         const overlay = document.getElementById('jet-image-preview-overlay');
         if (overlay) {
@@ -1057,13 +1001,6 @@ document.addEventListener('DOMContentLoaded', () => {
         isPreviewOpen = false;
         currentPreviewImageObject = null;
         currentPreviewIndex = -1;
-        
-        // Clear filmstrip auto-hide timer
-        if (filmstripAutoHideTimer) {
-            clearTimeout(filmstripAutoHideTimer);
-            filmstripAutoHideTimer = null;
-        }
-        isFilmstripVisible = true; // Reset state
         
         // Remove keyboard listeners with specific handler
         document.removeEventListener('keydown', handlePreviewKeyPress);
@@ -1223,14 +1160,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const thumbnailFilmstrip = document.createElement('div');
         thumbnailFilmstrip.id = 'jet-thumbnail-filmstrip';
         // Filmstrip content will be added later
-
-        // NEW: Add click listener to filmstrip container to toggle visibility
-        thumbnailFilmstrip.addEventListener('click', (e) => {
-            // Only toggle if clicking on the container itself, not on thumbnails
-            if (e.target === thumbnailFilmstrip) {
-                toggleFilmstripVisibility();
-            }
-        });
 
         // Append major sections to overlay
         overlay.appendChild(controlsTop);
@@ -1782,9 +1711,6 @@ document.addEventListener('DOMContentLoaded', () => {
         updatePreviewImage(currentPreviewImageObject); // Update main image
         updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
 
-        // NEW: Show filmstrip temporarily when navigating
-        showFilmstripTemporarily();
-
         // NEW: Update mobile pick controls if on mobile
         if (isMobileDevice) {
             updateMobilePickControls(currentPreviewImageObject.pick_color);
@@ -1822,9 +1748,6 @@ document.addEventListener('DOMContentLoaded', () => {
         // Update UI without re-rendering the whole overlay
         updatePreviewImage(currentPreviewImageObject); // Update main image
         updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
-
-        // NEW: Show filmstrip temporarily when navigating
-        showFilmstripTemporarily();
 
         // Update grid selection to match preview (optional sync)
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');

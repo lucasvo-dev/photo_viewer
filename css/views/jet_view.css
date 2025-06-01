@@ -1029,7 +1029,9 @@ body.jet-app-active {
 /* Add swipe indicators */
 .jet-preview-image-container::before,
 .jet-preview-image-container::after {
-    content: '';
+    /* Navigation icons đã được ẩn theo yêu cầu */
+    display: none;
+    /* content: '';
     position: absolute;
     top: 50%;
     transform: translateY(-50%);
@@ -1043,28 +1045,34 @@ body.jet-app-active {
     opacity: 0;
     transition: opacity 0.3s ease;
     pointer-events: none;
-    z-index: 1;
+    z-index: 1; */
 }
 
 .jet-preview-image-container::before {
-    left: 20px;
+    /* Left navigation arrow - ẩn */
+    display: none;
+    /* left: 20px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='white' viewBox='0 0 24 24'%3E%3Cpath d='M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
-    background-size: 24px;
+    background-size: 24px; */
 }
 
 .jet-preview-image-container::after {
-    right: 20px;
+    /* Right navigation arrow - ẩn */
+    display: none;
+    /* right: 20px;
     background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='white' viewBox='0 0 24 24'%3E%3Cpath d='M8.59 16.59L10 18l6-6-6-6-1.41 1.41L13.17 12z'/%3E%3C/svg%3E");
     background-repeat: no-repeat;
     background-position: center;
-    background-size: 24px;
+    background-size: 24px; */
 }
 
 .jet-preview-image-container:hover::before,
 .jet-preview-image-container:hover::after {
-    opacity: 0.7;
+    /* Hover effects cho navigation arrows - ẩn */
+    display: none;
+    /* opacity: 0.7; */
 }
 
 /* Add instruction text for swipe */
@@ -1073,9 +1081,9 @@ body.jet-app-active {
 }
 
 .jet-preview-overlay-container::after {
-    content: 'Vuốt hoặc dùng phím ← → để chuyển ảnh';
+    content: 'Vuốt hoặc dùng phím ← → để chuyển ảnh nhé';
     position: absolute;
-    bottom: 20px;
+    top: 15px;
     left: 50%;
     transform: translateX(-50%);
     background: rgba(0, 0, 0, 0.8);
@@ -1083,10 +1091,10 @@ body.jet-app-active {
     padding: 8px 16px;
     border-radius: 20px;
     font-size: 0.8rem;
-    opacity: 0.8;
+    opacity: 0.4;
     pointer-events: none;
     z-index: 1000;
-    animation: fadeInOut 4s ease-in-out;
+    animation: fadeInOut 0.5s ease-in-out;
 }
 
 @keyframes fadeInOut {
@@ -1246,32 +1254,6 @@ body.jet-app-active {
     padding-right: 12px;
     flex-shrink: 0;
     max-height: 140px;
-    transition: transform 0.3s ease-out, opacity 0.3s ease-out;
-    transform: translateY(0);
-    opacity: 1;
-    cursor: pointer;
-    position: relative;
-}
-
-/* NEW: Add visual feedback when filmstrip is hidden */
-#jet-thumbnail-filmstrip::before {
-    content: '';
-    position: absolute;
-    top: -20px;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 40px;
-    height: 4px;
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 2px;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-    pointer-events: none;
-}
-
-/* Show indicator when filmstrip is hidden */
-#jet-thumbnail-filmstrip.hidden::before {
-    opacity: 1;
 }
 
 .jet-filmstrip-thumb-container {

@@ -40,7 +40,7 @@ if (!defined('RAW_IMAGE_SOURCES')) {
 <body class="jet-app-active">
     <header class="app-header">
         <div class="container header-container">
-            <a href="index.php" class="logo-link" aria-label="Quay về Thư viện chính">
+            <a href="jet.php" class="logo-link" aria-label="Quay về Jet Culling Workspace">
                 <img src="theme/logo.png" alt="Guustudio Logo" id="site-logo"> 
             </a>
             
