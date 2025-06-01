@@ -73,15 +73,6 @@ function handleTabSwitch(tabName) {
                 initializeUsersTab();
             }
             break;
-        case 'system-tab':
-            // Load system info
-            if (typeof loadSystemInfo === 'function') {
-                loadSystemInfo();
-            } else {
-                console.log('loadSystemInfo function not found - creating placeholder');
-                initializeSystemTab();
-            }
-            break;
         default:
             console.log(`[AdminTabs] Unknown tab: ${tabName}`);
     }
@@ -91,22 +82,6 @@ function initializeUsersTab() {
     const usersTableBody = document.getElementById('users-table-body');
     if (usersTableBody) {
         usersTableBody.innerHTML = '<tr><td colspan="5">Chức năng quản lý người dùng sẽ được thêm vào sau.</td></tr>';
-    }
-}
-
-function initializeSystemTab() {
-    const calculateSizesBtn = document.getElementById('calculate-sizes');
-    if (calculateSizesBtn) {
-        calculateSizesBtn.addEventListener('click', () => {
-            document.getElementById('cache-size').textContent = 'Đang tính...';
-            document.getElementById('logs-size').textContent = 'Đang tính...';
-            
-            // Placeholder - would call API to calculate sizes
-            setTimeout(() => {
-                document.getElementById('cache-size').textContent = 'N/A (chưa triển khai)';
-                document.getElementById('logs-size').textContent = 'N/A (chưa triển khai)';
-            }, 1000);
-        });
     }
 }
 

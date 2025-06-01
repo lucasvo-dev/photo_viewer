@@ -90,10 +90,6 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                             <i class="fas fa-users"></i>
                             Quản lý Người dùng
                         </a>
-                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('system-tab')">
-                            <i class="fas fa-server"></i>
-                            Thông tin Hệ thống
-                        </a>
                     </div>
                     <?php endif; ?>
 
@@ -139,9 +135,6 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
             </button>
             <button class="admin-tab-button" data-tab="users-tab">
                 <i class="fas fa-users"></i> Người dùng
-            </button>
-            <button class="admin-tab-button" data-tab="system-tab">
-                <i class="fas fa-server"></i> Hệ thống
             </button>
         </div>
 
@@ -363,67 +356,6 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                             <button type="button" class="button secondary" onclick="closeUserModal()">Hủy</button>
                         </div>
                     </form>
-                </div>
-            </div>
-        </div>
-
-        <!-- System Tab -->
-        <div class="admin-tab-content" id="system-tab">
-            <div class="tab-header">
-                <h2>Thông tin Hệ thống</h2>
-                <p>Thông tin về hệ thống và cấu hình server.</p>
-            </div>
-
-            <div class="admin-section">
-                <h3>Thông tin PHP</h3>
-                <div class="system-info-grid">
-                    <div class="system-info-item">
-                        <span class="info-label">Phiên bản PHP:</span>
-                        <span class="info-value" id="php-version"><?php echo PHP_VERSION; ?></span>
-                    </div>
-                    <div class="system-info-item">
-                        <span class="info-label">Giới hạn bộ nhớ:</span>
-                        <span class="info-value" id="memory-limit"><?php echo ini_get('memory_limit'); ?></span>
-                    </div>
-                    <div class="system-info-item">
-                        <span class="info-label">Thời gian tối đa thực thi:</span>
-                        <span class="info-value" id="max-execution-time"><?php echo ini_get('max_execution_time'); ?>s</span>
-                    </div>
-                    <div class="system-info-item">
-                        <span class="info-label">Kích thước upload tối đa:</span>
-                        <span class="info-value" id="upload-max-filesize"><?php echo ini_get('upload_max_filesize'); ?></span>
-                    </div>
-                </div>
-            </div>
-
-            <div class="admin-section">
-                <h3>Extensions PHP</h3>
-                <div class="extensions-grid">
-                    <?php
-                    $required_extensions = ['pdo_mysql', 'gd', 'zip', 'mbstring', 'fileinfo'];
-                    foreach ($required_extensions as $ext) {
-                        $loaded = extension_loaded($ext);
-                        echo "<div class='extension-item " . ($loaded ? 'loaded' : 'missing') . "'>";
-                        echo "<i class='fas fa-" . ($loaded ? 'check' : 'times') . "'></i>";
-                        echo "<span>{$ext}</span>";
-                        echo "</div>";
-                    }
-                    ?>
-                </div>
-            </div>
-
-            <div class="admin-section">
-                <h3>Dung lượng Thư mục</h3>
-                <div id="directory-sizes">
-                    <div class="size-item">
-                        <span class="size-label">Cache thumbnails:</span>
-                        <span class="size-value" id="cache-size">Đang tính...</span>
-                    </div>
-                    <div class="size-item">
-                        <span class="size-label">Logs:</span>
-                        <span class="size-value" id="logs-size">Đang tính...</span>
-                    </div>
-                    <button id="calculate-sizes" class="button">Tính toán lại</button>
                 </div>
             </div>
         </div>
