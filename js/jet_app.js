@@ -1710,16 +1710,9 @@ document.addEventListener('DOMContentLoaded', () => {
             nextIndex = 0; // Loop to the beginning
         }
         
-        console.log('[Jet Navigate] navigatePreviewNext - from index:', currentPreviewIndex, 'to index:', nextIndex);
-        console.log('[Jet Navigate] Current image before:', currentPreviewImageObject?.name);
-        console.log('[Jet Navigate] Next image will be:', currentGridImages[nextIndex]?.name);
-        
         // Update state immediately
         currentPreviewIndex = nextIndex;
         currentPreviewImageObject = currentGridImages[currentPreviewIndex];
-
-        console.log('[Jet Navigate] State updated - new index:', currentPreviewIndex);
-        console.log('[Jet Navigate] State updated - new image:', currentPreviewImageObject?.name);
 
         // Update UI without re-rendering the whole overlay
         updatePreviewImage(currentPreviewImageObject); // Update main image
@@ -1730,17 +1723,18 @@ document.addEventListener('DOMContentLoaded', () => {
             updateMobilePickControls(currentPreviewImageObject.pick_color);
         }
 
-        // Update grid selection to match preview (optional sync)
+        // CRITICAL FIX: Update grid selection to match preview
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        // Use dataset for more reliable matching and find correct filtered index
         gridItems.forEach(gridItem => {
             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
-                // FIX: Find the correct index in currentFilteredImages instead of using currentPreviewIndex
+                // Find the correct index in currentFilteredImages
                 const filteredIndex = currentFilteredImages.findIndex(img => 
                     img.path === currentPreviewImageObject.path && img.source_key === currentPreviewImageObject.source_key
                 );
                 if (filteredIndex !== -1) {
                     selectImageInGrid(currentPreviewImageObject, gridItem, filteredIndex);
+                    // IMPORTANT: Update currentGridSelection.index to store the original preview index for consistency
+                    currentGridSelection.index = currentPreviewIndex;
                 }
             }
         });
@@ -1754,32 +1748,26 @@ document.addEventListener('DOMContentLoaded', () => {
             prevIndex = currentGridImages.length - 1; // Loop to the end
         }
         
-        console.log('[Jet Navigate] navigatePreviewPrev - from index:', currentPreviewIndex, 'to index:', prevIndex);
-        console.log('[Jet Navigate] Current image before:', currentPreviewImageObject?.name);
-        console.log('[Jet Navigate] Previous image will be:', currentGridImages[prevIndex]?.name);
-        
         // Update state immediately
         currentPreviewIndex = prevIndex;
         currentPreviewImageObject = currentGridImages[prevIndex];
-
-        console.log('[Jet Navigate] State updated - new index:', currentPreviewIndex);
-        console.log('[Jet Navigate] State updated - new image:', currentPreviewImageObject?.name);
 
         // Update UI without re-rendering the whole overlay
         updatePreviewImage(currentPreviewImageObject); // Update main image
         updateFilmstripActiveThumbnail(currentPreviewIndex); // Update filmstrip highlight and scroll
 
-        // Update grid selection to match preview (optional sync)
+        // CRITICAL FIX: Update grid selection to match preview
         const gridItems = document.querySelectorAll('#jet-item-list-container .jet-image-item-container');
-        // Use dataset for more reliable matching and find correct filtered index
         gridItems.forEach(gridItem => {
             if (gridItem.dataset.imagePath === currentPreviewImageObject.path && gridItem.dataset.sourceKey === currentPreviewImageObject.source_key) {
-                // FIX: Find the correct index in currentFilteredImages instead of using currentPreviewIndex
+                // Find the correct index in currentFilteredImages
                 const filteredIndex = currentFilteredImages.findIndex(img => 
                     img.path === currentPreviewImageObject.path && img.source_key === currentPreviewImageObject.source_key
                 );
                 if (filteredIndex !== -1) {
                     selectImageInGrid(currentPreviewImageObject, gridItem, filteredIndex);
+                    // IMPORTANT: Update currentGridSelection.index to store the original preview index for consistency
+                    currentGridSelection.index = currentPreviewIndex;
                 }
             }
         });
