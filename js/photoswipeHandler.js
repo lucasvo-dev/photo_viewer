@@ -1,22 +1,141 @@
 import PhotoSwipeLightbox from 'https://unpkg.com/photoswipe@5/dist/photoswipe-lightbox.esm.js';
 import PhotoSwipe from 'https://unpkg.com/photoswipe@5/dist/photoswipe.esm.js';
-import { photoswipeLightbox, setPhotoswipeLightbox, currentImageList } from './state.js';
-import { API_BASE_URL } from './config.js';
+import { 
+    photoswipeLightbox, 
+    setPhotoswipeLightbox, 
+    setCurrentImageList, 
+    setCurrentPage 
+} from './state.js';
+
+// Dynamic imports for state that changes - avoid stale imports
+async function getCurrentState() {
+    const state = await import('./state.js');
+    return {
+        currentImageList: state.currentImageList,
+        totalImages: state.totalImages,
+        currentPage: state.currentPage,
+        isLoadingMore: state.isLoadingMore
+    };
+}
+import { API_BASE_URL, IMAGES_PER_PAGE, PREVIEW_LOADING_STRATEGY, PREVIEW_NEAR_END_THRESHOLD } from './config.js';
 import { triggerDirectDownload } from './app.js'; // Import the helper
+import { fetchDataApi } from './apiService.js';
+
+// PhotoSwipe Handler Module - Enhanced Preview Loading
+console.log('[photoswipeHandler] ✅ Module loaded successfully!');
+
+// SIMPLE: Add immediate test function
+window.simplePhotoSwipeTest = async function() {
+    console.log('[SIMPLE TEST] Testing PhotoSwipe with current data...');
+    
+    try {
+        const state = await getCurrentState();
+        
+        console.log('[SIMPLE TEST] currentImageList available:', !!state.currentImageList);
+        console.log('[SIMPLE TEST] Length:', state.currentImageList?.length || 'N/A');
+        console.log('[SIMPLE TEST] totalImages:', state.totalImages || 'N/A');
+        
+        return {
+            hasImageList: !!state.currentImageList,
+            imageCount: state.currentImageList?.length || 0,
+            totalImages: state.totalImages || 0
+        };
+    } catch (error) {
+        console.error('[SIMPLE TEST] Error getting state:', error);
+        return { error: error.message };
+    }
+};
+
+console.log('[photoswipeHandler] ✅ window.simplePhotoSwipeTest created');
+
+// DEBUG: Add a simple test function to check if the issue is with loading logic
+export async function testPhotoSwipeWithCurrentData(index) {
+    console.log('[DEBUG] testPhotoSwipeWithCurrentData called with index:', index);
+    
+    const state = await getCurrentState();
+    console.log('[DEBUG] currentImageList.length:', state.currentImageList.length);
+    console.log('[DEBUG] totalImages:', state.totalImages);
+    console.log('[DEBUG] First 3 images:', state.currentImageList.slice(0, 3).map(img => img.name));
+    
+    if (!photoswipeLightbox) {
+        console.warn("PhotoSwipe not initialized, attempting to set it up.");
+        setupPhotoSwipeIfNeeded();
+        if(!photoswipeLightbox) {
+            console.error("PhotoSwipe could not be initialized!");
+            return;
+        }
+    }
+    
+    // Force update dataSource and open
+    updatePhotoSwipeDataSource(state.currentImageList);
+    photoswipeLightbox.loadAndOpen(index);
+    console.log(`[DEBUG] PhotoSwipe opened with ${state.currentImageList.length} images`);
+}
+
+// DEBUG: Test function with fake extended data
+export async function testPhotoSwipeWithFakeData(index) {
+    console.log('[DEBUG-FAKE] Testing PhotoSwipe with fake extended data');
+    
+    const state = await getCurrentState();
+    
+    // Create fake extended image list
+    const fakeExtendedList = [...state.currentImageList];
+    
+    // Add fake images if we have less than 50
+    if (state.currentImageList.length < 50) {
+        for (let i = state.currentImageList.length; i < 50; i++) {
+            const fakeImage = {
+                ...state.currentImageList[0], // Copy structure from first real image
+                name: `fake_image_${i}.jpg`,
+                path: `fake/path/fake_image_${i}.jpg`,
+                source_path: `fake/path/fake_image_${i}.jpg`
+            };
+            fakeExtendedList.push(fakeImage);
+        }
+    }
+    
+    console.log(`[DEBUG-FAKE] Created fake list with ${fakeExtendedList.length} images`);
+    
+    if (!photoswipeLightbox) {
+        setupPhotoSwipeIfNeeded();
+    }
+    
+    // Temporarily update the datasource with fake data
+    const fakeDataSource = fakeExtendedList.map(itemData => {
+        const imageUrl = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
+        return {
+            src: imageUrl,
+            thumb: imageUrl,
+            width: itemData.width || 800,
+            height: itemData.height || 600,
+            alt: itemData.name,
+            type: 'image',
+            filename: itemData.name,
+            originalPath: itemData.path
+        };
+    });
+    
+    photoswipeLightbox.options.dataSource = fakeDataSource;
+    photoswipeLightbox.loadAndOpen(index);
+    
+    console.log(`[DEBUG-FAKE] PhotoSwipe opened with ${fakeExtendedList.length} fake images`);
+}
 
 export function initializePhotoSwipeHandler() {
     // Placeholder if any specific initialization is needed for the handler itself
     // For now, setupPhotoSwipe will be called by other modules when image data is ready.
 }
 
-export function setupPhotoSwipeIfNeeded() {
+export async function setupPhotoSwipeIfNeeded() {
     if (photoswipeLightbox) {
         photoswipeLightbox.destroy();
         setPhotoswipeLightbox(null);
     }
 
+    const state = await getCurrentState();
+    
     const newLightbox = new PhotoSwipeLightbox({
-        dataSource: currentImageList.map(itemData => {
+        dataSource: state.currentImageList.map(itemData => {
             if (itemData.type === 'video') {
                 const videoSrc = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
                 const posterSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(itemData.path)}&size=750`;
@@ -117,52 +236,157 @@ export function setupPhotoSwipeIfNeeded() {
         }
     });
 
+    // Add slide change listener for dynamic loading
+    newLightbox.on('change', () => {
+        const pswp = newLightbox.pswp;
+        if (pswp && pswp.currSlide) {
+            const currentIndex = pswp.currSlide.index;
+            // Check if we're near the end and need to load more
+            checkAndLoadMoreForPreview(currentIndex);
+        }
+    });
+
     newLightbox.init();
     setPhotoswipeLightbox(newLightbox);
-    console.log("[photoswipeHandler.js] PhotoSwipe initialized with custom UI for video download.");
+    console.log("[photoswipeHandler.js] PhotoSwipe initialized with custom UI for video download and dynamic loading.");
 }
 
-export function openPhotoSwipeAtIndex(index) {
+export async function openPhotoSwipeAtIndex(index) {
+    const state = await getCurrentState();
+
     if (!photoswipeLightbox) {
         console.warn("PhotoSwipe not initialized, attempting to set it up.");
-        setupPhotoSwipeIfNeeded();
+        await setupPhotoSwipeIfNeeded();
         if(!photoswipeLightbox) {
             console.error("PhotoSwipe could not be initialized!");
             return;
         }
     }
-    // Ensure dataSource is up-to-date before opening
-    // This is crucial if currentImageList changes dynamically without re-initing the whole lightbox
-    photoswipeLightbox.options.dataSource = currentImageList.map(itemData => {
-        if (itemData.type === 'video') {
-            const videoSrc = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
-            const posterSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(itemData.path)}&size=750`;
-            return {
-                html: `<div class="pswp-video-container"><video src="${videoSrc}" controls autoplay playsinline poster="${posterSrc}"></video></div>`,
-                width: itemData.width || 0, // Use actual dimensions if available, else 0 for auto
-                height: itemData.height || 0,
-                type: 'video',
-                videoSrc: videoSrc, // Ensure videoSrc is added
-                filename: itemData.name, // Ensure filename is added
-                originalPath: itemData.path // <-- ADDED ORIGINAL PATH
-            };
-        } else { // Image
-            // For regular photo gallery, use get_image action for full resolution
-            const imageUrl = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
-            
-            return {
-                src: imageUrl,
-                thumb: imageUrl, // Add thumb property for filmstrip
-                width: itemData.width,
-                height: itemData.height,
-                alt: itemData.name,
-                type: 'image',
-                filename: itemData.name, // Store for consistency, might be useful
-                originalPath: itemData.path // <-- ADDED ORIGINAL PATH
-            };
+
+    // BACKUP original state BEFORE any loading
+    const originalState = {
+        currentImageList: [...state.currentImageList],
+        currentPage: state.currentPage,
+        totalImages: state.totalImages
+    };
+    
+    try {
+        if (PREVIEW_LOADING_STRATEGY === 'LOAD_ALL_ON_OPEN') {
+            await loadAllImagesForPreview();
         }
-    });
-    photoswipeLightbox.loadAndOpen(index);
+        const updatedState = await getCurrentState();
+        updatePhotoSwipeDataSource(updatedState.currentImageList);
+        
+        // Setup one-time close listener to restore original state
+        const restoreStateOnClose = () => {
+            setCurrentImageList(originalState.currentImageList);
+            setCurrentPage(originalState.currentPage);
+            
+            // Remove this listener after use
+            if (photoswipeLightbox.pswp) {
+                photoswipeLightbox.pswp.off('close', restoreStateOnClose);
+            }
+        };
+        
+        photoswipeLightbox.loadAndOpen(index);
+        
+        // Add close listener after opening - with safety check
+        if (photoswipeLightbox.pswp) {
+            photoswipeLightbox.pswp.on('close', restoreStateOnClose);
+        }
+    } catch (error) {
+        console.error('[photoswipeHandler] Error loading images:', error);
+        // Fallback: open with what we have and restore state
+        updatePhotoSwipeDataSource(originalState.currentImageList);
+        photoswipeLightbox.loadAndOpen(index);
+        
+        // Still try to add close listener for fallback
+        setTimeout(() => {
+            if (photoswipeLightbox.pswp) {
+                const restoreStateOnClose = () => {
+                    setCurrentImageList(originalState.currentImageList);
+                    setCurrentPage(originalState.currentPage);
+                    photoswipeLightbox.pswp.off('close', restoreStateOnClose);
+                };
+                photoswipeLightbox.pswp.on('close', restoreStateOnClose);
+            }
+        }, 100);
+    }
+}
+
+// NEW: Function to load all images in album when opening preview
+async function loadAllImagesForPreview() {
+    // Get current state dynamically
+    const state = await getCurrentState();
+    
+    // Skip if we already have all images
+    if (state.currentImageList.length >= state.totalImages && state.totalImages > 0) {
+        return;
+    }
+
+    // Skip if we can't determine folder or total
+    if (state.totalImages <= 0) {
+        return;
+    }
+
+    try {
+        // Import required functions
+        const { getCurrentFolderInfo } = await import('./app.js');
+        
+        const { path: currentFolder } = getCurrentFolderInfo();
+        if (!currentFolder) {
+            return;
+        }
+
+        // Calculate how many more images we need
+        const remainingImages = state.totalImages - state.currentImageList.length;
+        if (remainingImages <= 0) {
+            return;
+        }
+
+        // Load remaining images in batches
+        const imagesToLoad = [];
+        let pageToLoad = state.currentPage + 1;
+        let loadedCount = 0;
+
+        while (loadedCount < remainingImages) {
+                            const responseData = await fetchDataApi('list_files', {
+                    path: currentFolder,
+                    page: pageToLoad,
+                    limit: IMAGES_PER_PAGE
+                });
+
+            if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+                // Filter out duplicates - use path fallback when source_path is undefined
+                const currentPaths = new Set([...state.currentImageList, ...imagesToLoad].map(item => item.source_path || item.path));
+                
+                const newImages = responseData.data.files.filter(item => !currentPaths.has(item.source_path || item.path));
+                
+                imagesToLoad.push(...newImages);
+                loadedCount += newImages.length;
+                pageToLoad++;
+
+                // Break if we got fewer images than expected (reached end)
+                if (newImages.length < IMAGES_PER_PAGE) {
+                    break;
+                }
+                         } else {
+                // No more images available
+                break;
+            }
+        }
+
+                 if (imagesToLoad.length > 0) {
+             // Update global state
+             const updatedImageList = [...state.currentImageList, ...imagesToLoad];
+             setCurrentImageList(updatedImageList);
+             setCurrentPage(pageToLoad - 1);
+         }
+
+    } catch (error) {
+        console.error('[photoswipeHandler] Error loading all images for preview:', error);
+        // Don't throw - let preview open with current images
+    }
 }
 
 export function isPhotoSwipeActive() {
@@ -183,7 +407,138 @@ export function closePhotoSwipeIfActive() {
     return false;
 }
 
-export function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
+// NEW: Dynamic loading for PhotoSwipe preview
+let isLoadingMoreForPreview = false;
+let lastLoadTriggerIndex = -1; // Prevent rapid repeated loading
+
+async function checkAndLoadMoreForPreview(currentIndex) {
+    // Skip if using LOAD_ALL strategy (all images already loaded on open)
+    if (PREVIEW_LOADING_STRATEGY === 'LOAD_ALL_ON_OPEN') {
+        return;
+    }
+    
+    // Get current state dynamically
+    const state = await getCurrentState();
+    
+    // Don't load if already loading, if we have all images, or if there's no folder context
+    if (isLoadingMoreForPreview || state.isLoadingMore || state.currentImageList.length >= state.totalImages) {
+        return;
+    }
+    
+    // Check if we're near the end (configurable threshold)
+    const isNearEnd = currentIndex >= state.currentImageList.length - PREVIEW_NEAR_END_THRESHOLD;
+    
+    if (!isNearEnd || currentIndex <= lastLoadTriggerIndex) {
+        return;
+    }
+    
+    lastLoadTriggerIndex = currentIndex;
+    
+    try {
+        isLoadingMoreForPreview = true;
+        
+        // Import required state functions dynamically to avoid circular imports
+        const { getCurrentFolderInfo } = await import('./app.js');
+        
+        const { path: currentFolder } = getCurrentFolderInfo();
+        if (!currentFolder) {
+            console.warn('[photoswipeHandler] No current folder, cannot load more for preview');
+            return;
+        }
+        
+        const nextPage = state.currentPage + 1;
+        
+        // Fetch next batch
+        const responseData = await fetchDataApi('list_files', {
+            path: currentFolder,
+            page: nextPage, 
+            limit: IMAGES_PER_PAGE
+        });
+        
+        if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+            const newImages = responseData.data.files;
+            
+            // Filter out duplicates - use path fallback when source_path is undefined
+            const currentPaths = new Set(state.currentImageList.map(item => item.source_path || item.path));
+            const trulyNewImages = newImages.filter(item => !currentPaths.has(item.source_path || item.path));
+            
+            if (trulyNewImages.length > 0) {
+                // Update the global state
+                const updatedImageList = [...state.currentImageList, ...trulyNewImages];
+                setCurrentImageList(updatedImageList);
+                setCurrentPage(nextPage);
+                
+                // Update PhotoSwipe's dataSource dynamically
+                updatePhotoSwipeDataSource(updatedImageList);
+                
+                console.log(`[photoswipeHandler] Loaded ${trulyNewImages.length} more images for preview. Total: ${updatedImageList.length}`);
+            }
+        }
+        
+    } catch (error) {
+        console.error('[photoswipeHandler] Error loading more images for preview:', error);
+    } finally {
+        isLoadingMoreForPreview = false;
+    }
+}
+
+function updatePhotoSwipeDataSource(newImageList) {
+    if (!photoswipeLightbox) {
+        return;
+    }
+    
+    // Convert new image list to PhotoSwipe format
+    const newDataSource = newImageList.map(itemData => {
+        if (itemData.type === 'video') {
+            const videoSrc = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
+            const posterSrc = `${API_BASE_URL}?action=get_thumbnail&path=${encodeURIComponent(itemData.path)}&size=750`;
+            return {
+                html: `<div class="pswp-video-container"><video src="${videoSrc}" controls autoplay playsinline poster="${posterSrc}"></video></div>`,
+                width: itemData.width || 0,
+                height: itemData.height || 0,
+                type: 'video',
+                videoSrc: videoSrc,
+                filename: itemData.name,
+                originalPath: itemData.path
+            };
+        } else {
+            const imageUrl = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(itemData.path)}`;
+            return {
+                src: imageUrl,
+                thumb: imageUrl,
+                width: itemData.width,
+                height: itemData.height,
+                alt: itemData.name,
+                type: 'image',
+                filename: itemData.name,
+                originalPath: itemData.path
+            };
+        }
+    });
+    
+    // Update PhotoSwipe's dataSource
+    photoswipeLightbox.options.dataSource = newDataSource;
+    
+    // If PhotoSwipe instance is active, update its slides array
+    const pswp = photoswipeLightbox.pswp;
+    if (pswp && pswp.isOpen) {
+        // PhotoSwipe 5 doesn't have a direct way to add slides dynamically
+        // We need to update the total count and enable navigation to new slides
+        pswp.options.dataSource = newDataSource;
+        
+        // Force PhotoSwipe to recognize the new slide count
+        if (pswp.numSlides !== newDataSource.length) {
+            pswp.numSlides = newDataSource.length;
+        }
+        
+        // Update the counter if it exists
+        if (pswp.ui && pswp.ui.updateCounter) {
+            pswp.ui.updateCounter();
+        }
+    }
+}
+
+export async function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
     if (isPhotoSwipeActive()) {
         const pswp = photoswipeLightbox.pswp;
         const currentSlide = pswp.currSlide;
@@ -195,7 +550,9 @@ export function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
         // We need to compare against the original item path used to generate that src.
         // The `currentImageList` is the source of truth for PhotoSwipe's dataSource mapping.
 
-        const originalItem = currentImageList.find(item => item.path === imagePath);
+        // Get current state dynamically
+        const state = await getCurrentState();
+        const originalItem = state.currentImageList.find(item => item.path === imagePath);
         if (originalItem) {
             const expectedSrc = `${API_BASE_URL}?action=get_image&path=${encodeURIComponent(originalItem.path)}`;
             const expectedVideoContainer = `<div class="pswp-video-container"><video src="${expectedSrc}"`; // Check start for videos
@@ -212,7 +569,7 @@ export function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
             
             // If the currently displayed slide in PhotoSwipe corresponds to the image path that just got its 750px thumb:
             // We need to update the item in currentImageList first, then tell PhotoSwipe to refresh.
-            const itemInState = currentImageList[pswp.currIndex];
+            const itemInState = state.currentImageList[pswp.currIndex];
             if (itemInState && itemInState.path === imagePath) {
                 // The dataSource for PhotoSwipe is re-mapped in openPhotoSwipeAtIndex on each open.
                 // For live updates, we'd ideally update PhotoSwipe's internal slides array.
@@ -223,4 +580,38 @@ export function refreshCurrentPhotoSwipeSlideIfNeeded(imagePath) {
             }
         }
     }
+}
+
+// DEBUG: Expose functions to window for testing (at the end so all functions are defined)
+if (typeof window !== 'undefined') {
+    window.debugPhotoSwipe = {
+        testWithCurrentData: testPhotoSwipeWithCurrentData,
+        testWithFakeData: testPhotoSwipeWithFakeData,
+        
+        // Async state accessors using dynamic imports
+        getCurrentImageList: async () => (await getCurrentState()).currentImageList,
+        getTotalImages: async () => (await getCurrentState()).totalImages,
+        getCurrentPage: async () => (await getCurrentState()).currentPage,
+        
+        getStrategy: () => PREVIEW_LOADING_STRATEGY,
+        loadAllImages: loadAllImagesForPreview,
+        openAtIndex: openPhotoSwipeAtIndex,
+        
+        // Comprehensive state check
+        checkState: async () => {
+            const state = await getCurrentState();
+            return {
+                currentImageList: {
+                    available: !!state.currentImageList,
+                    length: state.currentImageList?.length || 0,
+                    first3: state.currentImageList?.slice(0, 3).map(img => img.name) || []
+                },
+                totalImages: state.totalImages,
+                currentPage: state.currentPage,
+                isLoadingMore: state.isLoadingMore,
+                photoswipeLightbox: !!photoswipeLightbox
+            };
+        }
+    };
+    console.log('[photoswipeHandler] Debug functions exposed to window.debugPhotoSwipe with async state access');
 } 

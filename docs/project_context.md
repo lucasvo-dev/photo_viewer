@@ -60,7 +60,7 @@ js/app.js                    # Logic thư viện chính
 js/jet_app.js               # Logic Jet Culling (filmstrip lazy loading)
 js/zipManager.js            # Quản lý ZIP jobs
 js/apiService.js            # API communication
-js/photoswipeHandler.js     # PhotoSwipe integration
+js/photoswipeHandler.js     # Enhanced PhotoSwipe integration (dynamic loading)
 js/admin.js                 # Admin interface chính
 js/admin_tabs.js            # Admin tab management
 js/admin_jet_cache.js       # Admin Jet cache management
@@ -69,7 +69,7 @@ js/shared-menu.js           # Shared menu component
 js/uiImageView.js           # Optimized image rendering với Masonry
 js/uiDirectoryView.js       # Directory listing UI
 js/utils.js                 # Utility functions
-js/config.js                # Client-side configuration
+js/config.js                # Client-side configuration (includes PhotoSwipe strategies)
 js/state.js                 # Application state management
 js/selectionManager.js      # Multi-selection functionality
 js/uiModal.js               # Modal dialogs
@@ -336,7 +336,12 @@ return [
 - **✅ Responsive gallery:** Masonry layout với lazy loading tối ưu
 - **✅ Advanced search:** Real-time search với debouncing
 - **✅ Password protection:** Session-based folder security
-- **✅ PhotoSwipe integration:** Professional lightbox với keyboard shortcuts
+- **✅ Enhanced PhotoSwipe Integration:** 
+  - Smart preview loading strategies (Load All vs Lazy Load)
+  - Dynamic image loading during navigation
+  - State preservation for grid lazy loading
+  - Full album navigation (235+ images)
+  - Performance optimized with throttling
 - **✅ Video support:** Thumbnail generation, streaming playback
 - **✅ Multi-selection:** Bulk operations với ZIP export
 - **✅ Mobile optimization:** Touch gestures, swipe navigation
@@ -434,6 +439,12 @@ return [
 - **✅ CSS Optimization:** Component-based architecture, minimal bundle size
 - **✅ Image Optimization:** WebP support, responsive images
 - **✅ Mobile Performance:** Touch-optimized interactions, reduced payload
+- **✅ PhotoSwipe Performance:** 
+  - Dynamic state management with getCurrentState()
+  - Configurable loading strategies (LOAD_ALL_ON_OPEN vs LAZY_LOAD_ON_NAVIGATE)
+  - Throttled duplicate detection and API calls
+  - State preservation for seamless grid navigation
+  - Optimized logging and critical path performance
 
 ### 7.2 Backend Performance  
 - **✅ Database Optimization:**
@@ -560,6 +571,7 @@ php worker_zip.php &                         # ZIP generation worker
 
 ### ✅ Core Features (100% Complete)
 - **Gallery System:** Full-featured browsing, searching, viewing
+- **Enhanced PhotoSwipe Preview:** Dynamic loading, full album navigation, state preservation
 - **Video Support:** Complete playback, thumbnail generation
 - **ZIP Export:** Advanced multi-file, async processing
 - **Jet Culling:** Professional RAW workflow với color coding
@@ -605,6 +617,7 @@ php worker_zip.php &                         # ZIP generation worker
 ### 12.2 Feature Innovation
 - **Jet Culling Workflow:** Industry-standard RAW processing workflow
 - **Advanced Lazy Loading:** Intersection Observer API với preload strategies
+- **Enhanced PhotoSwipe Integration:** Dynamic loading strategies, state preservation, full album navigation
 - **Multi-user Collaboration:** Real-time synchronization systems
 - **Professional UI/UX:** Compact, efficient, designer-focused interface
 - **Background Processing:** Enterprise-grade async job processing
