@@ -142,7 +142,7 @@ if (isset($_GET['folder'])) {
 
         <div id="directory-view">
             <div class="search-container google-style">
-                <input type="search" id="searchInput" placeholder="Tìm album ảnh (tên lớp, trường,...)" aria-label="Tìm kiếm album">
+                <input type="search" id="searchInput" placeholder="Tìm album ảnh" aria-label="Tìm kiếm album">
                 <!-- Thêm nút clear search -->
                 <button id="clearSearch" class="clear-search-button" style="display: none;" aria-label="Xóa tìm kiếm">&times;</button>
             </div>
