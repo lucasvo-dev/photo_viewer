@@ -12,6 +12,51 @@
     /* Add specific styles if needed */
 }
 
+/* PhotoSwipe Filename Display */
+.pswp__filename-display {
+    position: absolute !important;
+    bottom: 20px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+    background: rgba(0, 0, 0, 0.5) !important;
+    color: rgba(255, 255, 255, 0.9) !important;
+    padding: 8px 16px !important;
+    border-radius: 6px !important;
+    font-size: 14px !important;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif !important;
+    font-weight: 400 !important;
+    max-width: calc(100% - 80px) !important;
+    text-align: center !important;
+    white-space: nowrap !important;
+    overflow: hidden !important;
+    text-overflow: ellipsis !important;
+    z-index: 1060 !important;
+    backdrop-filter: blur(4px) !important;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3) !important;
+    line-height: 1.4 !important;
+    transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out !important;
+    pointer-events: none !important;
+}
+
+/* Mobile responsive for filename display */
+@media (max-width: 768px) {
+    .pswp__filename-display {
+        font-size: 13px !important;
+        padding: 6px 14px !important;
+        max-width: calc(100% - 60px) !important;
+        bottom: 16px !important;
+    }
+}
+
+@media (max-width: 480px) {
+    .pswp__filename-display {
+        font-size: 12px !important;
+        padding: 6px 12px !important;
+        max-width: calc(100% - 40px) !important;
+        bottom: 14px !important;
+    }
+}
+
 /* PhotoSwipe Video Styling */
 .pswp-video-container {
     width: 100%;
@@ -71,46 +116,4 @@
     max-height: 100%;
     object-fit: cover;
     border-radius: 2px;
-}
-
-/* Filename Display Styling */
-.pswp__filename {
-    position: absolute;
-    bottom: 100px; /* Position above the filmstrip if present */
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(0, 0, 0, 0.8);
-    color: #ffffff;
-    padding: 8px 16px;
-    border-radius: 6px;
-    font-size: 14px;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-    font-weight: 400;
-    max-width: 80%;
-    text-align: center;
-    z-index: 1051;
-    backdrop-filter: blur(8px);
-    word-break: break-word;
-    line-height: 1.4;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-/* Responsive filename display */
-@media (max-width: 768px) {
-    .pswp__filename {
-        bottom: 90px;
-        max-width: 90%;
-        font-size: 13px;
-        padding: 6px 12px;
-    }
-}
-
-/* Hide filename when filmstrip is not available or on smaller screens */
-@media (max-width: 480px) {
-    .pswp__filename {
-        bottom: 20px;
-        font-size: 12px;
-        max-width: 95%;
-    }
 }

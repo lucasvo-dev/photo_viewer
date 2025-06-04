@@ -292,6 +292,12 @@ function createImageItemElement(imgData, imageIndex, openPhotoSwipeCallback, isL
         div.classList.add('video-item'); // Add class for specific video item styling
     }
 
+    // Add item name overlay for showing filename
+    const nameOverlay = document.createElement('div');
+    nameOverlay.className = 'item-name-overlay';
+    nameOverlay.textContent = imgData.name;
+    anchor.appendChild(nameOverlay);
+
     div.appendChild(anchor);
     
     console.log(`[uiImageView] Created image item element for ${imgData.name}:`);

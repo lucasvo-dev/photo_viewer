@@ -177,7 +177,6 @@ export async function setupPhotoSwipeIfNeeded() {
 
     // Add custom download button to UI
     newLightbox.on('uiRegister', function() {
-        // Add download button
         newLightbox.pswp.ui.registerElement({
             name: 'download-item',
             order: 8,
@@ -200,79 +199,249 @@ export async function setupPhotoSwipeIfNeeded() {
                 }
             }
         });
-
-        // Add filename display element
-        newLightbox.pswp.ui.registerElement({
-            name: 'filename-display',
-            order: 9,
-            isButton: false,
-            tagName: 'div',
-            className: 'pswp__filename',
-            html: '',
-            onInit: (el, pswp) => {
-                // Update filename when slide changes
-                const updateFilename = () => {
-                    const currentSlideData = pswp.currSlide?.data;
-                    if (currentSlideData && currentSlideData.filename) {
-                        el.textContent = currentSlideData.filename;
-                        el.style.display = 'block';
-                    } else {
-                        el.style.display = 'none';
-                    }
-                };
-
-                // Listen to slide changes
-                pswp.on('change', updateFilename);
-                pswp.on('afterInit', updateFilename);
-            }
-        });
     });
 
+    // Function to create and add filename display manually
+    const createFilenameDisplay = (pswp) => {
+        try {
+            // Try to find PhotoSwipe container directly
+            const pswpContainer = document.querySelector('.pswp');
+            if (!pswpContainer) {
+                console.warn('[photoswipeHandler] .pswp container not found');
+                return null;
+            }
+
+            // Check if filename display already exists
+            let filenameElement = pswpContainer.querySelector('.pswp__filename-display');
+            if (filenameElement) {
+                console.log('[photoswipeHandler] Filename display already exists');
+                return filenameElement;
+            }
+
+            // Create filename display element manually
+            filenameElement = document.createElement('div');
+            filenameElement.className = 'pswp__filename-display';
+            filenameElement.style.cssText = `
+                position: absolute;
+                bottom: 20px;
+                left: 50%;
+                transform: translateX(-50%);
+                background: rgba(0, 0, 0, 0.5);
+                color: rgba(255, 255, 255, 0.9);
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-size: 14px;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+                font-weight: 400;
+                max-width: calc(100% - 80px);
+                text-align: center;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+                z-index: 1060;
+                backdrop-filter: blur(4px);
+                box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+                line-height: 1.4;
+                transition: opacity 0.2s ease-in-out, transform 0.2s ease-in-out;
+                pointer-events: none;
+                display: none;
+                opacity: 0;
+                transform: translateX(-50%) translateY(10px);
+            `;
+
+            // Append to PhotoSwipe container
+            pswpContainer.appendChild(filenameElement);
+            console.log('[photoswipeHandler] Filename display element created and added to .pswp container');
+            
+            return filenameElement;
+        } catch (error) {
+            console.error('[photoswipeHandler] Error creating filename display:', error);
+            return null;
+        }
+    };
+
+    // Function to update filename display
+    const updateFilenameDisplay = (pswp) => {
+        try {
+            if (!pswp) {
+                console.warn('[photoswipeHandler] updateFilenameDisplay: pswp is null/undefined');
+                return;
+            }
+            
+            // Find PhotoSwipe container directly
+            const pswpContainer = document.querySelector('.pswp');
+            if (!pswpContainer) {
+                console.warn('[photoswipeHandler] updateFilenameDisplay: .pswp container not found');
+                return;
+            }
+            
+            // Try to get existing element or create new one
+            let filenameElement = pswpContainer.querySelector('.pswp__filename-display');
+            if (!filenameElement) {
+                filenameElement = createFilenameDisplay(pswp);
+            }
+            
+            if (!filenameElement) {
+                console.warn('[photoswipeHandler] updateFilenameDisplay: Could not create or find filename element');
+                return;
+            }
+            
+            if (!pswp.currSlide || !pswp.currSlide.data) {
+                console.warn('[photoswipeHandler] updateFilenameDisplay: currSlide or currSlide.data not available');
+                filenameElement.style.display = 'none';
+                return;
+            }
+            
+            const currentSlideData = pswp.currSlide.data;
+            if (currentSlideData.filename) {
+                filenameElement.textContent = currentSlideData.filename;
+                filenameElement.style.display = 'block';
+                filenameElement.style.transform = 'translateX(-50%) translateY(10px)';
+                // Add smooth fade-in effect with slight upward motion
+                requestAnimationFrame(() => {
+                    filenameElement.style.opacity = '1';
+                    filenameElement.style.transform = 'translateX(-50%) translateY(0)';
+                });
+                console.log('[photoswipeHandler] Filename display updated:', currentSlideData.filename);
+            } else {
+                filenameElement.style.opacity = '0';
+                filenameElement.style.transform = 'translateX(-50%) translateY(10px)';
+                setTimeout(() => {
+                    filenameElement.style.display = 'none';
+                }, 200);
+                console.log('[photoswipeHandler] No filename available for current slide');
+            }
+        } catch (error) {
+            console.error('[photoswipeHandler] Error in updateFilenameDisplay:', error);
+        }
+    };
+
     // Show/hide download button and update filename display based on slide type
-    const updateUIElements = () => {
+    newLightbox.on('change', () => {
         const pswp = newLightbox.pswp;
+        console.log('[photoswipeHandler] change event triggered, updating filename display');
+        
+        // Always update filename display on slide change
+        updateFilenameDisplay(pswp);
+        
+        // Handle download button if UI is ready
         if (pswp && pswp.ui && pswp.ui.element) {
             const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
-            const filenameDisplay = pswp.ui.element.querySelector('.pswp__filename');
-            const currentSlideData = pswp.currSlide?.data;
-
-            // Update download button
             if (downloadBtn) {
+                const currentSlideData = pswp.currSlide && pswp.currSlide.data;
                 if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
                     downloadBtn.style.display = 'block';
                 } else {
                     downloadBtn.style.display = 'none';
                 }
             }
-
-            // Update filename display
-            if (filenameDisplay) {
-                if (currentSlideData && currentSlideData.filename) {
-                    filenameDisplay.textContent = currentSlideData.filename;
-                    filenameDisplay.style.display = 'block';
-                } else {
-                    filenameDisplay.style.display = 'none';
-                }
+            
+            // Check if we're near the end and need to load more
+            if (pswp && pswp.currSlide) {
+                const currentIndex = pswp.currSlide.index;
+                checkAndLoadMoreForPreview(currentIndex);
             }
         }
-    };
-
-    newLightbox.on('change', updateUIElements);
-    newLightbox.on('afterInit', updateUIElements);
-
-    // Add slide change listener for dynamic loading
-    newLightbox.on('change', () => {
+    });
+    
+    // Also check on initial open
+    newLightbox.on('afterInit', () => {
         const pswp = newLightbox.pswp;
-        if (pswp && pswp.currSlide) {
-            const currentIndex = pswp.currSlide.index;
-            // Check if we're near the end and need to load more
-            checkAndLoadMoreForPreview(currentIndex);
+        console.log('[photoswipeHandler] afterInit event triggered');
+        
+        // Delay to ensure UI is ready
+        setTimeout(() => {
+            if (pswp && pswp.ui && pswp.ui.element) {
+                const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
+                if (downloadBtn) {
+                    const currentSlideData = pswp.currSlide.data;
+                    if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
+                        downloadBtn.style.display = 'block';
+                    } else {
+                        downloadBtn.style.display = 'none';
+                    }
+                }
+                
+                // Update filename display on initial open
+                updateFilenameDisplay(pswp);
+            }
+        }, 100);
+    });
+
+    // Add firstUpdate listener for additional debugging
+    newLightbox.on('firstUpdate', () => {
+        const pswp = newLightbox.pswp;
+        console.log('[photoswipeHandler] firstUpdate event triggered');
+        
+        // Add delay to ensure UI is fully initialized
+        setTimeout(() => {
+            updateFilenameDisplay(pswp);
+        }, 150);
+    });
+
+    // Add openingAnimationEnd listener as another fallback
+    newLightbox.on('openingAnimationEnd', () => {
+        const pswp = newLightbox.pswp;
+        console.log('[photoswipeHandler] openingAnimationEnd event triggered');
+        
+        // Final attempt with longer delay
+        setTimeout(() => {
+            updateFilenameDisplay(pswp);
+        }, 200);
+    });
+
+    // Add container creation watcher using MutationObserver as ultimate fallback
+    const containerWatcher = new MutationObserver((mutations) => {
+        mutations.forEach((mutation) => {
+            mutation.addedNodes.forEach((node) => {
+                if (node.nodeType === Node.ELEMENT_NODE && node.classList && node.classList.contains('pswp')) {
+                    console.log('[photoswipeHandler] .pswp container detected by MutationObserver');
+                    setTimeout(() => {
+                        const pswp = newLightbox.pswp;
+                        if (pswp) {
+                            updateFilenameDisplay(pswp);
+                        }
+                    }, 300);
+                }
+            });
+        });
+    });
+
+    // Start watching for .pswp container creation
+    containerWatcher.observe(document.body, {
+        childList: true,
+        subtree: true
+    });
+
+    // Cleanup observer when PhotoSwipe closes
+    newLightbox.on('destroy', () => {
+        if (containerWatcher) {
+            containerWatcher.disconnect();
+            console.log('[photoswipeHandler] MutationObserver disconnected');
         }
     });
 
     newLightbox.init();
     setPhotoswipeLightbox(newLightbox);
     console.log("[photoswipeHandler.js] PhotoSwipe initialized with custom UI for video download and dynamic loading.");
+    
+    // Add debug function to window for testing
+    window.debugPhotoSwipeFilename = () => {
+        const pswp = newLightbox.pswp;
+        const pswpContainer = document.querySelector('.pswp');
+        const filenameElement = pswpContainer ? pswpContainer.querySelector('.pswp__filename-display') : null;
+        
+        console.log('=== PhotoSwipe Filename Debug ===');
+        console.log('pswp:', pswp);
+        console.log('pswpContainer:', pswpContainer);
+        console.log('filenameElement:', filenameElement);
+        console.log('currSlide:', pswp ? pswp.currSlide : null);
+        console.log('currSlide.data:', pswp && pswp.currSlide ? pswp.currSlide.data : null);
+        
+        if (pswp) {
+            updateFilenameDisplay(pswp);
+        }
+    };
 }
 
 export async function openPhotoSwipeAtIndex(index) {
