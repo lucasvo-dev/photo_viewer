@@ -228,6 +228,10 @@ if (!defined('RAW_IMAGE_SOURCES')) {
                 </div>
             </div>
 
+            <!-- Subfolder display area - similar to gallery app -->
+            <div id="jet-subfolder-display-area" style="display: none;"></div>
+            
+            <!-- Main image grid container -->
             <div id="jet-item-list-container">
                 <!-- Content will be loaded here -->
                 <div class="jet-welcome-message" id="jet-welcome-message">

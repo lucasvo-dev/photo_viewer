@@ -721,6 +721,32 @@ body.jet-app-active {
     }
 }
 
+/* --- Subfolder Display Area --- */
+.jet-app-active #jet-subfolder-display-area {
+    width: 100%;
+    margin: 0;
+    padding: 24px 24px 0 24px; /* Same horizontal padding as image grid, no bottom padding */
+}
+
+/* Align subfolder area with rest of the app content */
+.jet-app-active #jet-subfolder-display-area .directory-list-styling {
+    margin: 0; /* Remove default margin */
+    padding: 0;
+}
+
+/* Responsive padding for subfolder area to match image grid */
+@media (max-width: 768px) {
+    .jet-app-active #jet-subfolder-display-area {
+        padding: 16px 16px 0 16px;
+    }
+}
+
+.jet-app-active #jet-subfolder-display-area .folder-image-divider {
+    border: none;
+    border-top: 1px solid #30363d;
+    margin: 24px 0;
+}
+
 /* --- Image Grid Container --- */
 .jet-app-active .image-grid-container {
     display: grid;

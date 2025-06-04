@@ -227,6 +227,7 @@ switch ($jet_action) {
         error_log("[JET_LIST_IMAGES] Path security check passed.");
 
         $images = [];
+        $folders = []; // NEW: Also collect folders for nested navigation
         $raw_extensions = array_map('strtolower', RAW_FILE_EXTENSIONS);
         error_log("[JET_LIST_IMAGES] About to iterate directory: {$full_scan_path_realpath}");
 
@@ -308,8 +309,20 @@ switch ($jet_action) {
         try {
             $iterator = new DirectoryIterator($full_scan_path_realpath);
             foreach ($iterator as $fileinfo) {
-                if ($fileinfo->isFile()) {
-                    $entry = $fileinfo->getFilename();
+                if ($fileinfo->isDot()) {
+                    continue; // Skip . and ..
+                }
+
+                $entry = $fileinfo->getFilename();
+
+                if ($fileinfo->isDir()) {
+                    // NEW: Collect folders for nested navigation
+                    $folders[] = [
+                        'name' => $entry,
+                        'type' => 'folder',
+                        'path' => (empty($clean_relative_path) ? '' : $clean_relative_path . '/') . $entry
+                    ];
+                } elseif ($fileinfo->isFile()) {
                     $extension = strtolower($fileinfo->getExtension());
                     // error_log("[JET_LIST_IMAGES_ITERATOR] Checking file: {$entry}, Extension found: '{$extension}'"); 
                     if (in_array($extension, $raw_extensions)) {
@@ -337,14 +350,23 @@ switch ($jet_action) {
             json_error("Không thể đọc thư mục: " . htmlspecialchars($clean_relative_path) . " Error: " . $e->getMessage(), 500);
             exit;
         }
-        error_log("[JET_LIST_IMAGES] Directory iteration complete. Found " . count($images) . " images.");
+        error_log("[JET_LIST_IMAGES] Directory iteration complete. Found " . count($images) . " images and " . count($folders) . " folders.");
         
+        // Sort both arrays
         usort($images, function($a, $b) {
+            return strnatcasecmp($a['name'], $b['name']);
+        });
+        usort($folders, function($a, $b) {
             return strnatcasecmp($a['name'], $b['name']);
         });
 
         header('Content-Type: application/json');
-        echo json_encode(['success' => true, 'images' => $images, 'debug_path' => $full_scan_path_realpath]);
+        echo json_encode([
+            'success' => true, 
+            'images' => $images, 
+            'folders' => $folders, // NEW: Include folders in response
+            'debug_path' => $full_scan_path_realpath
+        ]);
         exit;
 
     case 'jet_get_raw_preview':

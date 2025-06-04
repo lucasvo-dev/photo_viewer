@@ -533,6 +533,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if(itemListContainer) {
             itemListContainer.innerHTML = ''; // Clear previous items
         }
+        
+        // Clear subfolder area when showing top-level folders
+        const subfolderDisplayArea = document.getElementById('jet-subfolder-display-area');
+        if (subfolderDisplayArea) {
+            subfolderDisplayArea.innerHTML = '';
+            subfolderDisplayArea.style.display = 'none';
+        }
+        
         renderBreadcrumb(); // Render breadcrumb for the top level
 
         try {
@@ -653,8 +661,11 @@ document.addEventListener('DOMContentLoaded', () => {
             if (data.error) {
                 throw new Error(data.error + (data.details ? ` (${data.details})` : ''));
             }
-            if (data.success && Array.isArray(data.images)) {
-                return data.images;
+            if (data.success) {
+                return {
+                    images: Array.isArray(data.images) ? data.images : [],
+                    folders: Array.isArray(data.folders) ? data.folders : []
+                };
             }
             throw new Error('Định dạng phản hồi không hợp lệ từ máy chủ khi tải danh sách ảnh.');
         } catch (error) {
@@ -687,14 +698,55 @@ document.addEventListener('DOMContentLoaded', () => {
         currentGridImages = []; // Clear previous images
 
         try {
-            const images = await listImagesAPI(sourceKey, relativePath);
-            currentGridImages = images; // Store the full list
-            applySortAndFilterAndRender(); // NEW: Apply current sort and filter
-            
-            // Start realtime polling for pick updates
-            startRealtimePolling();
+            const result = await listImagesAPI(sourceKey, relativePath);
+            if (result) {
+                const { images, folders } = result;
+                
+                // Clear subfolder area first
+                const subfolderDisplayArea = document.getElementById('jet-subfolder-display-area');
+                if (subfolderDisplayArea) {
+                    subfolderDisplayArea.innerHTML = '';
+                    subfolderDisplayArea.style.display = 'none';
+                }
+                
+                // Render subfolders if any exist
+                if (folders && folders.length > 0) {
+                    renderSubfolders(folders);
+                    
+                    // Add divider if we also have images
+                    if (images && images.length > 0 && subfolderDisplayArea) {
+                        const hr = document.createElement('hr');
+                        hr.className = 'folder-image-divider';
+                        subfolderDisplayArea.appendChild(hr);
+                    }
+                }
+                
+                // Handle images
+                if (images && images.length > 0) {
+                    currentGridImages = images; // Store the full list
+                    applySortAndFilterAndRender(); // Apply current sort and filter
+                    
+                    // Start realtime polling for pick updates
+                    startRealtimePolling();
+                } else {
+                    currentGridImages = [];
+                    itemListContainer.innerHTML = folders && folders.length > 0 ? 
+                        '<p class="empty-message">Không có ảnh RAW nào trong thư mục này.</p>' :
+                        '<p class="empty-message">Thư mục trống - không có ảnh RAW hoặc thư mục con nào.</p>';
+                }
+            } else {
+                currentGridImages = [];
+                itemListContainer.innerHTML = `<div class="jet-feedback-message error">Không thể tải nội dung thư mục.</div>`;
+            }
         } catch (error) {
             console.error('Error fetching images for grid:', error);
+            currentGridImages = [];
+            // Clear subfolder area on error
+            const subfolderDisplayArea = document.getElementById('jet-subfolder-display-area');
+            if (subfolderDisplayArea) {
+                subfolderDisplayArea.innerHTML = '';
+                subfolderDisplayArea.style.display = 'none';
+            }
             itemListContainer.innerHTML = `<div class="jet-feedback-message error">Lỗi khi tải ảnh: ${error.message}</div>`;
         }
     }
@@ -1120,6 +1172,79 @@ document.addEventListener('DOMContentLoaded', () => {
         });
         
         console.log('[Jet Debug] Event listeners added successfully');
+    }
+
+    // New function to render subfolders in the subfolder area (similar to gallery app)
+    function renderSubfolders(subfolders) {
+        console.log('[Jet Debug] renderSubfolders called with:', subfolders);
+        
+        const subfolderDisplayArea = document.getElementById('jet-subfolder-display-area');
+        if (!subfolderDisplayArea) {
+            console.error('[Jet Debug] subfolder display area not found');
+            return;
+        }
+
+        if (!subfolders || subfolders.length === 0) {
+            subfolderDisplayArea.style.display = 'none';
+            subfolderDisplayArea.innerHTML = '';
+            return;
+        }
+
+        // Show and populate subfolder area
+        subfolderDisplayArea.style.display = 'block';
+        
+        const ul = document.createElement('ul');
+        ul.className = 'directory-list-styling subfolder-list';
+        
+        subfolders.forEach(subfolder => {
+            const li = document.createElement('li');
+            const a = document.createElement('a');
+            a.href = '#';
+            a.dataset.sourceKey = currentRawSourceKey;
+            a.dataset.folderPath = currentRelativePath ? currentRelativePath + '/' + subfolder.name : subfolder.name;
+            a.dataset.itemName = subfolder.name;
+            a.dataset.isTopLevel = 'false';
+
+            const folderThumbnail = document.createElement('div');
+            folderThumbnail.className = 'folder-thumbnail';
+            const icon = document.createElement('i');
+            icon.className = 'fas fa-folder';
+            folderThumbnail.appendChild(icon);
+
+            const span = document.createElement('span');
+            span.textContent = subfolder.name;
+            if (subfolder.image_count) {
+                const small = document.createElement('small');
+                small.textContent = subfolder.image_count + ' ảnh';
+                span.appendChild(small);
+            }
+
+            a.appendChild(folderThumbnail);
+            a.appendChild(span);
+            li.appendChild(a);
+            ul.appendChild(li);
+
+            // Add click event listener
+            a.addEventListener('click', (event) => {
+                event.preventDefault();
+                const folderPath = a.dataset.folderPath;
+                console.log('[Jet Debug] Subfolder clicked:', folderPath);
+                fetchAndRenderImages(currentRawSourceKey, folderPath);
+            });
+
+            // Add hover effects
+            a.addEventListener('mouseenter', () => {
+                a.style.transform = 'translateY(-2px)';
+            });
+
+            a.addEventListener('mouseleave', () => {
+                a.style.transform = 'translateY(0)';
+            });
+        });
+
+        subfolderDisplayArea.innerHTML = '';
+        subfolderDisplayArea.appendChild(ul);
+        console.log('[Jet Debug] Subfolders rendered successfully');
     }
 
     function renderBreadcrumb() {
