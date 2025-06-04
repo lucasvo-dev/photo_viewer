@@ -15,10 +15,10 @@ let appHideLoadingIndicator = () => console.error('hideLoadingIndicator not init
 export function initializeDirectoryView(callbacks) {
     console.log('[uiDirectoryView] Initializing...');
     directoryViewEl = document.getElementById('directory-view');
-    searchInputEl = document.getElementById('searchInput');
+    searchInputEl = callbacks.searchInputEl;
     directoryListEl = document.getElementById('directory-list');
     searchPromptEl = document.getElementById('search-prompt');
-    clearSearchBtnEl = document.getElementById('clearSearch');
+    clearSearchBtnEl = callbacks.clearSearchBtnEl;
     loadingIndicatorEl = document.getElementById('loading-indicator'); // Assuming it exists
 
     console.log('[uiDirectoryView] DOM Elements:', {

@@ -845,7 +845,9 @@ async function initializeApp() {
     initializeDirectoryView({
         navigateToFolder: navigateToFolder, 
         showLoadingIndicator: showLoadingIndicator, 
-        hideLoadingIndicator: hideLoadingIndicator 
+        hideLoadingIndicator: hideLoadingIndicator,
+        searchInputEl: searchInputEl, // Pass the search input element
+        clearSearchBtnEl: searchClearEl // Pass the clear search button element
     });
     console.log('[app.js] DirectoryView initialized (or call completed).');
 
@@ -993,34 +995,6 @@ function initializeAppEventListeners() {
     } else {
         console.warn('[app.js] Logo link not found for home navigation');
     }
-
-    // Search functionality
-    const searchInput = document.getElementById('searchInput');
-    const clearSearchButton = document.getElementById('clearSearch'); // Assuming you have a clear search button
-
-    if (searchInput) {
-        searchInput.addEventListener('input', debounce(async (e) => {
-            const searchTerm = e.target.value.trim();
-            // When searching, always show the top-level directory view
-            // and let loadTopLevelDirectories handle showing/hiding based on search term
-            showDirectoryView(); 
-            await loadTopLevelDirectories(searchTerm);
-            if (clearSearchButton) { // Show clear button if there's text
-                clearSearchButton.style.display = searchTerm ? 'inline-block' : 'none';
-            }
-        }, 300));
-    }
-    if (clearSearchButton && searchInput) {
-        clearSearchButton.addEventListener('click', async () => {
-            searchInput.value = '';
-            clearSearchButton.style.display = 'none';
-            showDirectoryView();
-            await loadTopLevelDirectories(''); // Load all top-level directories
-        });
-         // Initially hide clear button
-        clearSearchButton.style.display = 'none';
-    }
-
 
     // Back to top button
     const backToTopButton = document.getElementById('backToTop');
