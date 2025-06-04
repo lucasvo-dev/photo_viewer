@@ -72,3 +72,45 @@
     object-fit: cover;
     border-radius: 2px;
 }
+
+/* Filename Display Styling */
+.pswp__filename {
+    position: absolute;
+    bottom: 100px; /* Position above the filmstrip if present */
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(0, 0, 0, 0.8);
+    color: #ffffff;
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-weight: 400;
+    max-width: 80%;
+    text-align: center;
+    z-index: 1051;
+    backdrop-filter: blur(8px);
+    word-break: break-word;
+    line-height: 1.4;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Responsive filename display */
+@media (max-width: 768px) {
+    .pswp__filename {
+        bottom: 90px;
+        max-width: 90%;
+        font-size: 13px;
+        padding: 6px 12px;
+    }
+}
+
+/* Hide filename when filmstrip is not available or on smaller screens */
+@media (max-width: 480px) {
+    .pswp__filename {
+        bottom: 20px;
+        font-size: 12px;
+        max-width: 95%;
+    }
+}

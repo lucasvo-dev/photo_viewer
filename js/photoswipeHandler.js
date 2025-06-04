@@ -177,6 +177,7 @@ export async function setupPhotoSwipeIfNeeded() {
 
     // Add custom download button to UI
     newLightbox.on('uiRegister', function() {
+        // Add download button
         newLightbox.pswp.ui.registerElement({
             name: 'download-item',
             order: 8,
@@ -199,42 +200,65 @@ export async function setupPhotoSwipeIfNeeded() {
                 }
             }
         });
+
+        // Add filename display element
+        newLightbox.pswp.ui.registerElement({
+            name: 'filename-display',
+            order: 9,
+            isButton: false,
+            tagName: 'div',
+            className: 'pswp__filename',
+            html: '',
+            onInit: (el, pswp) => {
+                // Update filename when slide changes
+                const updateFilename = () => {
+                    const currentSlideData = pswp.currSlide?.data;
+                    if (currentSlideData && currentSlideData.filename) {
+                        el.textContent = currentSlideData.filename;
+                        el.style.display = 'block';
+                    } else {
+                        el.style.display = 'none';
+                    }
+                };
+
+                // Listen to slide changes
+                pswp.on('change', updateFilename);
+                pswp.on('afterInit', updateFilename);
+            }
+        });
     });
 
-    // Show/hide download button based on slide type
-    newLightbox.on('change', () => {
+    // Show/hide download button and update filename display based on slide type
+    const updateUIElements = () => {
         const pswp = newLightbox.pswp;
         if (pswp && pswp.ui && pswp.ui.element) {
             const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
+            const filenameDisplay = pswp.ui.element.querySelector('.pswp__filename');
+            const currentSlideData = pswp.currSlide?.data;
+
+            // Update download button
             if (downloadBtn) {
-                const currentSlideData = pswp.currSlide.data;
                 if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
                     downloadBtn.style.display = 'block';
                 } else {
                     downloadBtn.style.display = 'none';
                 }
             }
-        } else {
-            // console.warn('[photoswipeHandler] 'change' event: pswp.ui or pswp.ui.element not available yet.');
-        }
-    });
-    // Also check on initial open
-    newLightbox.on('afterInit', () => {
-        const pswp = newLightbox.pswp;
-        if (pswp && pswp.ui && pswp.ui.element) {
-            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
-            if (downloadBtn) {
-                const currentSlideData = pswp.currSlide.data;
-                if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
-                    downloadBtn.style.display = 'block';
+
+            // Update filename display
+            if (filenameDisplay) {
+                if (currentSlideData && currentSlideData.filename) {
+                    filenameDisplay.textContent = currentSlideData.filename;
+                    filenameDisplay.style.display = 'block';
                 } else {
-                    downloadBtn.style.display = 'none';
+                    filenameDisplay.style.display = 'none';
                 }
             }
-        } else {
-            // console.warn('[photoswipeHandler] 'afterInit' event: pswp.ui or pswp.ui.element not available yet.');
         }
-    });
+    };
+
+    newLightbox.on('change', updateUIElements);
+    newLightbox.on('afterInit', updateUIElements);
 
     // Add slide change listener for dynamic loading
     newLightbox.on('change', () => {
