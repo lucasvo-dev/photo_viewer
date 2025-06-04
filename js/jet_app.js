@@ -9,6 +9,7 @@ import {
     startPanelPolling
 } from './zipManager.js';
 import { fetchDataApi } from './apiService.js';
+import { debounce } from './utils.js';
 
 document.addEventListener('DOMContentLoaded', () => {
     console.log('Jet Culling App Initialized.');
@@ -222,29 +223,76 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
+        // Debounce filter application to prevent rapid consecutive calls
+        const debouncedFilter = debounce(() => {
+            console.log('[Jet Debug] Debounced filter executing...');
+            applySortAndFilterAndRender();
+        }, 50); // Reduced from 150ms to 50ms for better responsiveness
+
         filterControls.addEventListener('click', (event) => {
-            const target = event.target;
-            if (target.classList.contains('jet-filter-button')) {
-                // Remove active class from all filter buttons
+            // Find the closest filter button (handle event bubbling)
+            let target = event.target;
+            
+            // Walk up the DOM tree to find the filter button
+            while (target && target !== filterControls) {
+                if (target.classList && target.classList.contains('jet-filter-button')) {
+                    break;
+                }
+                target = target.parentElement;
+            }
+            
+            console.log('[Jet Debug] Filter button clicked, target:', target);
+            console.log('[Jet Debug] Target classes:', target?.classList?.toString());
+            console.log('[Jet Debug] Target ID:', target?.id);
+            console.log('[Jet Debug] Target data-color:', target?.dataset?.color);
+            
+            if (target && target.classList && target.classList.contains('jet-filter-button')) {
+                console.log('[Jet Debug] Valid filter button detected');
+                
+                // Prevent default action and stop propagation
+                event.preventDefault();
+                event.stopPropagation();
+                
+                // Immediate UI feedback - update button states instantly
                 const buttons = filterControls.querySelectorAll('.jet-filter-button');
                 buttons.forEach(btn => btn.classList.remove('active'));
-
-                // Add active class to the clicked button
                 target.classList.add('active');
 
                 // Update currentFilter based on the button clicked
+                let newFilter = currentFilter; // Keep current as fallback
                 if (target.id === 'filter-all') {
-                    currentFilter = 'all';
+                    newFilter = 'all';
                 } else if (target.id === 'filter-picked-any') {
-                    currentFilter = 'picked-any';
+                    newFilter = 'picked-any';
                 } else if (target.id === 'filter-not-picked') {
-                    currentFilter = 'not-picked';
-                } else if (target.dataset.color) {
-                    currentFilter = target.dataset.color; // e.g., 'red', 'green'
+                    newFilter = 'not-picked';
+                } else if (target.dataset && target.dataset.color) {
+                    newFilter = target.dataset.color; // e.g., 'red', 'green'
                 }
                 
-                console.log('[Jet Debug] Filter changed to:', currentFilter);
-                applySortAndFilterAndRender();
+                console.log('[Jet Debug] Current filter:', currentFilter, '-> New filter:', newFilter);
+                
+                // ALWAYS provide immediate visual feedback regardless of filter change
+                showLoadingOverlay('Đang lọc ảnh...');
+                const quickFilterCount = getQuickFilterCount(newFilter);
+                updateStatsDisplay(currentGridImages.length, quickFilterCount);
+                
+                // Apply filter if it changed OR force refresh if same filter (to handle edge cases)
+                if (newFilter !== currentFilter) {
+                    currentFilter = newFilter;
+                    console.log('[Jet Debug] Filter changed - applying debounced filter');
+                    debouncedFilter();
+                } else {
+                    console.log('[Jet Debug] Filter unchanged - forcing immediate refresh');
+                    // Force immediate refresh for edge cases where UI might be out of sync
+                    setTimeout(() => {
+                        applySortAndFilterAndRender();
+                    }, 10); // Very short delay to ensure UI updates are processed
+                }
+            } else {
+                console.log('[Jet Debug] Clicked element is not a filter button');
+                console.log('[Jet Debug] Original event target:', event.target);
+                console.log('[Jet Debug] Final target after walking:', target);
             }
         });
 
@@ -255,6 +303,71 @@ document.addEventListener('DOMContentLoaded', () => {
             console.log('[Jet Debug] ZIP button listener added');
         } else {
             console.warn('[Jet Debug] ZIP button not found');
+        }
+
+        // BACKUP: Add direct listeners to each filter button as fallback
+        const allFilterButtons = filterControls.querySelectorAll('.jet-filter-button');
+        console.log('[Jet Debug] Found', allFilterButtons.length, 'filter buttons for direct listeners');
+        
+        allFilterButtons.forEach((button, index) => {
+            button.addEventListener('click', (event) => {
+                console.log(`[Jet Debug] Direct listener triggered for button ${index}:`, button);
+                
+                // Prevent event from bubbling up to container listener
+                event.stopPropagation();
+                
+                // Force process this button click
+                processFilterButtonClick(button);
+            });
+        });
+    }
+
+    // Helper function to process filter button clicks
+    function processFilterButtonClick(buttonElement) {
+        console.log('[Jet Debug] Processing filter button click:', buttonElement);
+        
+        const filterControls = document.getElementById('jet-main-controls') || document.getElementById('jet-filter-controls');
+        if (!filterControls) return;
+
+        // Immediate UI feedback - update button states instantly
+        const buttons = filterControls.querySelectorAll('.jet-filter-button');
+        buttons.forEach(btn => btn.classList.remove('active'));
+        buttonElement.classList.add('active');
+
+        // Update currentFilter based on the button clicked
+        let newFilter = currentFilter; // Keep current as fallback
+        if (buttonElement.id === 'filter-all') {
+            newFilter = 'all';
+        } else if (buttonElement.id === 'filter-picked-any') {
+            newFilter = 'picked-any';
+        } else if (buttonElement.id === 'filter-not-picked') {
+            newFilter = 'not-picked';
+        } else if (buttonElement.dataset && buttonElement.dataset.color) {
+            newFilter = buttonElement.dataset.color; // e.g., 'red', 'green'
+        }
+        
+        console.log('[Jet Debug] Direct click - Current filter:', currentFilter, '-> New filter:', newFilter);
+        
+        // ALWAYS provide immediate visual feedback
+        showLoadingOverlay('Đang lọc ảnh...');
+        const quickFilterCount = getQuickFilterCount(newFilter);
+        updateStatsDisplay(currentGridImages.length, quickFilterCount);
+        
+        // Apply filter
+        if (newFilter !== currentFilter) {
+            currentFilter = newFilter;
+            console.log('[Jet Debug] Direct click - Filter changed, applying filter');
+            
+            // Create a debounced function for this specific call
+            const debouncedFilter = debounce(() => {
+                applySortAndFilterAndRender();
+            }, 50);
+            debouncedFilter();
+        } else {
+            console.log('[Jet Debug] Direct click - Filter unchanged, forcing refresh');
+            setTimeout(() => {
+                applySortAndFilterAndRender();
+            }, 10);
         }
     }
 
@@ -269,66 +382,133 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
+    // NEW: Quick filter count calculation for immediate feedback
+    function getQuickFilterCount(filterType) {
+        if (!currentGridImages || currentGridImages.length === 0) return 0;
+        
+        switch (filterType) {
+            case 'all':
+                return currentGridImages.length;
+            case 'picked-any':
+                return currentGridImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE).length;
+            case 'not-picked':
+                return currentGridImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE).length;
+            default: // Specific color filters
+                if (Object.values(PICK_COLORS).includes(filterType) && filterType !== PICK_COLORS.NONE) {
+                    return currentGridImages.filter(img => img.pick_color === filterType).length;
+                } else {
+                    return currentGridImages.length; // Fallback to all
+                }
+        }
+    }
+
+    // NEW: Sync filter button states to ensure UI consistency
+    function syncFilterButtonStates() {
+        const filterControls = document.getElementById('jet-main-controls') || document.getElementById('jet-filter-controls');
+        if (!filterControls) return;
+
+        const buttons = filterControls.querySelectorAll('.jet-filter-button');
+        buttons.forEach(btn => {
+            btn.classList.remove('active');
+            
+            // Check which button should be active based on currentFilter
+            if ((btn.id === 'filter-all' && currentFilter === 'all') ||
+                (btn.id === 'filter-picked-any' && currentFilter === 'picked-any') ||
+                (btn.id === 'filter-not-picked' && currentFilter === 'not-picked') ||
+                (btn.dataset.color && btn.dataset.color === currentFilter)) {
+                btn.classList.add('active');
+                console.log('[Jet Debug] Synced active state for button:', btn.id || btn.dataset.color);
+            }
+        });
+    }
+
     // NEW: Combined function to apply sort, then filter, then render
     function applySortAndFilterAndRender() {
+        console.log('[Jet Debug] applySortAndFilterAndRender started - currentFilter:', currentFilter);
+        
         if (!currentGridImages || currentGridImages.length === 0) {
+            console.log('[Jet Debug] No images to filter, rendering empty grid');
             renderImageGrid([]);
+            hideLoadingOverlay(); // Hide loading if no images
             return;
         }
 
-        let processedImages = [...currentGridImages]; // Start with a copy of the master list
+        try {
+            // Use requestAnimationFrame for better performance
+            requestAnimationFrame(() => {
+                console.log('[Jet Debug] Processing', currentGridImages.length, 'images with filter:', currentFilter);
+                let processedImages = [...currentGridImages]; // Start with a copy of the master list
 
-        // 1. Apply Sorting
-        switch (currentSortOrder) {
-            case 'name-asc':
-                processedImages.sort((a, b) => strnatcasecmp(a.name, b.name));
-                break;
-            case 'name-desc':
-                processedImages.sort((a, b) => strnatcasecmp(b.name, a.name));
-                break;
-            case 'date-desc': // Newest first
-                processedImages.sort((a, b) => (b.modified_timestamp || 0) - (a.modified_timestamp || 0));
-                break;
-            case 'date-asc': // Oldest first
-                processedImages.sort((a, b) => (a.modified_timestamp || 0) - (b.modified_timestamp || 0));
-                break;
-            case 'default': // Default is name-asc, often pre-sorted by API or matches name-asc
-            default:
-                processedImages.sort((a, b) => strnatcasecmp(a.name, b.name)); // Fallback to name-asc
-                break;
-        }
-
-        // 2. Apply Filtering (to the sorted list)
-        let filteredImages = [];
-        switch (currentFilter) {
-            case 'all':
-                filteredImages = [...processedImages]; // Already sorted
-                break;
-            case 'picked-any':
-                filteredImages = processedImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE);
-                break;
-            case 'not-picked':
-                filteredImages = processedImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE);
-                break;
-            default: // Specific color filters
-                if (Object.values(PICK_COLORS).includes(currentFilter) && currentFilter !== PICK_COLORS.NONE) {
-                    filteredImages = processedImages.filter(img => img.pick_color === currentFilter);
-                } else {
-                    // This case should ideally not be hit if currentFilter is always valid
-                    // but if it's an unknown color filter, show all (sorted) images
-                    console.warn('[Jet Filter Sorter] Unknown filter type during sort:', currentFilter, 'defaulting to all sorted.');
-                    filteredImages = [...processedImages];
+                // 1. Apply Sorting
+                switch (currentSortOrder) {
+                    case 'name-asc':
+                        processedImages.sort((a, b) => strnatcasecmp(a.name, b.name));
+                        break;
+                    case 'name-desc':
+                        processedImages.sort((a, b) => strnatcasecmp(b.name, a.name));
+                        break;
+                    case 'date-desc': // Newest first
+                        processedImages.sort((a, b) => (b.modified_timestamp || 0) - (a.modified_timestamp || 0));
+                        break;
+                    case 'date-asc': // Oldest first
+                        processedImages.sort((a, b) => (a.modified_timestamp || 0) - (b.modified_timestamp || 0));
+                        break;
+                    case 'default': // Default is name-asc, often pre-sorted by API or matches name-asc
+                    default:
+                        processedImages.sort((a, b) => strnatcasecmp(a.name, b.name)); // Fallback to name-asc
+                        break;
                 }
-                break;
+
+                // 2. Apply Filtering (to the sorted list)
+                let filteredImages = [];
+                switch (currentFilter) {
+                    case 'all':
+                        filteredImages = [...processedImages]; // Already sorted
+                        break;
+                    case 'picked-any':
+                        filteredImages = processedImages.filter(img => img.pick_color && img.pick_color !== PICK_COLORS.NONE);
+                        break;
+                    case 'not-picked':
+                        filteredImages = processedImages.filter(img => !img.pick_color || img.pick_color === PICK_COLORS.NONE);
+                        break;
+                    default: // Specific color filters
+                        if (Object.values(PICK_COLORS).includes(currentFilter) && currentFilter !== PICK_COLORS.NONE) {
+                            filteredImages = processedImages.filter(img => img.pick_color === currentFilter);
+                        } else {
+                            // This case should ideally not be hit if currentFilter is always valid
+                            // but if it's an unknown color filter, show all (sorted) images
+                            console.warn('[Jet Filter Sorter] Unknown filter type during sort:', currentFilter, 'defaulting to all sorted.');
+                            filteredImages = [...processedImages];
+                        }
+                        break;
+                }
+                
+                console.log(`[Jet Debug] Filtered ${filteredImages.length} items from ${processedImages.length} total`);
+                
+                renderImageGrid(filteredImages);
+                
+                // Store filtered images for ZIP functionality
+                currentFilteredImages = filteredImages;
+                
+                // Update ZIP button count and visibility
+                updateZipButtonState(filteredImages);
+                
+                // Update stats display with final counts
+                updateStatsDisplay(currentGridImages.length, filteredImages.length);
+                
+                // Sync filter button states to ensure consistency
+                syncFilterButtonStates();
+                
+                // Hide loading overlay after rendering
+                hideLoadingOverlay();
+                
+                console.log('[Jet Debug] applySortAndFilterAndRender completed successfully');
+            });
+        } catch (error) {
+            console.error('[Jet Debug] Error in applySortAndFilterAndRender:', error);
+            hideLoadingOverlay();
+            showFeedback('Có lỗi xảy ra khi lọc ảnh', 'error');
         }
-        
-        renderImageGrid(filteredImages);
-        
-        // Store filtered images for ZIP functionality
-        currentFilteredImages = filteredImages;
-        
-        // Update ZIP button count and visibility
-        updateZipButtonState(filteredImages);
     }
 
     async function fetchAndRenderTopLevelFolders() {
@@ -1779,7 +1959,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // Prevent default behavior for navigation keys to avoid conflicts
         if (['Escape', 'ArrowLeft', 'ArrowRight', '0', '1', '2', '3'].includes(event.key)) {
             event.preventDefault();
-            event.stopPropagation();
+                event.stopPropagation();
         }
 
         // Remove the event.repeat check to allow continuous navigation

@@ -724,9 +724,13 @@ body.jet-app-active {
 /* --- Image Grid Container --- */
 .jet-app-active .image-grid-container {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
     gap: 16px;
-    padding: 0;
+    padding: 24px;
+    align-items: start; /* Align items to the start of their grid area */
+    /* NEW: Ensure dense packing and auto-sizing for variable height items */
+    grid-auto-flow: dense; 
+    grid-auto-rows: min-content;
 }
 
 @media (max-width: 768px) {
