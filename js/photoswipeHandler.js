@@ -316,33 +316,38 @@ export async function setupPhotoSwipeIfNeeded() {
         }
     };
 
-    // Show/hide download button and update filename display based on slide type
-    newLightbox.on('change', () => {
-        const pswp = newLightbox.pswp;
-        console.log('[photoswipeHandler] change event triggered, updating filename display');
-        
-        // Always update filename display on slide change
-        updateFilenameDisplay(pswp);
-        
-        // Handle download button if UI is ready
-        if (pswp && pswp.ui && pswp.ui.element) {
-            const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
-            if (downloadBtn) {
-                const currentSlideData = pswp.currSlide && pswp.currSlide.data;
-                if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
-                    downloadBtn.style.display = 'block';
-                } else {
-                    downloadBtn.style.display = 'none';
-                }
-            }
+            // Show/hide download button and update filename display based on slide type
+        newLightbox.on('change', () => {
+            const pswp = newLightbox.pswp;
+            console.log('[photoswipeHandler] change event triggered, updating filename display');
             
-            // Check if we're near the end and need to load more
+            // Always update filename display on slide change
+            updateFilenameDisplay(pswp);
+            
+            // PRIORITY: Always check for load more first, regardless of UI state
             if (pswp && pswp.currSlide) {
                 const currentIndex = pswp.currSlide.index;
-                checkAndLoadMoreForPreview(currentIndex);
+                console.log(`[photoswipeHandler] 🔍 Navigation detected - Current index: ${currentIndex}, Total slides: ${pswp.numSlides}`);
+                
+                // Call the load more check
+                checkAndLoadMoreForPreview(currentIndex).catch(error => {
+                    console.error('[photoswipeHandler] ❌ Error in checkAndLoadMoreForPreview:', error);
+                });
             }
-        }
-    });
+            
+            // Handle download button if UI is ready (secondary priority)
+            if (pswp && pswp.ui && pswp.ui.element) {
+                const downloadBtn = pswp.ui.element.querySelector('.pswp__button--download-item');
+                if (downloadBtn) {
+                    const currentSlideData = pswp.currSlide && pswp.currSlide.data;
+                    if (currentSlideData && (currentSlideData.type === 'video' || currentSlideData.type === 'image') && currentSlideData.filename) {
+                        downloadBtn.style.display = 'block';
+                    } else {
+                        downloadBtn.style.display = 'none';
+                    }
+                }
+            }
+        });
     
     // Also check on initial open
     newLightbox.on('afterInit', () => {
@@ -605,27 +610,50 @@ let isLoadingMoreForPreview = false;
 let lastLoadTriggerIndex = -1; // Prevent rapid repeated loading
 
 async function checkAndLoadMoreForPreview(currentIndex) {
+    console.log(`[checkAndLoadMoreForPreview] 🔍 Starting check for index: ${currentIndex}`);
+    
     // Skip if using LOAD_ALL strategy (all images already loaded on open)
     if (PREVIEW_LOADING_STRATEGY === 'LOAD_ALL_ON_OPEN') {
+        console.log(`[checkAndLoadMoreForPreview] ⏭️ Skipping - strategy is LOAD_ALL_ON_OPEN`);
         return;
     }
     
     // Get current state dynamically
     const state = await getCurrentState();
+    console.log(`[checkAndLoadMoreForPreview] 📊 State - Images: ${state.currentImageList.length}/${state.totalImages}, Page: ${state.currentPage}, Loading: ${state.isLoadingMore}`);
     
     // Don't load if already loading, if we have all images, or if there's no folder context
-    if (isLoadingMoreForPreview || state.isLoadingMore || state.currentImageList.length >= state.totalImages) {
+    if (isLoadingMoreForPreview) {
+        console.log(`[checkAndLoadMoreForPreview] ⏳ Already loading more for preview`);
+        return;
+    }
+    
+    if (state.isLoadingMore) {
+        console.log(`[checkAndLoadMoreForPreview] ⏳ App is already loading more`);
+        return;
+    }
+    
+    if (state.currentImageList.length >= state.totalImages) {
+        console.log(`[checkAndLoadMoreForPreview] ✅ All images loaded (${state.currentImageList.length}/${state.totalImages})`);
         return;
     }
     
     // Check if we're near the end (configurable threshold)
     const isNearEnd = currentIndex >= state.currentImageList.length - PREVIEW_NEAR_END_THRESHOLD;
+    console.log(`[checkAndLoadMoreForPreview] 🎯 Near end check: index ${currentIndex} >= ${state.currentImageList.length - PREVIEW_NEAR_END_THRESHOLD} = ${isNearEnd}`);
     
-    if (!isNearEnd || currentIndex <= lastLoadTriggerIndex) {
+    if (!isNearEnd) {
+        console.log(`[checkAndLoadMoreForPreview] 🚫 Not near end yet`);
+        return;
+    }
+    
+    if (currentIndex <= lastLoadTriggerIndex) {
+        console.log(`[checkAndLoadMoreForPreview] 🚫 Already triggered for this index (last: ${lastLoadTriggerIndex})`);
         return;
     }
     
     lastLoadTriggerIndex = currentIndex;
+    console.log(`[checkAndLoadMoreForPreview] 🚀 TRIGGERING LOAD MORE - Index: ${currentIndex}, Threshold triggered!`);
     
     try {
         isLoadingMoreForPreview = true;
@@ -635,11 +663,12 @@ async function checkAndLoadMoreForPreview(currentIndex) {
         
         const { path: currentFolder } = getCurrentFolderInfo();
         if (!currentFolder) {
-            console.warn('[photoswipeHandler] No current folder, cannot load more for preview');
+            console.warn('[photoswipeHandler] ❌ No current folder, cannot load more for preview');
             return;
         }
         
         const nextPage = state.currentPage + 1;
+        console.log(`[checkAndLoadMoreForPreview] 📄 Loading page ${nextPage} for folder: ${currentFolder}`);
         
         // Fetch next batch
         const responseData = await fetchDataApi('list_files', {
@@ -650,10 +679,12 @@ async function checkAndLoadMoreForPreview(currentIndex) {
         
         if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
             const newImages = responseData.data.files;
+            console.log(`[checkAndLoadMoreForPreview] 📦 API returned ${newImages.length} files`);
             
             // Filter out duplicates - use path fallback when source_path is undefined
             const currentPaths = new Set(state.currentImageList.map(item => item.source_path || item.path));
             const trulyNewImages = newImages.filter(item => !currentPaths.has(item.source_path || item.path));
+            console.log(`[checkAndLoadMoreForPreview] 🔍 After deduplication: ${trulyNewImages.length} new images`);
             
             if (trulyNewImages.length > 0) {
                 // Update the global state
@@ -661,11 +692,17 @@ async function checkAndLoadMoreForPreview(currentIndex) {
                 setCurrentImageList(updatedImageList);
                 setCurrentPage(nextPage);
                 
+                console.log(`[checkAndLoadMoreForPreview] 📋 Updated state - Total images: ${updatedImageList.length}, Page: ${nextPage}`);
+                
                 // Update PhotoSwipe's dataSource dynamically
                 updatePhotoSwipeDataSource(updatedImageList);
                 
-                console.log(`[photoswipeHandler] Loaded ${trulyNewImages.length} more images for preview. Total: ${updatedImageList.length}`);
+                console.log(`[photoswipeHandler] ✅ Loaded ${trulyNewImages.length} more images for preview. Total: ${updatedImageList.length}`);
+            } else {
+                console.log(`[checkAndLoadMoreForPreview] ⚠️ No new images after deduplication`);
             }
+        } else {
+            console.log(`[checkAndLoadMoreForPreview] ❌ API failed or no files returned:`, responseData);
         }
         
     } catch (error) {
