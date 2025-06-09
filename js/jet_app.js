@@ -167,7 +167,12 @@ document.addEventListener('DOMContentLoaded', () => {
         initializeBackButton();
         
         renderBreadcrumb(); // Initial breadcrumb for top level
-        fetchAndRenderTopLevelFolders(); // Load initial view
+        
+        // Check if there's a hash to navigate to, otherwise load top level
+        if (!handleJetUrlHash()) {
+            fetchAndRenderTopLevelFolders(); // Load initial view
+        }
+        
         addFilterButtonListeners(); // Add listeners for filter buttons
         addSortControlListener(); // Add listener for sort dropdown
         
@@ -212,6 +217,34 @@ document.addEventListener('DOMContentLoaded', () => {
             const shouldShow = currentRawSourceKey || currentRelativePath;
             backButton.style.display = shouldShow ? 'inline-flex' : 'none';
         }
+    }
+
+    // Handle URL hash for navigation (e.g., #source_key/folder/path)
+    function handleJetUrlHash() {
+        const hash = window.location.hash;
+        if (!hash || hash === '#') {
+            return false; // No hash, load top level
+        }
+        
+        const hashContent = hash.substring(1); // Remove #
+        const parts = hashContent.split('/');
+        
+        if (parts.length >= 2) {
+            const sourceKey = parts[0];
+            const folderPath = parts.slice(1).join('/');
+            
+            console.log(`[Jet] Navigating to hash URL: sourceKey=${sourceKey}, folderPath=${folderPath}`);
+            fetchAndRenderImages(sourceKey, folderPath);
+            return true;
+        } else if (parts.length === 1 && parts[0] !== '') {
+            // Only source key, load that source's root
+            const sourceKey = parts[0];
+            console.log(`[Jet] Navigating to source root: ${sourceKey}`);
+            fetchAndRenderImages(sourceKey, '');
+            return true;
+        }
+        
+        return false; // Invalid hash format
     }
 
     // NEW: Function to add event listeners to filter buttons
@@ -1105,10 +1138,14 @@ document.addEventListener('DOMContentLoaded', () => {
                 <ul>
                     ${items.map((item, index) => {
                         console.log(`[Jet Debug] Item ${index}:`, item);
+                        const sourceKey = isTopLevel ? item.source_key : currentRawSourceKey;
+                        const folderPath = isTopLevel ? item.name : (currentRelativePath ? currentRelativePath + '/' + item.name : item.name);
+                        const jetUrl = `#${sourceKey}/${folderPath}`;
+                        
                         return `
                         <li>
-                            <a href="#" data-source-key="${isTopLevel ? item.source_key : currentRawSourceKey}" 
-                               data-folder-path="${isTopLevel ? item.name : (currentRelativePath ? currentRelativePath + '/' + item.name : item.name)}"
+                            <a href="${jetUrl}" data-source-key="${sourceKey}" 
+                               data-folder-path="${folderPath}"
                                data-item-name="${item.name}"
                                data-is-top-level="${isTopLevel}">
                                 <div class="folder-thumbnail">
@@ -1135,30 +1172,34 @@ document.addEventListener('DOMContentLoaded', () => {
         
         folderLinks.forEach((link, index) => {
             link.addEventListener('click', (event) => {
-                event.preventDefault();
-                const sourceKey = link.dataset.sourceKey;
-                const folderPath = link.dataset.folderPath;
-                const itemName = link.dataset.itemName;
-                const isTopLevelClick = link.dataset.isTopLevel === 'true';
+                // Only preventDefault cho left click để allow right click "Mở tab mới"
+                if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                    event.preventDefault();
+                    const sourceKey = link.dataset.sourceKey;
+                    const folderPath = link.dataset.folderPath;
+                    const itemName = link.dataset.itemName;
+                    const isTopLevelClick = link.dataset.isTopLevel === 'true';
 
-                console.log('[Jet Debug] Folder clicked:', {
-                    sourceKey,
-                    folderPath,
-                    itemName,
-                    isTopLevelClick,
-                    currentRawSourceKey,
-                    currentRelativePath
-                });
+                    console.log('[Jet Debug] Folder clicked:', {
+                        sourceKey,
+                        folderPath,
+                        itemName,
+                        isTopLevelClick,
+                        currentRawSourceKey,
+                        currentRelativePath
+                    });
 
-                if (isTopLevelClick) {
-                    // Navigate to the images in this top-level folder
-                    console.log('[Jet Debug] Navigating to top-level folder images');
-                    fetchAndRenderImages(sourceKey, itemName);
-                    } else {
-                    // Navigate to subfolder
-                    console.log('[Jet Debug] Navigating to subfolder');
-                    fetchAndRenderImages(sourceKey, folderPath);
+                    if (isTopLevelClick) {
+                        // Navigate to the images in this top-level folder
+                        console.log('[Jet Debug] Navigating to top-level folder images');
+                        fetchAndRenderImages(sourceKey, itemName);
+                        } else {
+                        // Navigate to subfolder
+                        console.log('[Jet Debug] Navigating to subfolder');
+                        fetchAndRenderImages(sourceKey, folderPath);
+                    }
                 }
+                // For right clicks, ctrl+click, etc. -> let browser handle naturally
             });
 
             // Add hover effects
@@ -1199,9 +1240,10 @@ document.addEventListener('DOMContentLoaded', () => {
         subfolders.forEach(subfolder => {
             const li = document.createElement('li');
             const a = document.createElement('a');
-            a.href = '#';
+            const folderPath = currentRelativePath ? currentRelativePath + '/' + subfolder.name : subfolder.name;
+            a.href = `#${currentRawSourceKey}/${folderPath}`;
             a.dataset.sourceKey = currentRawSourceKey;
-            a.dataset.folderPath = currentRelativePath ? currentRelativePath + '/' + subfolder.name : subfolder.name;
+            a.dataset.folderPath = folderPath;
             a.dataset.itemName = subfolder.name;
             a.dataset.isTopLevel = 'false';
 
@@ -1226,10 +1268,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
             // Add click event listener
             a.addEventListener('click', (event) => {
-                event.preventDefault();
-                const folderPath = a.dataset.folderPath;
-                console.log('[Jet Debug] Subfolder clicked:', folderPath);
-                fetchAndRenderImages(currentRawSourceKey, folderPath);
+                // Only preventDefault cho left click để allow right click "Mở tab mới"
+                if (event.button === 0 && !event.ctrlKey && !event.metaKey && !event.shiftKey) {
+                    event.preventDefault();
+                    const folderPath = a.dataset.folderPath;
+                    console.log('[Jet Debug] Subfolder clicked:', folderPath);
+                    fetchAndRenderImages(currentRawSourceKey, folderPath);
+                }
             });
 
             // Add hover effects
@@ -1253,11 +1298,14 @@ document.addEventListener('DOMContentLoaded', () => {
         breadcrumbDiv.innerHTML = ''; 
 
         const homeLink = document.createElement('a');
-        homeLink.href = '#';
+        homeLink.href = 'jet.php'; // Proper URL for home
         homeLink.textContent = 'Thư mục RAW gốc'; // Changed to Vietnamese
         homeLink.addEventListener('click', (e) => {
-            e.preventDefault();
-            fetchAndRenderTopLevelFolders(); // This resets currentRawSourceKey and currentRelativePath
+            // Only preventDefault cho left click
+            if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault();
+                fetchAndRenderTopLevelFolders(); // This resets currentRawSourceKey and currentRelativePath
+            }
         });
         breadcrumbDiv.appendChild(homeLink);
 
@@ -1274,15 +1322,18 @@ document.addEventListener('DOMContentLoaded', () => {
                 breadcrumbDiv.appendChild(document.createTextNode(` > `));
                 accumulatedPath += (index > 0 ? '/' : '') + part;
                 const partLink = document.createElement('a');
-                partLink.href = '#';
+                partLink.href = `#${currentRawSourceKey}/${accumulatedPath}`; // Proper URL
                 partLink.textContent = part;
                 const pathForThisLink = accumulatedPath; // This is the relative path for the API
                 
                 partLink.addEventListener('click', (e) => {
-                    e.preventDefault();
-                    // currentRawSourceKey is already set and should remain
-                    // currentRelativePath will be set by fetchAndRenderImages
-                    fetchAndRenderImages(currentRawSourceKey, pathForThisLink);
+                    // Only preventDefault cho left click
+                    if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                        e.preventDefault();
+                        // currentRawSourceKey is already set and should remain
+                        // currentRelativePath will be set by fetchAndRenderImages
+                        fetchAndRenderImages(currentRawSourceKey, pathForThisLink);
+                    }
                 });
                 breadcrumbDiv.appendChild(partLink);
             });
@@ -2740,8 +2791,7 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    // Initialize app
-    initializeAppLayout();
+    // Fetch user info
     fetchUserInfo();
     
     // Initialize navigation highlighting
@@ -3459,6 +3509,12 @@ document.addEventListener('DOMContentLoaded', () => {
             isMouseDown = false;
         });
     }
+
+    // Listen for hash changes để support browser back/forward và "Mở tab mới"
+    window.addEventListener('hashchange', handleJetUrlHash);
+    
+    // Initialize app layout at the end
+    initializeAppLayout();
 });
 
 // Shared menu is now handled by shared-menu.js

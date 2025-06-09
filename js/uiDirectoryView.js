@@ -80,12 +80,8 @@ export function createDirectoryListItem(dirData, itemClickHandler) {
     li.classList.add('list-item-fade-in');
 
     const a  = document.createElement('a');
-    // Only set href if no itemClickHandler is provided to prevent double navigation
-    if (!itemClickHandler || (dirData.protected && !dirData.authorized)) {
-        a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
-    } else {
-        a.href = '#'; // Prevent default link behavior
-    }
+    // Always set proper href for folder path để support "Mở tab mới"
+    a.href = `#?folder=${encodeURIComponent(dirData.path)}`;
     a.dataset.dir = dirData.path;
 
     const img = document.createElement('img');
@@ -115,12 +111,16 @@ export function createDirectoryListItem(dirData, itemClickHandler) {
         a.onclick = e => { e.preventDefault(); showPasswordPrompt(dirData.path); };
     } else if (itemClickHandler) {
         a.onclick = e => { 
-            e.preventDefault(); 
-            console.log(`[uiDirectoryView] Folder clicked via itemClickHandler: ${dirData.path}`);
-            itemClickHandler(dirData.path); 
+            // Only preventDefault cho left click (button 0), để right click và middle click hoạt động bình thường
+            if (e.button === 0 && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                e.preventDefault(); 
+                console.log(`[uiDirectoryView] Folder clicked via itemClickHandler: ${dirData.path}`);
+                itemClickHandler(dirData.path); 
+            }
+            // For right clicks, ctrl+click, cmd+click, shift+click -> let browser handle naturally
         };
     }
-    // If no itemClickHandler, the default href behavior will apply for non-protected items.
+    // For normal folders without itemClickHandler, default href behavior applies
 
     li.appendChild(a);
     return li;
