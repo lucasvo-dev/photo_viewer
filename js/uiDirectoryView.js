@@ -170,12 +170,15 @@ export async function loadTopLevelDirectories(searchTerm = null, suppressLoading
         appShowLoadingIndicator('Đang tải danh sách album...'); // Show main loading indicator
     }
     searchPromptEl.style.visibility = 'hidden'; // Hide specific search prompt text while loading
-    // Display a professional loading placeholder
+    
+    // Display a professional loading placeholder (tối ưu cho tốc độ)
     directoryListEl.innerHTML = `
         <div class="loading-placeholder">
-            <i class="fas fa-spinner"></i>
-            <p class="loading-placeholder-text">Đang tải danh sách album</p>
-            <p class="loading-placeholder-subtext">Đang quét các thư mục...</p>
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <p class="loading-text">Đang tải danh sách album</p>
+            <p class="loading-subtext">Đang quét các thư mục...</p>
         </div>
     `;
 

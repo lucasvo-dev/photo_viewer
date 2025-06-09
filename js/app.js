@@ -404,6 +404,8 @@ async function loadSubItems(folderPath) {
 
     isProcessingNavigation = true;
     showLoadingIndicator('Đang tải album...'); 
+    
+    // Reset states immediately for better UX
     setCurrentFolder(folderPath);
     setCurrentPage(1);
     setCurrentImageList([]);
@@ -412,9 +414,14 @@ async function loadSubItems(folderPath) {
     setPaginationAbortController(null);
     setPreloadAbortController(null);
     clearAllActivePageRequests(); // Clear all tracked page requests
+    
+    // Clear UI elements quickly
     clearImageGrid();
     const subfolderDisplayArea = document.getElementById('subfolder-display-area');
     if (subfolderDisplayArea) subfolderDisplayArea.innerHTML = '';
+    
+    // Show image view immediately để user không thấy directory view nhấp nháy
+    showImageView();
     try {
         console.log(`[app.js] loadSubItems: Fetching list_files for path: ${folderPath}`);
 
@@ -440,6 +447,10 @@ async function loadSubItems(folderPath) {
         const directoryName = apiDirName || folderPath.split('/').pop();
         console.log(`[app.js] loadSubItems: Directory name: ${directoryName}`);
         console.log('[app.js] loadSubItems: initialImagesMetadata:', initialImagesMetadata);
+        
+        // Update loading message với tên album
+        showLoadingIndicator(`Đang tải album "${directoryName}"...`);
+        
         document.title = `Album: ${directoryName} - Guustudio`;
         updateImageViewHeader(directoryName);
         const fetchedTotal = pagination ? pagination.total_items : (initialImagesMetadata ? initialImagesMetadata.length : 0);
@@ -478,7 +489,6 @@ async function loadSubItems(folderPath) {
             appHandleDownloadZipAction(currentFolderInfo.path, currentFolderInfo.name);
         };
         shareBtn.onclick = () => { handleShareAction(currentFolder); };
-        showImageView();
         if (initialImagesMetadata.length < totalImages) {
             preloadNextBatch();
         }
@@ -749,8 +759,6 @@ async function handleUrlHash() { // Make function async
     // Reset navigation flag at start
     isProcessingNavigation = false;
     
-    showGlobalLoadingOverlay(); // Show global overlay at the start
-
     try {
         const hash = location.hash;
         if (hash.startsWith('#?folder=')) {
@@ -760,35 +768,39 @@ async function handleUrlHash() { // Make function async
                 console.log(`[app.js] handleUrlHash: Decoded folder path: ${folderRelativePath}`);
                 if (folderRelativePath && !folderRelativePath.includes('..')) {
                     console.log('[app.js] handleUrlHash: Path is valid, calling loadSubItems.');
+                    // loadSubItems sẽ tự handle loading indicator - không cần global overlay
                     await loadSubItems(folderRelativePath); // Await the async operation
-                    // return true; // Return value might not be strictly needed if not used by caller
                 } else {
                     // If folderRelativePath is invalid (e.g. empty after decode, or contains '..')
                     // Fall through to show directory view
                     console.warn('[app.js] handleUrlHash: Invalid folder path after decoding. Showing directory view.');
+                    showGlobalLoadingOverlay('Đang tải trang chủ...');
                     showDirectoryView();
                     await loadTopLevelDirectories(null, true); // Suppress loading indicator
+                    hideGlobalLoadingOverlay();
                 }
             } catch (e) { 
                 console.error("[app.js] Error parsing URL hash or loading sub items:", e);
                 history.replaceState(null, '', ' '); 
                 // Fallback to directory view on error
+                showGlobalLoadingOverlay('Đang tải trang chủ...');
                 showDirectoryView();
                 await loadTopLevelDirectories(null, true); // Suppress loading indicator
+                hideGlobalLoadingOverlay();
             }
         } else {
             // No hash or invalid hash - show home page
             console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
+            showGlobalLoadingOverlay('Đang tải trang chủ...');
             showDirectoryView();
-            await loadTopLevelDirectories(null, true); // Suppress loading indicator since global overlay is active
-            // return false; // Return value might not be strictly needed
+            await loadTopLevelDirectories(null, true); // Suppress loading indicator
+            hideGlobalLoadingOverlay();
         }
     } catch (error) {
         console.error('[app.js] Critical error in handleUrlHash logic:', error);
+        hideGlobalLoadingOverlay(); // Ensure cleanup on error
         // Optionally show a user-friendly error message here using showModalWithMessage
         // For now, just logging, as specific views also have error handling.
-    } finally {
-        hideGlobalLoadingOverlay(); // Hide global overlay at the end, regardless of success or failure
     }
 }
 
