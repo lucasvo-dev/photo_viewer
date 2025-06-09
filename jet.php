@@ -281,10 +281,21 @@ if (!defined('RAW_IMAGE_SOURCES')) {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // Simply redirect to jet.php to reload the app
-                window.location.href = 'jet.php';
+                console.log('[Jet] Logo clicked, force reloading Jet workspace');
+                
+                // Force reload để đảm bảo reset hoàn toàn state
+                // Kiểm tra nếu URL đã là jet.php thì force reload
+                if (window.location.pathname.includes('jet.php')) {
+                    console.log('[Jet] Already on jet.php, force reloading');
+                    window.location.reload();
+                } else {
+                    console.log('[Jet] Redirecting to jet.php');
+                    window.location.href = 'jet.php';
+                }
             });
-            console.log('[Jet] Logo click handler overridden');
+            console.log('[Jet] Logo click handler overridden successfully');
+        } else {
+            console.warn('[Jet] Logo link not found');
         }
     });
     </script>

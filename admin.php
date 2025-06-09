@@ -369,5 +369,22 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
     <script src="js/admin_users.js"></script>
     <script src="js/admin_tabs.js"></script>
     <script src="js/admin_jet_cache.js"></script>
+    
+    <!-- Logo click handler for Admin -->
+    <script>
+    document.addEventListener('DOMContentLoaded', () => {
+        const logoLink = document.querySelector('.logo-link');
+        if (logoLink) {
+            logoLink.addEventListener('click', (e) => {
+                console.log('[Admin] Logo clicked, redirecting to gallery with force reload');
+                // Force navigation to index.php để đảm bảo reset hoàn toàn
+                // Không cần preventDefault vì href sẽ handle redirect
+                // Nhưng chúng ta có thể force reload nếu cần
+                window.location.href = 'index.php';
+            });
+            console.log('[Admin] Logo click handler added successfully');
+        }
+    });
+    </script>
 </body>
 </html>

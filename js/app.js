@@ -972,26 +972,105 @@ function initializeAppEventListeners() {
     if (logoLink) {
         logoLink.addEventListener('click', async (e) => {
             e.preventDefault();
-            console.log('[app.js] Logo clicked, navigating to home');
+            e.stopPropagation();
             
-            // Reset navigation flag
-            isProcessingNavigation = false;
+            console.log('[app.js] Logo clicked, force navigating to home');
             
-            // Clear the hash to go to home
-            if (location.hash) {
-                history.pushState("", document.title, window.location.pathname + window.location.search);
+            // Stronger detection: always force refresh if any folder is set or if there's complex state
+            const isInFolder = !!currentFolder || location.hash.includes('folder=');
+            const hasComplexState = currentImageList.length > 0 || isLoadingMore || isProcessingNavigation;
+            const isAtHomePage = !location.hash && !currentFolder && document.getElementById('directory-view')?.style.display !== 'none';
+            
+            // Scenario 1: Force page reload nếu đang ở trong folder hoặc có complex state
+            if (isInFolder || hasComplexState) {
+                console.log('[app.js] In folder or has complex state, forcing complete page reload');
+                window.location.href = window.location.pathname + window.location.search; // Force reload without hash
+                return;
             }
             
-            // Reset state
-            setCurrentFolder('');
-            setCurrentImageList([]);
-            setCurrentPage(1);
-            setTotalImages(0);
+            // Scenario 2: Đang ở home nhưng cần refresh danh sách
+            if (isAtHomePage && allTopLevelDirs.length > 0) {
+                console.log('[app.js] Already at home, refreshing directory list');
+                try {
+                    showGlobalLoadingOverlay();
+                    await loadTopLevelDirectories();
+                    console.log('[app.js] Directory list refreshed successfully');
+                } catch (error) {
+                    console.error('[app.js] Error refreshing directory list:', error);
+                    window.location.reload();
+                } finally {
+                    hideGlobalLoadingOverlay();
+                }
+                return;
+            }
             
-            // Show directory view and load top level directories
-            showDirectoryView();
-            await loadTopLevelDirectories();
+            // Scenario 3: Full reset từ unknown state
+            console.log('[app.js] Performing full reset to home');
+            
+            // Set timeout để đảm bảo cleanup complete trước khi reload
+            const cleanupTimeout = setTimeout(() => {
+                console.warn('[app.js] Cleanup timeout reached, forcing page reload');
+                window.location.reload();
+            }, 3000); // 3 second timeout
+            
+            try {
+                // Cleanup all active states and requests
+                isProcessingNavigation = false;
+                
+                // Abort all active requests
+                if (paginationAbortController) {
+                    paginationAbortController.abort();
+                    setPaginationAbortController(null);
+                }
+                if (preloadAbortController) {
+                    preloadAbortController.abort();
+                    setPreloadAbortController(null);
+                }
+                if (searchAbortController) {
+                    searchAbortController.abort();
+                    setSearchAbortController(null);
+                }
+                clearAllActivePageRequests();
+                
+                // Clear URL hash first
+                if (location.hash) {
+                    history.pushState("", document.title, window.location.pathname + window.location.search);
+                }
+                
+                // Reset all state completely
+                setCurrentFolder('');
+                setCurrentImageList([]);
+                setCurrentPage(1);
+                setTotalImages(0);
+                setPreloadedImages([]);
+                setIsLoadingMore(false);
+                setIsCurrentlyPreloading(false);
+                setAllTopLevelDirs([]);
+                
+                // Clear any cached/stored data
+                clearImageGrid();
+                
+                // Show loading overlay during transition
+                showGlobalLoadingOverlay();
+                
+                // Force show directory view and reload directories
+                showDirectoryView();
+                await loadTopLevelDirectories();
+                
+                clearTimeout(cleanupTimeout); // Clear timeout on success
+                console.log('[app.js] Logo click navigation to home completed successfully');
+                
+            } catch (error) {
+                clearTimeout(cleanupTimeout);
+                console.error('[app.js] Error during logo click navigation:', error);
+                // Fallback: force page reload on error
+                window.location.reload();
+            } finally {
+                hideGlobalLoadingOverlay();
+            }
         });
+        
+        console.log('[app.js] Logo click handler initialized successfully');
     } else {
         console.warn('[app.js] Logo link not found for home navigation');
     }
@@ -1053,6 +1132,25 @@ function initializeAppEventListeners() {
         console.log("[app.js] popstate event triggered:", event.state, location.hash);
         // Re-evaluate the hash to handle navigation
         handleUrlHash();
+    });
+    
+    // Additional page visibility handler để đảm bảo consistency
+    document.addEventListener('visibilitychange', () => {
+        if (!document.hidden) {
+            // Page became visible again, check if we need to refresh home page
+            const isAtHomePage = !location.hash && !currentFolder;
+            const hasStaleState = isProcessingNavigation || isLoadingMore;
+            
+            if (isAtHomePage && hasStaleState) {
+                console.log('[app.js] Page visible again with stale state, refreshing home');
+                isProcessingNavigation = false;
+                setIsLoadingMore(false);
+                showDirectoryView();
+                loadTopLevelDirectories().catch(error => {
+                    console.error('[app.js] Error refreshing on visibility change:', error);
+                });
+            }
+        }
     });
 }
 
