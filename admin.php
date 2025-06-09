@@ -237,7 +237,12 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                     </tr>
                 </thead>
                 <tbody id="raw-sources-list-body">
-                    <tr><td colspan="4">Đang tải danh sách thư mục...</td></tr>
+                    <tr><td colspan="4">
+                        <div class="loading-placeholder">
+                            <i class="fas fa-spinner"></i>
+                            <p class="loading-placeholder-text">Đang tải danh sách thư mục</p>
+                        </div>
+                    </td></tr>
                 </tbody>
             </table>
 
@@ -325,7 +330,12 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                         </tr>
                     </thead>
                     <tbody id="users-table-body">
-                        <tr><td colspan="6">Đang tải danh sách người dùng...</td></tr>
+                        <tr><td colspan="6">
+                            <div class="loading-placeholder">
+                                <i class="fas fa-spinner"></i>
+                                <p class="loading-placeholder-text">Đang tải danh sách người dùng</p>
+                            </div>
+                        </td></tr>
                     </tbody>
                 </table>
             </div>
@@ -361,6 +371,17 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
         </div>
 
     </main>
+
+    <!-- Professional loading overlay -->
+    <div id="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <p class="loading-text">Đang tải dữ liệu</p>
+            <p class="loading-subtext">Vui lòng chờ trong giây lát...</p>
+        </div>
+    </div>
 
     <!-- Shared Menu Component -->
     <script src="js/shared-menu.js"></script>

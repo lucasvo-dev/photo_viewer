@@ -28,32 +28,22 @@ switch ($action) {
         $username = $_POST['username'] ?? '';
         $password = $_POST['password'] ?? '';
 
-        // Use ADMIN_USERNAME and ADMIN_PASSWORD_HASH from config (loaded via db_connect->init)
-        if (!defined('ADMIN_USERNAME') || !defined('ADMIN_PASSWORD_HASH')) {
-            error_log("[Admin Login] Admin credentials constants not defined in config.");
-            json_error('Lỗi cấu hình phía server.', 500);
-        }
-
-        if ($username === ADMIN_USERNAME && password_verify($password, ADMIN_PASSWORD_HASH)) {
-            $_SESSION['admin_logged_in'] = true;
-            $_SESSION['admin_username'] = $username;
-            $_SESSION['user_id'] = $username;
-            error_log("[Admin Login] Login successful for user: {$username}. Session user_id set.");
-            json_response(['success' => true]);
-        } else {
-            error_log("[Admin Login] Login failed for user: {$username}");
-            json_error('Tên đăng nhập hoặc mật khẩu không đúng.', 401);
-        }
+        // This API action is deprecated - login is now handled in login.php
+        // But we'll keep it for backward compatibility
+        error_log("[Admin Login API] Deprecated admin_login action called. Login should be handled in login.php");
+        json_error('Vui lòng sử dụng trang đăng nhập chính thức.', 400);
         break;
 
     case 'admin_logout':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             json_error('Phương thức không hợp lệ.', 405);
         }
-        $username = $_SESSION['admin_username'] ?? 'unknown';
+        // This API action is deprecated - logout is now handled in individual pages
+        // But we'll keep it for backward compatibility
+        $username = $_SESSION['username'] ?? ($_SESSION['admin_username'] ?? 'unknown');
         session_unset();
         session_destroy();
-        error_log("[Admin Logout] Logout successful for user: {$username}");
+        error_log("[Admin Logout API] Logout successful for user: {$username}");
         json_response(['success' => true]);
         break;
 

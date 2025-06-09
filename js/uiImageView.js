@@ -337,9 +337,15 @@ export function initializeImageView(callbacks) {
     initializeImageObserver();
     console.log('[uiImageView] Intersection Observer initialized:', !!imageObserver);
 
-    // Style the container for a spinner - this is a placeholder, actual styling via CSS
+    // Style the container for a professional spinner
     if (loadMoreContainerEl) {
-        loadMoreContainerEl.innerHTML = '<div class="loading-spinner">Loading...</div>'; // Add a spinner div with text
+        loadMoreContainerEl.innerHTML = `
+            <div class="loading-placeholder">
+                <i class="fas fa-spinner"></i>
+                <p class="loading-placeholder-text">Đang tải thêm ảnh</p>
+                <p class="loading-placeholder-subtext">Vui lòng chờ trong giây lát...</p>
+            </div>
+        `;
         loadMoreContainerEl.style.textAlign = 'center';
         loadMoreContainerEl.style.padding = '20px';
         loadMoreContainerEl.style.display = 'none'; // Initially hidden

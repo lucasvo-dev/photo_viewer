@@ -82,6 +82,11 @@ import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActive
 // ========================================
 // All state variables moved to js/state.js
 let isProcessingNavigation = false; // New flag for preventing concurrent folder loads
+let isAppInitialized = false; // Prevent double initialization
+let globalLoadingState = {
+    isGlobalOverlayActive: false,
+    isMainIndicatorActive: false
+};
 
 // ========================================
 // === GLOBAL HELPER FUNCTIONS        ===
@@ -95,32 +100,84 @@ export function getCurrentFolderInfo() {
 }
 
 function showLoadingIndicator(message = 'Đang tải...') {
+    // Don't show main indicator if global overlay is active
+    if (globalLoadingState.isGlobalOverlayActive) {
+        console.log('[app.js] Skipping main loading indicator - global overlay is active');
+        return;
+    }
+    
     const indicator = document.getElementById('loading-indicator');
-    if (indicator) {
-        indicator.querySelector('p').textContent = message;
-        indicator.style.display = 'block';
+    if (indicator && !globalLoadingState.isMainIndicatorActive) {
+        const textEl = indicator.querySelector('p');
+        if (textEl) textEl.textContent = message;
+        
+        // Show with animation
+        indicator.style.display = 'flex';
+        
+        // Trigger animation
+        requestAnimationFrame(() => {
+            indicator.classList.add('indicator-visible');
+        });
+        
+        globalLoadingState.isMainIndicatorActive = true;
+        console.log('[app.js] Main loading indicator shown:', message);
     }
 }
 
 function hideLoadingIndicator() {
     const indicator = document.getElementById('loading-indicator');
-    if (indicator) {
-        indicator.style.display = 'none';
+    if (indicator && globalLoadingState.isMainIndicatorActive) {
+        // Fade out animation
+        indicator.classList.remove('indicator-visible');
+        
+        // Hide after animation completes
+        setTimeout(() => {
+            indicator.style.display = 'none';
+        }, 250);
+        
+        globalLoadingState.isMainIndicatorActive = false;
+        console.log('[app.js] Main loading indicator hidden');
     }
 }
 
 // --- Global Overlay Functions --- START
-function showGlobalLoadingOverlay() {
+function showGlobalLoadingOverlay(message = 'Đang tải dữ liệu', subtext = 'Vui lòng chờ trong giây lát...') {
     const overlay = document.getElementById('loading-overlay');
-    if (overlay) {
-        overlay.style.display = 'block'; // Or 'flex' if it's styled with flex
+    if (overlay && !globalLoadingState.isGlobalOverlayActive) {
+        // Update loading text
+        const loadingText = overlay.querySelector('.loading-text');
+        const loadingSubtext = overlay.querySelector('.loading-subtext');
+        if (loadingText) loadingText.textContent = message;
+        if (loadingSubtext) loadingSubtext.textContent = subtext;
+        
+        // Show with animation
+        overlay.style.display = 'flex';
+        document.body.classList.add('loading-active');
+        
+        // Trigger fade-in animation
+        requestAnimationFrame(() => {
+            overlay.classList.add('overlay-visible');
+        });
+        
+        globalLoadingState.isGlobalOverlayActive = true;
+        console.log('[app.js] Global loading overlay shown:', message);
     }
 }
 
 function hideGlobalLoadingOverlay() {
     const overlay = document.getElementById('loading-overlay');
-    if (overlay) {
-        overlay.style.display = 'none';
+    if (overlay && globalLoadingState.isGlobalOverlayActive) {
+        // Fade out animation
+        overlay.classList.remove('overlay-visible');
+        document.body.classList.remove('loading-active');
+        
+        // Hide after animation completes
+        setTimeout(() => {
+            overlay.style.display = 'none';
+        }, 300);
+        
+        globalLoadingState.isGlobalOverlayActive = false;
+        console.log('[app.js] Global loading overlay hidden');
     }
 }
 // --- Global Overlay Functions --- END
@@ -234,8 +291,13 @@ async function fetchData(url, options = {}) {
 function showDirectoryView() {
     console.log('[app.js] showDirectoryView called.');
     
-    // Reset navigation flag
+    // Reset navigation and loading flags
     isProcessingNavigation = false;
+    
+    // Clear any remaining loading indicators to ensure clean state
+    globalLoadingState.isMainIndicatorActive = false;
+    const indicator = document.getElementById('loading-indicator');
+    if (indicator) indicator.style.display = 'none';
     
     // Reset state when going to directory view
     setCurrentFolder('');
@@ -246,16 +308,19 @@ function showDirectoryView() {
     setIsLoadingMore(false);
     setIsCurrentlyPreloading(false);
     
-    // Abort any ongoing requests
+    // Abort any ongoing requests to prevent conflicts
     if (paginationAbortController) {
+        console.log('[app.js] Aborting pagination controller');
         paginationAbortController.abort();
         setPaginationAbortController(null);
     }
     if (preloadAbortController) {
+        console.log('[app.js] Aborting preload controller');
         preloadAbortController.abort();
         setPreloadAbortController(null);
     }
     if (searchAbortController) {
+        console.log('[app.js] Aborting search controller');
         searchAbortController.abort();
         setSearchAbortController(null);
     }
@@ -338,7 +403,7 @@ async function loadSubItems(folderPath) {
     }
 
     isProcessingNavigation = true;
-    showLoadingIndicator(); 
+    showLoadingIndicator('Đang tải album...'); 
     setCurrentFolder(folderPath);
     setCurrentPage(1);
     setCurrentImageList([]);
@@ -702,20 +767,20 @@ async function handleUrlHash() { // Make function async
                     // Fall through to show directory view
                     console.warn('[app.js] handleUrlHash: Invalid folder path after decoding. Showing directory view.');
                     showDirectoryView();
-                    await loadTopLevelDirectories(); // Await the async operation
+                    await loadTopLevelDirectories(null, true); // Suppress loading indicator
                 }
             } catch (e) { 
                 console.error("[app.js] Error parsing URL hash or loading sub items:", e);
                 history.replaceState(null, '', ' '); 
                 // Fallback to directory view on error
                 showDirectoryView();
-                await loadTopLevelDirectories(); // Await the async operation
+                await loadTopLevelDirectories(null, true); // Suppress loading indicator
             }
         } else {
             // No hash or invalid hash - show home page
             console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
             showDirectoryView();
-            await loadTopLevelDirectories(); // Await the async operation
+            await loadTopLevelDirectories(null, true); // Suppress loading indicator since global overlay is active
             // return false; // Return value might not be strictly needed
         }
     } catch (error) {
@@ -758,7 +823,7 @@ async function loadTopLevelDirectories(searchTerm = null) {
     setSearchAbortController(newAbortController); // WRITE to state
     const { signal } = newAbortController;
 
-    showLoadingIndicator();
+    showLoadingIndicator('Đang tìm kiếm album...');
     
     const params = {};
     if (searchTerm) {
@@ -805,7 +870,13 @@ async function loadTopLevelDirectories(searchTerm = null) {
 
 // --- Initialize App Function ---
 async function initializeApp() {
+    if (isAppInitialized) {
+        console.log('[app.js] App already initialized, skipping...');
+        return;
+    }
+    
     console.log("Initializing app...");
+    isAppInitialized = true;
 
     // DOM Caching - directly assign to variables if not using setters from state.js
     // These were previously causing issues with incorrect imports
@@ -876,7 +947,8 @@ async function initializeApp() {
     
     // LoadMoreBtn listener is now in uiImageView.js
 
-    if (!handleUrlHash()) { /* ... */ }
+    // Handle initial URL hash or show home page
+    await handleUrlHash(); // Make this async and await it
     window.addEventListener('hashchange' , handleUrlHash);
 
     initializeAppEventListeners();
@@ -884,15 +956,34 @@ async function initializeApp() {
     console.log("App initialized.");
 }
 
+// --- Initialize Home Page Function ---
+async function initializeHomePage() {
+    console.log('[app.js] initializeHomePage called');
+    try {
+        showDirectoryView();
+        await loadTopLevelDirectories();
+        console.log('[app.js] Home page initialized successfully');
+    } catch (error) {
+        console.error('[app.js] Error initializing home page:', error);
+        showModalWithMessage('Lỗi khởi tạo', '<p>Không thể tải trang chủ. Vui lòng thử lại.</p>', true);
+    }
+}
+
 // ... (DOMContentLoaded listener)
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
     console.log('[app.js] DOMContentLoaded event fired.');
-    initializeApp();
+    
+    // Small delay to ensure DOM is fully ready
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
+    await initializeApp();
+    
     // Check initialState and navigate accordingly
     if (initialState.view === 'image' && initialState.folderPath) {
         loadSubItems(initialState.folderPath);
     } else {
-        initializeHomePage();
+        // Don't call initializeHomePage here since handleUrlHash in initializeApp already handles home page
+        console.log('[app.js] Home page will be handled by handleUrlHash in initializeApp');
     }
     
     // Initialize navigation highlighting
@@ -1050,12 +1141,14 @@ function initializeAppEventListeners() {
                 // Clear any cached/stored data
                 clearImageGrid();
                 
-                // Show loading overlay during transition
-                showGlobalLoadingOverlay();
-                
-                // Force show directory view and reload directories
+                // Force show directory view (this will reset UI state)
                 showDirectoryView();
-                await loadTopLevelDirectories();
+                
+                // Show single loading overlay for the entire operation
+                showGlobalLoadingOverlay('Đang tải trang chủ', 'Đang chuẩn bị danh sách thư mục...');
+                
+                // Load directories without additional loading indicators (suppress nested loading)
+                await loadTopLevelDirectories(null, true);
                 
                 clearTimeout(cleanupTimeout); // Clear timeout on success
                 console.log('[app.js] Logo click navigation to home completed successfully');

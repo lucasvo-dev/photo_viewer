@@ -5,9 +5,17 @@ require_once 'api/helpers.php'; // For functions like validate_source_and_path
 
 session_start();
 
+// --- XỬ LÝ ĐĂNG XUẤT ---
+if (isset($_GET['action']) && $_GET['action'] === 'logout') {
+    session_unset();   // Xóa tất cả biến session
+    session_destroy(); // Hủy session hoàn toàn
+    header('Location: index.php'); // Chuyển về trang chủ sau khi đăng xuất
+    exit;
+}
+
 // Basic security check - check if user is logged in
-$is_logged_in = isset($_SESSION['user']);
-$is_admin = $is_logged_in && $_SESSION['user'] === ADMIN_USER; 
+$is_logged_in = isset($_SESSION['user_role']);
+$is_admin = $is_logged_in && $_SESSION['user_role'] === 'admin'; 
 
 // Determine initial view based on query parameters or default
 $initial_view = 'directory'; // Default to directory view
@@ -134,10 +142,10 @@ if (isset($_GET['folder'])) {
     </header>
 
     <main class="container user-view">
-        <!-- Thêm loading indicator ở đây -->
-        <div id="loading-indicator" style="display: none; text-align: center; padding: 20px;">
-            <p>Đang tải...</p> 
-            <!-- Bạn có thể thêm spinner CSS hoặc ảnh GIF ở đây nếu muốn -->
+        <!-- Professional loading indicator -->
+        <div id="loading-indicator" style="display: none;">
+            <div class="mini-spinner"></div>
+            <p>Đang tải...</p>
         </div>
 
         <div id="directory-view">
@@ -217,8 +225,13 @@ if (isset($_GET['folder'])) {
     <script src="https://unpkg.com/imagesloaded@5/imagesloaded.pkgd.min.js"></script>
 
     <div id="loading-overlay">
-        <div class="spinner"></div>
-        <p>Đang tải...</p>
+        <div class="loading-content">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <p class="loading-text">Đang tải dữ liệu</p>
+            <p class="loading-subtext">Vui lòng chờ trong giây lát...</p>
+        </div>
     </div>
 
     <div id="zip-jobs-panel-container" class="zip-jobs-panel-container">

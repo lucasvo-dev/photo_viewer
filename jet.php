@@ -148,9 +148,9 @@ if (!defined('RAW_IMAGE_SOURCES')) {
             </div>
         </div>
 
-        <!-- Loading indicator ở đầu -->
-        <div id="loading-indicator" style="display: none; text-align: center; padding: 20px;">
-            <div class="spinner"></div>
+        <!-- Professional loading indicator -->
+        <div id="loading-indicator" style="display: none;">
+            <div class="mini-spinner"></div>
             <p>Đang tải...</p>
         </div>
 
@@ -253,10 +253,15 @@ if (!defined('RAW_IMAGE_SOURCES')) {
         <div id="zip-jobs-list"></div>
     </div>
 
-    <!-- Loading overlay -->
+    <!-- Professional loading overlay -->
     <div id="loading-overlay" style="display: none;">
-        <div class="spinner"></div>
-        <p>Đang xử lý...</p>
+        <div class="loading-content">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <p class="loading-text">Đang xử lý dữ liệu</p>
+            <p class="loading-subtext">Đang chuẩn bị workspace...</p>
+        </div>
     </div>
 
     <footer class="app-footer">

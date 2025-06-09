@@ -516,21 +516,7 @@ body.jet-app-active {
     100% { transform: rotate(360deg); }
 }
 
-#loading-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background: rgba(0, 0, 0, 0.8);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    color: white;
-    font-size: 1rem;
-}
+/* Loading overlay styles moved to components/loading.css for global consistency */
 
 /* --- Responsive Design --- */
 @media (max-width: 768px) {

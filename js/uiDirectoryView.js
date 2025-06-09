@@ -58,7 +58,7 @@ function setupSearchHandlers() {
             if (directoryListEl) directoryListEl.innerHTML = '';
             return;
         }
-        loadTopLevelDirectories(term || null);
+        loadTopLevelDirectories(term || null, false);
     }, 350);
 
     searchInputEl.addEventListener('input', performSearch);
@@ -158,17 +158,26 @@ export function renderTopLevelDirectories(dirs, isSearchResult = false) {
     });
 }
 
-export async function loadTopLevelDirectories(searchTerm = null) { 
-    console.log('[uiDirectoryView] loadTopLevelDirectories called with searchTerm:', searchTerm);
+export async function loadTopLevelDirectories(searchTerm = null, suppressLoadingIndicator = false) { 
+    console.log('[uiDirectoryView] loadTopLevelDirectories called with searchTerm:', searchTerm, 'suppressLoading:', suppressLoadingIndicator);
     if (!directoryListEl || !searchPromptEl || !searchInputEl || !clearSearchBtnEl || !loadingIndicatorEl) {
         console.error("[uiDirectoryView] Required elements not found for loadTopLevelDirectories");
         return;
     }
 
-    appShowLoadingIndicator(); // Show main loading indicator
+    // Only show loading indicator if not suppressed (khi không phải từ logo click)
+    if (!suppressLoadingIndicator) {
+        appShowLoadingIndicator('Đang tải danh sách album...'); // Show main loading indicator
+    }
     searchPromptEl.style.visibility = 'hidden'; // Hide specific search prompt text while loading
-    // Display a placeholder message within the list area itself
-    directoryListEl.innerHTML = '<div class="loading-placeholder">Đang tải danh sách album...</div>';
+    // Display a professional loading placeholder
+    directoryListEl.innerHTML = `
+        <div class="loading-placeholder">
+            <i class="fas fa-spinner"></i>
+            <p class="loading-placeholder-text">Đang tải danh sách album</p>
+            <p class="loading-placeholder-subtext">Đang quét các thư mục...</p>
+        </div>
+    `;
 
     const isSearching = searchTerm !== null && searchTerm !== '';
     // searchInputEl.value = searchTerm || ''; // REMOVED - This was likely causing search input flicker
@@ -196,10 +205,8 @@ export async function loadTopLevelDirectories(searchTerm = null) {
         // directoryListEl.innerHTML = ''; // REMOVED THIS LINE - THIS WAS LIKELY CAUSING FLICKER
 
         if (responseData.status === 'error' && responseData.isAbortError) {
-            console.log('[uiDirectoryView] Search aborted by user (request was cancelled by a new one).');
-            // searchPromptEl.textContent = 'Tìm kiếm đã được hủy.'; // REMOVED
-            // searchPromptEl.style.display = 'block'; // REMOVED
-            // The finally block will hide the main loading indicator.
+            console.log('[uiDirectoryView] Request aborted (likely due to newer request or navigation).');
+            // Don't show error messages for aborted requests - this is normal behavior
             return; 
         }
 
@@ -227,6 +234,9 @@ export async function loadTopLevelDirectories(searchTerm = null) {
         searchPromptEl.textContent = 'Đã xảy ra lỗi nghiêm trọng. Vui lòng làm mới trang.';
         searchPromptEl.style.visibility = 'visible';
     } finally {
-        appHideLoadingIndicator(); // Ensure main loading indicator is hidden regardless of outcome
+        // Only hide loading indicator if we showed it earlier
+        if (!suppressLoadingIndicator) {
+            appHideLoadingIndicator(); // Ensure main loading indicator is hidden regardless of outcome
+        }
     }
 } 

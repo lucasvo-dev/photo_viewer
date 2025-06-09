@@ -184,5 +184,28 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             </form>
         </div>
     </div>
+
+    <!-- Professional loading overlay -->
+    <div id="loading-overlay" style="display: none;">
+        <div class="loading-content">
+            <div class="spinner-container">
+                <div class="spinner"></div>
+            </div>
+            <p class="loading-text">Đang xác thực</p>
+            <p class="loading-subtext">Vui lòng chờ trong giây lát...</p>
+        </div>
+    </div>
+
+    <script>
+        // Show loading when form is submitted
+        document.querySelector('form').addEventListener('submit', function() {
+            const overlay = document.getElementById('loading-overlay');
+            if (overlay) {
+                overlay.style.display = 'flex';
+                overlay.classList.add('overlay-visible');
+                document.body.classList.add('loading-active');
+            }
+        });
+    </script>
 </body>
 </html>
