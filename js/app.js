@@ -319,11 +319,13 @@ function showDirectoryView() {
         preloadAbortController.abort();
         setPreloadAbortController(null);
     }
-    if (searchAbortController) {
-        console.log('[app.js] Aborting search controller');
-        searchAbortController.abort();
-        setSearchAbortController(null);
-    }
+    // Don't abort searchAbortController here - let loadTopLevelDirectories handle it
+    // This prevents double-abort which can cause timing issues
+    // if (searchAbortController) {
+    //     console.log('[app.js] Aborting search controller');
+    //     searchAbortController.abort();
+    //     setSearchAbortController(null);
+    // }
     
     // Clear all active page requests
     clearAllActivePageRequests();
@@ -747,8 +749,22 @@ function navigateToFolder(folderPath) {
 const backButton = document.getElementById('backButton');
 if (backButton) {
     backButton.onclick = () => {
-        // Use hash change to navigate back
-        history.back(); 
+        console.log('[app.js] Back button clicked');
+        
+        // Reset processing flag immediately to prevent locks
+        isProcessingNavigation = false;
+        
+        // Force back to home by clearing hash and showing directory view
+        if (location.hash) {
+            // Clear hash to go back to home
+            history.pushState("", document.title, window.location.pathname + window.location.search);
+        }
+        
+        // Directly show directory view instead of relying on history.back()
+        showDirectoryView();
+        loadTopLevelDirectories().catch(error => {
+            console.error('[app.js] Error loading top level directories from back button:', error);
+        });
     };
 }
 
@@ -781,6 +797,10 @@ async function handleUrlHash() { // Make function async
                 }
             } catch (e) { 
                 console.error("[app.js] Error parsing URL hash or loading sub items:", e);
+                
+                // Reset processing flag on error
+                isProcessingNavigation = false;
+                
                 history.replaceState(null, '', ' '); 
                 // Fallback to directory view on error
                 showGlobalLoadingOverlay('Đang tải trang chủ...');
@@ -791,6 +811,10 @@ async function handleUrlHash() { // Make function async
         } else {
             // No hash or invalid hash - show home page
             console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
+            
+            // Reset processing flag to ensure clean state
+            isProcessingNavigation = false;
+            
             showGlobalLoadingOverlay('Đang tải trang chủ...');
             showDirectoryView();
             await loadTopLevelDirectories(null, true); // Suppress loading indicator
@@ -1235,8 +1259,19 @@ function initializeAppEventListeners() {
     // Handle popstate for back/forward navigation
     window.addEventListener('popstate', (event) => {
         console.log("[app.js] popstate event triggered:", event.state, location.hash);
+        
+        // Reset processing flag immediately to prevent locks
+        isProcessingNavigation = false;
+        
         // Re-evaluate the hash to handle navigation
-        handleUrlHash();
+        handleUrlHash().catch(error => {
+            console.error('[app.js] Error in handleUrlHash from popstate:', error);
+            // Fallback: force show directory view
+            showDirectoryView();
+            loadTopLevelDirectories().catch(fallbackError => {
+                console.error('[app.js] Fallback error in popstate:', fallbackError);
+            });
+        });
     });
     
     // Additional page visibility handler để đảm bảo consistency

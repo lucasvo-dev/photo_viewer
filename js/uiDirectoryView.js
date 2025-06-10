@@ -187,9 +187,20 @@ export async function loadTopLevelDirectories(searchTerm = null, suppressLoading
     // clearSearchBtnEl.style.display = isSearching ? 'inline-block' : 'none';
     clearSearchBtnEl.style.visibility = isSearching ? 'visible' : 'hidden';
 
+    // Clean abort logic to prevent race conditions
     if (searchAbortController) {
-        searchAbortController.abort(); // Abort previous search if any
+        console.log('[uiDirectoryView] Aborting previous search controller');
+        try {
+            searchAbortController.abort(); // Abort previous search if any
+        } catch (error) {
+            console.warn('[uiDirectoryView] Error aborting previous controller:', error);
+        }
+        setSearchAbortController(null); // Clear immediately
     }
+    
+    // Small delay to ensure abort cleanup
+    await new Promise(resolve => setTimeout(resolve, 10));
+    
     const newAbortController = new AbortController();
     setSearchAbortController(newAbortController);
     const { signal } = newAbortController;
@@ -212,6 +223,12 @@ export async function loadTopLevelDirectories(searchTerm = null, suppressLoading
             // Don't show error messages for aborted requests - this is normal behavior
             return; 
         }
+        
+        // Check if controller was aborted during the request
+        if (signal.aborted) {
+            console.log('[uiDirectoryView] Signal was aborted during request processing');
+            return;
+        }
 
         if (responseData.status === 'success') {
             let dirs = responseData.data.folders || [];
@@ -224,6 +241,9 @@ export async function loadTopLevelDirectories(searchTerm = null, suppressLoading
                  // If server returns all and client must filter, uncomment above.
             }
             renderTopLevelDirectories(dirs, isSearching);
+            
+            // Clear abort controller on successful completion
+            setSearchAbortController(null);
         } else {
             console.error("[uiDirectoryView] Error loading albums:", responseData.message);
             directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi tải danh sách album: ${responseData.message || 'Unknown error'}</div>`;
@@ -231,6 +251,12 @@ export async function loadTopLevelDirectories(searchTerm = null, suppressLoading
             searchPromptEl.style.visibility = 'visible';
         }
     } catch (error) {
+        // Handle AbortError separately - it's normal behavior
+        if (error.name === 'AbortError' || error.message?.includes('aborted')) {
+            console.log('[uiDirectoryView] Request was aborted:', error.message);
+            return; // Don't show error UI for aborted requests
+        }
+        
         // This catches critical errors (e.g., network failure in fetchDataApi, or errors in processing logic)
         console.error("[uiDirectoryView] Critical error in loadTopLevelDirectories:", error);
         directoryListEl.innerHTML = `<div class="error-placeholder">Lỗi nghiêm trọng: ${error.message || 'Không rõ lỗi'}</div>`;
