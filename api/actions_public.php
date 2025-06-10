@@ -93,7 +93,8 @@ switch ($action) {
                                 'path' => $subdir_source_prefixed_path,
                                 'is_dir' => true,
                                 'source_key' => $source_key,
-                                'absolute_path' => $fileinfo->getPathname() // Keep absolute path for potential thumbnail search
+                                'absolute_path' => $fileinfo->getPathname(), // Keep absolute path for potential thumbnail search
+                                'mtime' => $fileinfo->getMTime() // Add modification time for sorting
                             ];
                         }
                     } catch (Exception $e) { /* Log error */ error_log("[list_files Root] Error scanning source '{$source_key}': " . $e->getMessage()); }
@@ -104,7 +105,16 @@ switch ($action) {
                 // The original usort is fine here.
                 // END MODIFICATION
 
-                usort($all_subdirs, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+                // Sort by modification time (newest first), then by name if same mtime
+                usort($all_subdirs, function($a, $b) {
+                    // Primary sort: modification time (newest first)
+                    $mtime_diff = $b['mtime'] - $a['mtime'];
+                    if ($mtime_diff !== 0) {
+                        return $mtime_diff; // Return negative if $b is newer (higher mtime)
+                    }
+                    // Secondary sort: name (alphabetical) if modification times are the same
+                    return strnatcasecmp($a['name'], $b['name']);
+                });
 
                 $total_items = count($all_subdirs);
                 $total_pages = ceil($total_items / $items_per_page);
@@ -215,7 +225,15 @@ switch ($action) {
                         $item_source_prefixed_path = $current_relative_path ? $source_key . '/' . $current_relative_path . '/' . $filename : $source_key . '/' . $filename;
 
                         if ($fileinfo->isDir()) {
-                            $all_folder_items[] = ['name' => $filename, 'type' => 'folder', 'path' => $item_source_prefixed_path, 'is_dir' => true, 'source_key' => $source_key, 'absolute_path' => $fileinfo->getPathname()];
+                            $all_folder_items[] = [
+                                'name' => $filename, 
+                                'type' => 'folder', 
+                                'path' => $item_source_prefixed_path, 
+                                'is_dir' => true, 
+                                'source_key' => $source_key, 
+                                'absolute_path' => $fileinfo->getPathname(),
+                                'mtime' => $fileinfo->getMTime() // Add modification time
+                            ];
                         } elseif ($fileinfo->isFile()) {
                             $extension = strtolower($fileinfo->getExtension());
                             if (in_array($extension, $allowed_ext, true)) {
@@ -280,8 +298,19 @@ switch ($action) {
                     throw $e; // Or json_error directly if preferred for this specific case
                 }
 
-                // Sort folders and files separately by name
-                usort($all_folder_items, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
+                // Sort folders by modification time (newest first), then by name
+                // Sort files by name only (as before)
+                usort($all_folder_items, function($a, $b) {
+                    // Primary sort: modification time (newest first) for folders
+                    if (isset($a['mtime']) && isset($b['mtime'])) {
+                        $mtime_diff = $b['mtime'] - $a['mtime'];
+                        if ($mtime_diff !== 0) {
+                            return $mtime_diff;
+                        }
+                    }
+                    // Secondary sort: name (alphabetical)
+                    return strnatcasecmp($a['name'], $b['name']);
+                });
                 usort($all_file_items, fn($a, $b) => strnatcasecmp($a['name'], $b['name']));
 
                 // Pagination for files
