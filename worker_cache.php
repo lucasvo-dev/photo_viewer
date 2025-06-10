@@ -318,15 +318,22 @@ while ($running) {
                     throw new Exception("Failed to pre-count files for folder job {$job_id}: " . $count_e->getMessage());
                 }
 
-                // Determine size for folder processing (current worker logic: largest configured)
+                // Determine sizes for folder processing (MODIFIED: create both 150 and 750)
                 $all_configured_sizes = THUMBNAIL_SIZES;
-                $size_to_generate_for_folder = 150; // Default fallback
+                $sizes_to_generate_for_folder = [150, 750]; // Always generate both sizes for folders
+                
+                // Validate that we have sizes to generate
                 if (!empty($all_configured_sizes)) {
-                    $size_to_generate_for_folder = max($all_configured_sizes);
-                } else {
-                    error_log("[{$timestamp}] [Job {$job_id}] THUMBNAIL_SIZES not configured for folder job, defaulting to {$size_to_generate_for_folder}.");
+                    // Use intersection to only generate configured sizes
+                    $sizes_to_generate_for_folder = array_intersect($sizes_to_generate_for_folder, $all_configured_sizes);
                 }
-                error_log("[{$timestamp}] [Job {$job_id}] Folder job will generate thumbnails of size: {$size_to_generate_for_folder}");
+                
+                if (empty($sizes_to_generate_for_folder)) {
+                    $sizes_to_generate_for_folder = [150]; // Fallback to at least 150px
+                    error_log("[{$timestamp}] [Job {$job_id}] No valid THUMBNAIL_SIZES configured for folder job, defaulting to [150].");
+                } 
+                
+                error_log("[{$timestamp}] [Job {$job_id}] Folder job will generate thumbnails of sizes: " . implode(', ', $sizes_to_generate_for_folder));
 
 
                 // Iterate and process (existing logic adapted)
@@ -365,45 +372,59 @@ while ($running) {
 
                         $current_item_type_iter = in_array($item_ext_iter, $allowed_video_ext, true) ? 'video' : 'image';
                         
-                        $thumb_filename_safe_iter = sha1($item_sp_path_iter) . '_' . $size_to_generate_for_folder . '.jpg';
-                        $cache_dir_for_size_iter = CACHE_THUMB_ROOT . DIRECTORY_SEPARATOR . $size_to_generate_for_folder;
-                        $cache_absolute_path_iter = $cache_dir_for_size_iter . DIRECTORY_SEPARATOR . $thumb_filename_safe_iter;
+                        // MODIFIED: Generate thumbnails for all configured sizes
+                        $item_created_count = 0;
+                        $item_skipped_count = 0;
+                        $item_error_count = 0;
+                        
+                        foreach ($sizes_to_generate_for_folder as $size_to_generate) {
+                            $thumb_filename_safe_iter = sha1($item_sp_path_iter) . '_' . $size_to_generate . '.jpg';
+                            $cache_dir_for_size_iter = CACHE_THUMB_ROOT . DIRECTORY_SEPARATOR . $size_to_generate;
+                            $cache_absolute_path_iter = $cache_dir_for_size_iter . DIRECTORY_SEPARATOR . $thumb_filename_safe_iter;
 
-                        if (!is_dir($cache_dir_for_size_iter)) {
-                            if(!@mkdir($cache_dir_for_size_iter, 0775, true)) {
-                                error_log("[{$timestamp}] [Job {$job_id}] Failed to create cache subdir: {$cache_dir_for_size_iter} for item {$item_sp_path_iter}");
-                                $error_count++;
-                                $job_result_message .= "Error creating cache subdir {$cache_dir_for_size_iter}. ";
-                                continue;
+                            if (!is_dir($cache_dir_for_size_iter)) {
+                                if(!@mkdir($cache_dir_for_size_iter, 0775, true)) {
+                                    error_log("[{$timestamp}] [Job {$job_id}] Failed to create cache subdir: {$cache_dir_for_size_iter} for item {$item_sp_path_iter}");
+                                    $item_error_count++;
+                                    $job_result_message .= "Error creating cache subdir {$cache_dir_for_size_iter}. ";
+                                    continue; // Skip this size, try next
+                                }
                             }
-                        }
 
-                        if (file_exists($cache_absolute_path_iter) && filesize($cache_absolute_path_iter) > 0) {
-                            // error_log("[{$timestamp}] [Job {$job_id}] Thumbnail already exists for: {$item_sp_path_iter} size {$size_to_generate_for_folder}. Skipping.");
-                            $skipped_count++;
-                            continue;
-                        }
+                            if (file_exists($cache_absolute_path_iter) && filesize($cache_absolute_path_iter) > 0) {
+                                // error_log("[{$timestamp}] [Job {$job_id}] Thumbnail already exists for: {$item_sp_path_iter} size {$size_to_generate}. Skipping.");
+                                $item_skipped_count++;
+                                continue; // Skip this size, try next
+                            }
 
-                        try {
-                            $creation_success_iter = false;
-                            if ($current_item_type_iter === 'video') {
-                                $creation_success_iter = create_video_thumbnail($item_absolute_path_iter, $cache_absolute_path_iter, $size_to_generate_for_folder);
-                            } else {
-                                $creation_success_iter = create_thumbnail($item_absolute_path_iter, $cache_absolute_path_iter, $size_to_generate_for_folder);
+                            try {
+                                $creation_success_iter = false;
+                                if ($current_item_type_iter === 'video') {
+                                    $creation_success_iter = create_video_thumbnail($item_absolute_path_iter, $cache_absolute_path_iter, $size_to_generate);
+                                } else {
+                                    $creation_success_iter = create_thumbnail($item_absolute_path_iter, $cache_absolute_path_iter, $size_to_generate);
+                                }
+                                if ($creation_success_iter) {
+                                    $item_created_count++;
+                                    // Log successful creation for first size only to avoid spam
+                                    if ($size_to_generate === min($sizes_to_generate_for_folder)) {
+                                        error_log("[{$timestamp}] [Job {$job_id}] Successfully created thumbnails for: {$item_sp_path_iter}");
+                                    }
+                                } else {
+                                    $item_error_count++;
+                                    $job_result_message .= "Failed {$size_to_generate}px for {$item_sp_path_iter}. ";
+                                }
+                            } catch (Throwable $thumb_e_iter) {
+                                error_log("[{$timestamp}] [Job {$job_id}] EXCEPTION creating {$size_to_generate}px thumbnail for {$item_sp_path_iter}: " . $thumb_e_iter->getMessage());
+                                $item_error_count++;
+                                $job_result_message .= "Exception {$size_to_generate}px for {$item_sp_path_iter}: " . substr($thumb_e_iter->getMessage(), 0, 50) . ". ";
                             }
-                            if ($creation_success_iter) {
-                                $created_count++;
-                            } else {
-                                $error_count++;
-                                $job_result_message .= "Failed for {$item_sp_path_iter}. ";
-                                // $job_success = false; // Don't mark entire folder job as failed for one item
-                            }
-                        } catch (Throwable $thumb_e_iter) {
-                            error_log("[{$timestamp}] [Job {$job_id}] EXCEPTION creating thumbnail for {$item_sp_path_iter}: " . $thumb_e_iter->getMessage());
-                            $error_count++;
-                            $job_result_message .= "Exception for {$item_sp_path_iter}: " . substr($thumb_e_iter->getMessage(), 0, 100) . ". ";
-                            // $job_success = false;
-                        }
+                        } // End foreach sizes
+                        
+                        // Update overall counters
+                        $created_count += $item_created_count;
+                        $skipped_count += $item_skipped_count;
+                        $error_count += $item_error_count;
                     }
                 }
                 if ($error_count > 0) $job_success = false; // Mark folder job as failed if any item had an error.
