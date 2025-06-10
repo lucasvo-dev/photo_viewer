@@ -83,6 +83,7 @@ import { initializeSelectionMode, isSelectionModeActive as isSelectionModeActive
 // All state variables moved to js/state.js
 let isProcessingNavigation = false; // New flag for preventing concurrent folder loads
 let isAppInitialized = false; // Prevent double initialization
+let isLogoClickInProgress = false; // Prevent conflicts during logo click navigation
 let globalLoadingState = {
     isGlobalOverlayActive: false,
     isMainIndicatorActive: false
@@ -375,6 +376,12 @@ const escapePasswordPromptListener = (overlayId) => { ... }; // Adjusted
 // --- Load Sub Items (Folders/Images) ---
 async function loadSubItems(folderPath) {
     console.log(`[app.js] loadSubItems called for path: ${folderPath}`);
+    
+    // Prevent conflicts with logo click navigation
+    if (isLogoClickInProgress) {
+        console.log('[app.js] loadSubItems: Logo click in progress, aborting folder navigation');
+        return;
+    }
     
     // Prevent double loading of the same folder
     if (currentFolder === folderPath && !isProcessingNavigation) {
@@ -1101,50 +1108,25 @@ function initializeAppEventListeners() {
             e.preventDefault();
             e.stopPropagation();
             
-            console.log('[app.js] Logo clicked, force navigating to home');
-            
-            // Stronger detection: always force refresh if any folder is set or if there's complex state
-            const isInFolder = !!currentFolder || location.hash.includes('folder=');
-            const hasComplexState = currentImageList.length > 0 || isLoadingMore || isProcessingNavigation;
-            const isAtHomePage = !location.hash && !currentFolder && document.getElementById('directory-view')?.style.display !== 'none';
-            
-            // Scenario 1: Force page reload nếu đang ở trong folder hoặc có complex state
-            if (isInFolder || hasComplexState) {
-                console.log('[app.js] In folder or has complex state, forcing complete page reload');
-                window.location.href = window.location.pathname + window.location.search; // Force reload without hash
+            // Prevent multiple concurrent logo clicks
+            if (isLogoClickInProgress) {
+                console.log('[app.js] Logo click already in progress, ignoring');
                 return;
             }
             
-            // Scenario 2: Đang ở home nhưng cần refresh danh sách
-            if (isAtHomePage && allTopLevelDirs.length > 0) {
-                console.log('[app.js] Already at home, refreshing directory list');
-                try {
-                    showGlobalLoadingOverlay();
-                    await loadTopLevelDirectories();
-                    console.log('[app.js] Directory list refreshed successfully');
-                } catch (error) {
-                    console.error('[app.js] Error refreshing directory list:', error);
-                    window.location.reload();
-                } finally {
-                    hideGlobalLoadingOverlay();
-                }
-                return;
-            }
-            
-            // Scenario 3: Full reset từ unknown state
-            console.log('[app.js] Performing full reset to home');
-            
-            // Set timeout để đảm bảo cleanup complete trước khi reload
-            const cleanupTimeout = setTimeout(() => {
-                console.warn('[app.js] Cleanup timeout reached, forcing page reload');
-                window.location.reload();
-            }, 3000); // 3 second timeout
+            console.log('[app.js] Logo clicked, navigating to home');
+            isLogoClickInProgress = true;
             
             try {
-                // Cleanup all active states and requests
-                isProcessingNavigation = false;
+                // SIMPLIFIED LOGIC: Always force immediate reset để tránh race conditions
                 
-                // Abort all active requests
+                // Immediately reset all processing flags to prevent locks
+                isProcessingNavigation = false;
+                setIsLoadingMore(false);
+                setIsCurrentlyPreloading(false);
+            
+            // Abort ALL ongoing requests immediately and forcefully
+            try {
                 if (paginationAbortController) {
                     paginationAbortController.abort();
                     setPaginationAbortController(null);
@@ -1153,49 +1135,54 @@ function initializeAppEventListeners() {
                     preloadAbortController.abort();
                     setPreloadAbortController(null);
                 }
-                if (searchAbortController) {
-                    searchAbortController.abort();
-                    setSearchAbortController(null);
-                }
-                clearAllActivePageRequests();
-                
-                // Clear URL hash first
-                if (location.hash) {
-                    history.pushState("", document.title, window.location.pathname + window.location.search);
-                }
-                
-                // Reset all state completely
-                setCurrentFolder('');
-                setCurrentImageList([]);
-                setCurrentPage(1);
-                setTotalImages(0);
-                setPreloadedImages([]);
-                setIsLoadingMore(false);
-                setIsCurrentlyPreloading(false);
-                setAllTopLevelDirs([]);
-                
-                // Clear any cached/stored data
-                clearImageGrid();
-                
-                // Force show directory view (this will reset UI state)
-                showDirectoryView();
-                
-                // Show single loading overlay for the entire operation
-                showGlobalLoadingOverlay('Đang tải trang chủ', 'Đang chuẩn bị danh sách thư mục...');
-                
-                // Load directories without additional loading indicators (suppress nested loading)
-                await loadTopLevelDirectories(null, true);
-                
-                clearTimeout(cleanupTimeout); // Clear timeout on success
-                console.log('[app.js] Logo click navigation to home completed successfully');
-                
+                // Don't abort searchAbortController here - let showDirectoryView handle it safely
+            } catch (abortError) {
+                console.warn('[app.js] Error aborting controllers:', abortError);
+            }
+            
+            // Clear all tracked requests
+            clearAllActivePageRequests();
+            
+            // Clear URL hash immediately
+            if (location.hash) {
+                history.pushState("", document.title, window.location.pathname + window.location.search);
+            }
+            
+            // Reset all state immediately
+            setCurrentFolder('');
+            setCurrentImageList([]);
+            setCurrentPage(1);
+            setTotalImages(0);
+            setPreloadedImages([]);
+            setAllTopLevelDirs([]);
+            
+            // Clear UI immediately
+            clearImageGrid();
+            
+            // Force show directory view (this will handle remaining cleanup)
+            showDirectoryView();
+            
+            // Simple loading and directory load - no complex timeout logic
+            try {
+                showGlobalLoadingOverlay('Đang tải trang chủ...');
+                await loadTopLevelDirectories(null, true); // Suppress nested loading
+                console.log('[app.js] Logo click navigation completed successfully');
             } catch (error) {
-                clearTimeout(cleanupTimeout);
                 console.error('[app.js] Error during logo click navigation:', error);
-                // Fallback: force page reload on error
-                window.location.reload();
+                // Simple fallback: try once more, then reload if still fails
+                try {
+                    await loadTopLevelDirectories(null, true);
+                } catch (retryError) {
+                    console.error('[app.js] Retry failed, forcing page reload:', retryError);
+                    window.location.reload();
+                }
+                         } finally {
+                 hideGlobalLoadingOverlay();
+             }
+            
             } finally {
-                hideGlobalLoadingOverlay();
+                // Always reset logo click flag
+                isLogoClickInProgress = false;
             }
         });
         
@@ -1259,6 +1246,12 @@ function initializeAppEventListeners() {
     // Handle popstate for back/forward navigation
     window.addEventListener('popstate', (event) => {
         console.log("[app.js] popstate event triggered:", event.state, location.hash);
+        
+        // Ignore popstate during logo click navigation
+        if (isLogoClickInProgress) {
+            console.log('[app.js] Logo click in progress, ignoring popstate');
+            return;
+        }
         
         // Reset processing flag immediately to prevent locks
         isProcessingNavigation = false;
