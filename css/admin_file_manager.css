@@ -550,10 +550,11 @@
 
 /* Upload Progress Modal */
 .upload-progress-modal {
-    max-width: 500px;
-    width: 95vw;
-    padding: 20px;
+    max-width: 480px;
+    width: 90vw;
+    padding: 16px;
     box-sizing: border-box;
+    margin: 0 auto;
 }
 
 .progress-info {
@@ -563,8 +564,8 @@
 .progress-stats {
     display: grid;
     grid-template-columns: 1fr;
-    gap: 12px;
-    padding: 16px;
+    gap: 8px;
+    padding: 12px;
     background: rgba(13, 17, 23, 0.4);
     border: 1px solid #30363d;
     border-radius: 6px;
@@ -574,8 +575,9 @@
     display: flex;
     justify-content: space-between;
     align-items: center;
-    min-height: 24px;
+    min-height: 20px;
     width: 100%;
+    gap: 8px;
 }
 
 .stat-label {
@@ -586,17 +588,20 @@
 
 .stat-value {
     color: #f0f6fc;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     font-weight: 600;
     text-align: right;
     flex-shrink: 0;
-    max-width: 60%;
+    max-width: 65%;
     word-break: break-word;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
 }
 
 .progress-bar-container {
     position: relative;
-    margin-bottom: 20px;
+    margin-bottom: 16px;
 }
 
 .progress-bar-bg {

@@ -1746,6 +1746,19 @@ class AdminFileManager {
                 // Check if there's any pending or processing work
                 const activeCacheJobs = (status.pending_jobs || 0) + (status.processing_jobs || 0);
                 
+                // If we have any cache activity at all, show it even if totalFiles is 0
+                if (activeCacheJobs > 0 && totalFiles === 0) {
+                    this.log('Found active cache jobs but no specific files - showing general cache progress');
+                    this.updateCacheProgress(
+                        status.completed_files || 0,
+                        activeCacheJobs + (status.completed_files || 0),
+                        activeCacheJobs,
+                        currentActivity?.file || 'Đang xử lý cache...',
+                        status.progress_percentage || 0
+                    );
+                    continue; // Skip other conditions and continue monitoring
+                }
+                
                 // If we have no recent cache activity at all, keep waiting longer
                 if (totalFiles === 0 && activeCacheJobs === 0) {
                     if (attempts < 15) { // Wait much longer - 15 seconds
@@ -1771,6 +1784,9 @@ class AdminFileManager {
                         
                         // Switch to general cache monitoring instead of giving up
                         uploadedFiles = []; // Clear specific files, use general monitoring
+                        
+                        // Reset attempts to give general monitoring a chance
+                        attempts = 0;
                     }
                 } else if (totalFiles > 0 && activeCacheJobs === 0 && progressPercent >= 100) {
                     // All files have been processed and completed
@@ -1851,13 +1867,33 @@ class AdminFileManager {
                         progressPercent
                     );
                 } else {
-                    // No files to process - continue monitoring
-                    this.updateUploadProgress(
-                        uploadedCount,
-                        uploadedCount,
-                        '🔍 Tiếp tục theo dõi cache...',
-                        null
-                    );
+                    // No files to process - but if we've been waiting too long, assume complete
+                    if (attempts > 30) { // After 30 seconds, assume cache is done or not needed
+                        this.updateUploadProgress(
+                            uploadedCount,
+                            uploadedCount,
+                            '✅ Upload hoàn thành - cache có thể đã sẵn sàng',
+                            100
+                        );
+                        
+                        // Show close button
+                        const cancelCacheBtn = document.getElementById('cancel-cache-btn');
+                        const closeBtn = document.getElementById('close-upload-btn');
+                        
+                        if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
+                        if (closeBtn) closeBtn.style.display = 'inline-block';
+                        
+                        this.showMessage(`Upload thành công ${uploadedCount} file(s)`, 'success');
+                        break;
+                    } else {
+                        // Continue monitoring
+                        this.updateUploadProgress(
+                            uploadedCount,
+                            uploadedCount,
+                            `🔍 Tiếp tục theo dõi cache... (${attempts}s)`,
+                            null
+                        );
+                    }
                 }
             } catch (error) {
                 this.log('Cache status check failed:', error);
