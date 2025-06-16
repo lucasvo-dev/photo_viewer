@@ -257,6 +257,9 @@ class AdminFileManager {
         const directories = items.filter(item => item.type === 'directory').length;
         const files = items.filter(item => item.type === 'file').length;
         const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
+        
+        // Check if we're at root level (no file counts available)
+        const isRootLevel = directories > 0 && !items.some(item => item.type === 'directory' && item.file_count !== undefined);
 
         const itemsHtml = items.map(item => this.renderItem(item)).join('');
         
@@ -274,15 +277,22 @@ class AdminFileManager {
                     <span class="fm-stat-item">
                         <i class="fas fa-folder"></i> ${directories} thư mục
                     </span>
+                    ${files > 0 ? `
+                        <span class="fm-stat-item">
+                            <i class="fas fa-file"></i> ${files} file
+                        </span>
+                        <span class="fm-stat-item">
+                            <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
+                        </span>
+                    ` : ''}
                     <span class="fm-stat-item">
-                        <i class="fas fa-file"></i> ${files} file
+                        <i class="fas fa-list"></i> ${isRootLevel ? `${totalItems} thư mục gốc` : `Tổng: ${totalItems} mục`}
                     </span>
-                    <span class="fm-stat-item">
-                        <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
-                    </span>
-                    <span class="fm-stat-item">
-                        <i class="fas fa-list"></i> Tổng: ${totalItems} mục
-                    </span>
+                    ${isRootLevel ? `
+                        <span class="fm-stat-item fm-performance-note">
+                            <i class="fas fa-info-circle"></i> Vào thư mục để xem số lượng file
+                        </span>
+                    ` : ''}
                 </div>
             </div>
             <div class="fm-items">
@@ -299,8 +309,8 @@ class AdminFileManager {
         const size = isDirectory ? '' : this.formatFileSize(item.size);
         const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
         
-        // File count for directories
-        const fileCount = isDirectory && item.file_count !== undefined ? 
+        // File count for directories (only show if available)
+        const fileCount = isDirectory && item.file_count !== undefined && item.file_count > 0 ? 
             `<span class="fm-item-count">${item.file_count} files</span>` : '';
 
         return `

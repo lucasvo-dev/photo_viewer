@@ -243,6 +243,16 @@
     font-size: 0.8rem;
 }
 
+.fm-stat-item.fm-performance-note {
+    color: #8b949e;
+    font-style: italic;
+    font-size: 0.8rem;
+}
+
+.fm-stat-item.fm-performance-note i {
+    color: #8b949e;
+}
+
 @media (max-width: 768px) {
     .fm-stats {
         gap: 10px;

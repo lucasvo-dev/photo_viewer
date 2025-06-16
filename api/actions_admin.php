@@ -938,8 +938,11 @@ switch ($action) {
                     $item['is_image'] = in_array($extension, ALLOWED_EXTENSIONS);
                     $item['is_video'] = in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
                 } else {
-                    // For directories, count files recursively
-                    $item['file_count'] = count_files_recursive($fileinfo->getPathname());
+                    // For directories, don't count files at root level for performance
+                    // Only count when we're already inside a specific directory
+                    if (!empty($path)) {
+                        $item['file_count'] = count_files_recursive($fileinfo->getPathname());
+                    }
                 }
 
                 $items[] = $item;
