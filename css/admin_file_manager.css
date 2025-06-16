@@ -218,6 +218,41 @@
     font-size: 0.85rem;
 }
 
+/* File Manager Stats */
+.fm-stats {
+    display: flex;
+    gap: 15px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #30363d;
+}
+
+.fm-stat-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: #8b949e;
+    font-size: 0.85rem;
+    white-space: nowrap;
+}
+
+.fm-stat-item i {
+    color: #58a6ff;
+    font-size: 0.8rem;
+}
+
+@media (max-width: 768px) {
+    .fm-stats {
+        gap: 10px;
+    }
+    
+    .fm-stat-item {
+        font-size: 0.8rem;
+    }
+}
+
 /* File Items */
 .fm-items {
     padding: 0;

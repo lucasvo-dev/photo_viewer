@@ -250,6 +250,12 @@ class AdminFileManager {
             return;
         }
 
+        // Calculate folder statistics
+        const totalItems = items.length;
+        const directories = items.filter(item => item.type === 'directory').length;
+        const files = items.filter(item => item.type === 'file').length;
+        const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
+
         const itemsHtml = items.map(item => this.renderItem(item)).join('');
         
         content.innerHTML = `
@@ -261,6 +267,20 @@ class AdminFileManager {
                     <button id="fm-delete-selected" class="button danger" disabled>
                         <i class="fas fa-trash"></i> Xóa đã chọn
                     </button>
+                </div>
+                <div class="fm-stats">
+                    <span class="fm-stat-item">
+                        <i class="fas fa-folder"></i> ${directories} thư mục
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-file"></i> ${files} file
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-list"></i> Tổng: ${totalItems} mục
+                    </span>
                 </div>
             </div>
             <div class="fm-items">
@@ -2032,7 +2052,7 @@ class AdminFileManager {
     }
 
     renderUploadPanel(uploadSession) {
-        const { totalFiles, uploadedFiles, status, error } = uploadSession;
+        const { totalFiles, uploadedFiles, status, error, cacheProgress, cacheCompleted, cacheTotal } = uploadSession;
         
         let statusText = '';
         let progressPercent = 0;
@@ -2047,8 +2067,14 @@ class AdminFileManager {
                 statusClass = 'uploading';
                 break;
             case 'caching':
-                statusText = `Generating thumbnails... (${uploadedFiles} files uploaded)`;
-                progressPercent = 50;
+                // Show detailed cache progress like Jet system
+                if (cacheProgress !== undefined && cacheTotal > 0) {
+                    statusText = `Generating thumbnails... ${cacheProgress}% (${cacheCompleted}/${cacheTotal} jobs)`;
+                    progressPercent = cacheProgress;
+                } else {
+                    statusText = `Generating thumbnails... (${uploadedFiles} files uploaded)`;
+                    progressPercent = 50;
+                }
                 iconClass = 'fa-cog fa-spin';
                 statusClass = 'caching';
                 break;
@@ -2087,18 +2113,43 @@ class AdminFileManager {
 
     async startCacheMonitoring(uploadSession) {
         let attempts = 0;
-        const maxAttempts = 30; // 30 seconds max
+        const maxAttempts = 60; // 60 seconds max (like Jet system)
         
         const checkCache = async () => {
             try {
-                const response = await fetch('api.php?action=get_cache_status');
+                // Use specific cache status API like Jet system
+                const formData = new FormData();
+                formData.append('action', 'get_specific_cache_status');
+                
+                // Create expected file paths for uploaded files
+                const expectedFiles = [];
+                for (let i = 0; i < uploadSession.uploadedFiles; i++) {
+                    // We don't have exact file names, so use folder-based monitoring
+                }
+                
+                // Use folder-based cache monitoring instead
+                const response = await fetch(`api.php?action=get_cache_status&source=${this.currentSource}&path=${this.currentPath}`);
                 const status = await response.json();
                 
-                // Simple cache check - if no pending jobs, assume complete
+                // Calculate progress like Jet system
+                const totalExpected = uploadSession.uploadedFiles * 2; // 150px + 750px thumbnails
+                const completedJobs = status.completed_files || 0;
                 const pendingJobs = status.pending_jobs || 0;
                 const processingJobs = status.processing_jobs || 0;
+                const totalActive = pendingJobs + processingJobs;
                 
-                if (pendingJobs === 0 && processingJobs === 0) {
+                // Update progress percentage
+                const progressPercent = totalExpected > 0 ? Math.round((completedJobs / totalExpected) * 100) : 100;
+                
+                // Update session with progress info
+                uploadSession.cacheProgress = progressPercent;
+                uploadSession.cacheCompleted = completedJobs;
+                uploadSession.cacheTotal = totalExpected;
+                
+                this.updateUploadPanel(uploadSession);
+                
+                // Check completion like Jet system
+                if (totalActive === 0 || progressPercent >= 100) {
                     uploadSession.status = 'completed';
                     this.updateUploadPanel(uploadSession);
                     
