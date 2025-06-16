@@ -618,6 +618,38 @@
     box-shadow: 0 0 10px rgba(245, 158, 11, 0.3);
 }
 
+/* Compact Progress Modal */
+.progress-compact {
+    padding: 16px;
+    background: rgba(13, 17, 23, 0.6);
+    border: 1px solid #30363d;
+    border-radius: 8px;
+}
+
+.progress-main {
+    margin-bottom: 12px;
+}
+
+.progress-label {
+    display: block;
+    color: #c9d1d9;
+    font-size: 0.9rem;
+    font-weight: 500;
+    margin-bottom: 8px;
+    text-align: center;
+}
+
+.progress-status {
+    text-align: center;
+    color: #58a6ff;
+    font-size: 0.85rem;
+    padding: 8px;
+    background: rgba(33, 38, 45, 0.6);
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    min-height: 20px;
+}
+
 .progress-bar-fill::after {
     content: '';
     position: absolute;

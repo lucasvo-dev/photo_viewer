@@ -700,36 +700,26 @@ class AdminFileManager {
         // Close existing upload dialog first
         this.closeDialog();
         
-        // Create upload progress modal
+        // Create upload progress modal - Compact version
         this.uploadProgressModal = this.createDialog('Tiến trình Upload & Cache', `
             <div class="upload-progress-modal">
-                <div class="progress-info">
-                    <div class="progress-stats">
-                        <div class="stat-item">
-                            <span class="stat-label">Tiến trình:</span>
-                            <span class="stat-value" id="upload-percentage">0%</span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-label">File đã xử lý:</span>
-                            <span class="stat-value"><span id="upload-processed">0</span>/<span id="upload-total">${totalFiles}</span></span>
-                        </div>
-                        <div class="stat-item">
-                            <span class="stat-label">Đang xử lý:</span>
-                            <span class="stat-value" id="upload-current-file">Đang chuẩn bị...</span>
+                <div class="progress-compact">
+                    <div class="progress-main">
+                        <span class="progress-label">
+                            <span id="upload-processed">0</span>/<span id="upload-total">${totalFiles}</span> files
+                            (<span id="upload-percentage">0%</span>)
+                        </span>
+                        <div class="progress-bar-container">
+                            <div class="progress-bar-bg">
+                                <div class="progress-bar-fill" id="upload-progress-fill" style="width: 0%"></div>
+                            </div>
+                            <div class="progress-percentage" id="upload-progress-text">0%</div>
                         </div>
                     </div>
-                </div>
-                
-                <div class="progress-bar-container">
-                    <div class="progress-bar-bg">
-                        <div class="progress-bar-fill" id="upload-progress-fill" style="width: 0%"></div>
+                    
+                    <div class="progress-status">
+                        <span id="upload-current-file">Đang chuẩn bị...</span>
                     </div>
-                    <div class="progress-percentage" id="upload-progress-text">0%</div>
-                </div>
-                
-                <div class="upload-status" id="upload-status">
-                    <i class="fas fa-spinner fa-spin"></i>
-                    <span>🟢 Upload files → 🟡 Tạo cache thumbnails</span>
                 </div>
                 
                 <div class="upload-results" id="upload-results" style="display: none;">
@@ -1571,7 +1561,8 @@ class AdminFileManager {
 
             // Monitor cache generation for uploaded files
             if (totalUploaded > 0) {
-                this.updateUploadProgress(fileArray.length, fileArray.length, 'Đang kiểm tra cache generation...', 100);
+                // Switch to cache phase immediately
+                this.updateCacheProgress(0, uploadedFiles.length, uploadedFiles.length, 'Đang kiểm tra cache generation...', 0);
                 
                 // Switch to cache monitoring mode - show cache cancel button
                 const cancelUploadBtn = document.getElementById('cancel-upload-btn');
@@ -1732,21 +1723,30 @@ class AdminFileManager {
                 
                 // If we have no recent cache activity at all, exit early
                 if (totalFiles === 0 && activeCacheJobs === 0) {
-                    if (attempts < 3) {
-                        // Give it a few more attempts in case jobs are still being created
-                        this.updateUploadProgress(
-                            uploadedCount,
-                            uploadedCount,
+                    if (attempts < 5) {
+                        // Give it more attempts in case jobs are still being created
+                        this.updateCacheProgress(
+                            0,
+                            uploadedFiles.length,
+                            uploadedFiles.length,
                             'Đang chờ cache jobs được tạo...',
-                            100
+                            0
                         );
                     } else {
-                        this.updateUploadProgress(
-                            uploadedCount,
-                            uploadedCount,
-                            'Không cần tạo cache hoặc đã hoàn thành',
+                        // No cache jobs found - complete immediately
+                        this.updateCacheProgress(
+                            uploadedFiles.length,
+                            uploadedFiles.length,
+                            0,
+                            '✓ Cache hoàn thành (không cần tạo)',
                             100
                         );
+                        
+                        // Auto-close after 2 seconds
+                        setTimeout(() => {
+                            this.closeUploadProgress();
+                            this.refreshCurrentDirectory();
+                        }, 2000);
                         break;
                     }
                 } else if (totalFiles > 0 && activeCacheJobs === 0 && progressPercent >= 100) {
@@ -1841,12 +1841,21 @@ class AdminFileManager {
         }
         
         if (attempts >= maxAttempts) {
-            this.updateUploadProgress(
-                uploadedCount,
-                uploadedCount,
-                'Cache generation timed out (sẽ tiếp tục background)',
+            // Timeout - show completion and allow user to close
+            this.updateCacheProgress(
+                uploadedFiles.length,
+                uploadedFiles.length,
+                0,
+                'Cache generation timeout (sẽ tiếp tục background)',
                 100
             );
+            
+            // Change button to "Đóng"
+            const cancelCacheBtn = document.getElementById('cancel-cache-btn');
+            const closeBtn = document.getElementById('close-upload-btn');
+            
+            if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
+            if (closeBtn) closeBtn.style.display = 'inline-block';
         }
     }
 }
