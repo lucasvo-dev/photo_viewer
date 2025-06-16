@@ -2096,11 +2096,18 @@ class AdminFileManager {
             <div class="upload-panel-header">
                 <i class="fas ${iconClass}"></i>
                 <span class="upload-panel-text">${statusText}</span>
-                <button class="upload-panel-close" onclick="this.parentElement.parentElement.remove()">×</button>
+                <button class="upload-panel-close" onclick="this.parentElement.parentElement.remove()" title="Đóng">×</button>
             </div>
             <div class="upload-panel-progress">
                 <div class="upload-progress-bar ${statusClass}" style="width: ${progressPercent}%"></div>
             </div>
+            ${status === 'completed' ? `
+                <div class="upload-panel-actions">
+                    <button class="upload-panel-refresh" onclick="window.fileManager.refreshCurrentDirectory()" title="Làm mới">
+                        <i class="fas fa-sync-alt"></i> Làm mới
+                    </button>
+                </div>
+            ` : ''}
         `;
     }
 
@@ -2115,21 +2122,17 @@ class AdminFileManager {
         let attempts = 0;
         const maxAttempts = 60; // 60 seconds max (like Jet system)
         
+        console.log('[Upload Cache] Starting cache monitoring for session:', uploadSession);
+        
         const checkCache = async () => {
             try {
-                // Use specific cache status API like Jet system
-                const formData = new FormData();
-                formData.append('action', 'get_specific_cache_status');
+                console.log(`[Upload Cache] Attempt ${attempts + 1}/${maxAttempts} - Checking cache status...`);
                 
-                // Create expected file paths for uploaded files
-                const expectedFiles = [];
-                for (let i = 0; i < uploadSession.uploadedFiles; i++) {
-                    // We don't have exact file names, so use folder-based monitoring
-                }
-                
-                // Use folder-based cache monitoring instead
-                const response = await fetch(`api.php?action=get_cache_status&source=${this.currentSource}&path=${this.currentPath}`);
+                // Use general cache status API (simpler and more reliable)
+                const response = await fetch('api.php?action=get_cache_status');
                 const status = await response.json();
+                
+                console.log('[Upload Cache] API Response:', status);
                 
                 // Calculate progress like Jet system
                 const totalExpected = uploadSession.uploadedFiles * 2; // 150px + 750px thumbnails
@@ -2138,52 +2141,59 @@ class AdminFileManager {
                 const processingJobs = status.processing_jobs || 0;
                 const totalActive = pendingJobs + processingJobs;
                 
+                console.log(`[Upload Cache] Progress calculation:`, {
+                    totalExpected,
+                    completedJobs,
+                    pendingJobs,
+                    processingJobs,
+                    totalActive
+                });
+                
                 // Update progress percentage
-                const progressPercent = totalExpected > 0 ? Math.round((completedJobs / totalExpected) * 100) : 100;
+                const progressPercent = totalExpected > 0 ? Math.round((completedJobs / totalExpected) * 100) : 0;
                 
                 // Update session with progress info
                 uploadSession.cacheProgress = progressPercent;
                 uploadSession.cacheCompleted = completedJobs;
                 uploadSession.cacheTotal = totalExpected;
                 
+                console.log(`[Upload Cache] Updated progress: ${progressPercent}% (${completedJobs}/${totalExpected})`);
+                
                 this.updateUploadPanel(uploadSession);
                 
-                // Check completion like Jet system
-                if (totalActive === 0 || progressPercent >= 100) {
+                // More conservative completion check
+                const shouldComplete = (totalActive === 0 && attempts > 5) || attempts >= maxAttempts;
+                
+                if (shouldComplete) {
+                    console.log('[Upload Cache] Completing cache monitoring:', { totalActive, attempts, maxAttempts });
                     uploadSession.status = 'completed';
                     this.updateUploadPanel(uploadSession);
                     
                     // Refresh directory to show new files
                     this.refreshCurrentDirectory();
                     
-                    // Auto-hide after 3 seconds
-                    setTimeout(() => {
-                        const panel = document.getElementById('upload-progress-panel');
-                        if (panel) panel.remove();
-                    }, 3000);
+                    // Don't auto-hide, let user manually close or use refresh button
+                    console.log('[Upload Cache] Cache monitoring completed. Panel will remain visible.');
                     
                     return;
                 }
                 
                 attempts++;
-                if (attempts < maxAttempts) {
-                    setTimeout(checkCache, 1000);
-                } else {
-                    // Timeout - assume completed
-                    uploadSession.status = 'completed';
-                    this.updateUploadPanel(uploadSession);
-                    this.refreshCurrentDirectory();
-                }
+                console.log(`[Upload Cache] Scheduling next check in 1 second (attempt ${attempts}/${maxAttempts})`);
+                setTimeout(checkCache, 1000);
                 
             } catch (error) {
-                console.error('Cache monitoring error:', error);
-                uploadSession.status = 'completed';
+                console.error('[Upload Cache] Cache monitoring error:', error);
+                uploadSession.status = 'failed';
+                uploadSession.error = 'Cache monitoring failed: ' + error.message;
                 this.updateUploadPanel(uploadSession);
-                this.refreshCurrentDirectory();
+                
+                // Don't auto-hide on error, let user see the error
             }
         };
         
         // Start monitoring after 2 seconds
+        console.log('[Upload Cache] Starting cache monitoring in 2 seconds...');
         setTimeout(checkCache, 2000);
     }
 

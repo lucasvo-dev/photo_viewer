@@ -1669,10 +1669,49 @@
     background: #f85149;
 }
 
+.upload-panel-actions {
+    margin-top: 8px;
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+}
+
+.upload-panel-refresh {
+    background: #238636;
+    border: 1px solid #2ea043;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.upload-panel-refresh:hover {
+    background: #2ea043;
+    border-color: #2ea043;
+}
+
+.upload-panel-refresh i {
+    font-size: 0.9em;
+}
+
 @media (max-width: 768px) {
     .upload-progress-panel {
         width: calc(100% - 40px);
         left: 20px;
         right: 20px;
+    }
+    
+    .upload-panel-actions {
+        justify-content: center;
+    }
+    
+    .upload-panel-refresh {
+        flex: 1;
+        justify-content: center;
     }
 } 
