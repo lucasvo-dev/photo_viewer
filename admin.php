@@ -83,18 +83,6 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                             <i class="fas fa-cog"></i>
                             Bảng điều khiển Admin
                         </a>
-                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('file-manager-tab')">
-                            <i class="fas fa-folder-open"></i>
-                            Quản lý File & Thư mục
-                        </a>
-                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('jet-cache-tab')">
-                            <i class="fas fa-database"></i>
-                            Quản lý Cache RAW
-                        </a>
-                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('users-tab')">
-                            <i class="fas fa-users"></i>
-                            Quản lý Người dùng
-                        </a>
                     </div>
                     <?php endif; ?>
 

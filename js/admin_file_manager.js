@@ -1797,7 +1797,7 @@ class AdminFileManager {
         return Math.max(MIN_BATCH_SIZE, Math.min(MAX_FILES_PER_BATCH, batchSize));
     }
 
-    async uploadBatch(files, overwriteMode) {
+    async uploadBatch(files, overwriteMode, progressCallback = null) {
         const formData = new FormData();
         formData.append('source', this.currentSource);
         formData.append('path', this.currentPath);
@@ -1821,6 +1821,14 @@ class AdminFileManager {
         // Create promise wrapper for XMLHttpRequest
         const response = await new Promise((resolve, reject) => {
             xhr.open('POST', 'api.php?action=file_manager_upload');
+            
+            // Add upload progress tracking
+            xhr.upload.addEventListener('progress', (e) => {
+                if (e.lengthComputable && progressCallback) {
+                    const percentComplete = Math.round((e.loaded / e.total) * 100);
+                    progressCallback(percentComplete, files.length);
+                }
+            });
             
             xhr.onload = () => {
                 if (xhr.status >= 200 && xhr.status < 300) {
@@ -2018,15 +2026,23 @@ class AdminFileManager {
             // Show upload progress
             uploadSession.status = 'uploading';
             uploadSession.uploadProgress = 0;
+            uploadSession.uploadedFiles = 0; // Initialize uploaded count
             this.updateUploadPanel(uploadSession);
             
-            // Upload all files at once (simpler approach)
-            const result = await this.uploadBatch(fileArray, 'skip');
+            // Upload all files at once (simpler approach) with progress tracking
+            const result = await this.uploadBatch(fileArray, 'skip', (progress, fileCount) => {
+                // Update upload progress in real-time
+                uploadSession.uploadProgress = progress;
+                this.updateUploadPanel(uploadSession);
+                console.log(`[Upload Progress] ${progress}% (${fileCount} files)`);
+            });
             
             // Update session with results
             uploadSession.uploadedFiles = result.success_count || 0;
             uploadSession.errors = result.errors || [];
             uploadSession.uploadProgress = 100; // Upload completed
+            
+            console.log(`[Upload] Upload completed: ${uploadSession.uploadedFiles}/${uploadSession.totalFiles} files successful`);
             
             // Show upload completion briefly
             uploadSession.status = 'upload_completed';
@@ -2100,8 +2116,11 @@ class AdminFileManager {
         
         switch (status) {
             case 'uploading':
-                statusText = `🟢 Uploading ${uploadedFiles}/${totalFiles} files...`;
-                progressPercent = uploadSession.uploadProgress || 0;
+                // Show actual uploaded count vs total selected files
+                const actualUploaded = uploadedFiles || 0;
+                const actualProgress = uploadSession.uploadProgress || 0;
+                statusText = `🟢 Uploading ${actualUploaded}/${totalFiles} files... (${actualProgress}%)`;
+                progressPercent = actualProgress;
                 iconClass = 'fa-upload';
                 statusClass = 'uploading';
                 break;

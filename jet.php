@@ -87,14 +87,6 @@ if (!defined('RAW_IMAGE_SOURCES')) {
                             <i class="fas fa-cog"></i>
                             Bảng điều khiển Admin
                         </a>
-                        <a href="admin.php#jet-cache-tab" class="menu-item">
-                            <i class="fas fa-database"></i>
-                            Quản lý Cache RAW
-                        </a>
-                        <a href="admin.php#users-tab" class="menu-item">
-                            <i class="fas fa-users"></i>
-                            Quản lý Người dùng
-                        </a>
                     </div>
                     <?php endif; ?>
 
