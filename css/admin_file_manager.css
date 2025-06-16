@@ -1699,6 +1699,29 @@
     font-size: 0.9em;
 }
 
+.upload-panel-skip {
+    background: #fb8500;
+    border: 1px solid #fb8500;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.upload-panel-skip:hover {
+    background: #e07600;
+    border-color: #e07600;
+}
+
+.upload-panel-skip i {
+    font-size: 0.9em;
+}
+
 @media (max-width: 768px) {
     .upload-progress-panel {
         width: calc(100% - 40px);

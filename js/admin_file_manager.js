@@ -2016,11 +2016,19 @@ class AdminFileManager {
             uploadSession.errors = result.errors || [];
             
             if (result.success_count > 0) {
-                uploadSession.status = 'caching';
-                this.updateUploadPanel(uploadSession);
-                
-                // Start cache monitoring
-                this.startCacheMonitoring(uploadSession);
+                // Check if we should monitor cache
+                if (uploadSession.uploadedFiles > 0) {
+                    uploadSession.status = 'caching';
+                    this.updateUploadPanel(uploadSession);
+                    
+                    // Start cache monitoring with delay
+                    this.startCacheMonitoring(uploadSession);
+                } else {
+                    // No files uploaded, mark as completed
+                    uploadSession.status = 'completed';
+                    this.updateUploadPanel(uploadSession);
+                    this.refreshCurrentDirectory();
+                }
             } else {
                 uploadSession.status = 'failed';
                 uploadSession.error = result.error || 'Upload failed';
@@ -2101,6 +2109,13 @@ class AdminFileManager {
             <div class="upload-panel-progress">
                 <div class="upload-progress-bar ${statusClass}" style="width: ${progressPercent}%"></div>
             </div>
+            ${status === 'caching' ? `
+                <div class="upload-panel-actions">
+                    <button class="upload-panel-skip" onclick="window.fileManager.skipCacheMonitoring()" title="Bỏ qua theo dõi cache">
+                        <i class="fas fa-forward"></i> Bỏ qua
+                    </button>
+                </div>
+            ` : ''}
             ${status === 'completed' ? `
                 <div class="upload-panel-actions">
                     <button class="upload-panel-refresh" onclick="window.fileManager.refreshCurrentDirectory()" title="Làm mới">
@@ -2120,81 +2135,118 @@ class AdminFileManager {
 
     async startCacheMonitoring(uploadSession) {
         let attempts = 0;
-        const maxAttempts = 60; // 60 seconds max (like Jet system)
+        const maxAttempts = 30; // Reduce to 30 attempts (90 seconds total)
+        let lastProgress = -1;
+        let stuckCount = 0;
         
-        console.log('[Upload Cache] Starting cache monitoring for session:', uploadSession);
+        console.log('[Upload Cache] Starting optimized cache monitoring for session:', uploadSession);
         
         const checkCache = async () => {
             try {
-                console.log(`[Upload Cache] Attempt ${attempts + 1}/${maxAttempts} - Checking cache status...`);
+                // Reduce logging frequency
+                if (attempts % 5 === 0) {
+                    console.log(`[Upload Cache] Check ${attempts + 1}/${maxAttempts} - Monitoring cache...`);
+                }
                 
-                // Use general cache status API (simpler and more reliable)
-                const response = await fetch('api.php?action=get_cache_status');
+                // Use general cache status API with timeout
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+                
+                const response = await fetch('api.php?action=get_cache_status', {
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+                
                 const status = await response.json();
                 
-                console.log('[Upload Cache] API Response:', status);
-                
-                // Calculate progress like Jet system
+                // Calculate progress - use simpler logic
                 const totalExpected = uploadSession.uploadedFiles * 2; // 150px + 750px thumbnails
                 const completedJobs = status.completed_files || 0;
                 const pendingJobs = status.pending_jobs || 0;
                 const processingJobs = status.processing_jobs || 0;
                 const totalActive = pendingJobs + processingJobs;
                 
-                console.log(`[Upload Cache] Progress calculation:`, {
-                    totalExpected,
-                    completedJobs,
-                    pendingJobs,
-                    processingJobs,
-                    totalActive
-                });
-                
                 // Update progress percentage
-                const progressPercent = totalExpected > 0 ? Math.round((completedJobs / totalExpected) * 100) : 0;
+                const progressPercent = totalExpected > 0 ? Math.min(100, Math.round((completedJobs / totalExpected) * 100)) : 0;
+                
+                // Check if progress is stuck
+                if (progressPercent === lastProgress) {
+                    stuckCount++;
+                } else {
+                    stuckCount = 0;
+                    lastProgress = progressPercent;
+                }
                 
                 // Update session with progress info
                 uploadSession.cacheProgress = progressPercent;
                 uploadSession.cacheCompleted = completedJobs;
                 uploadSession.cacheTotal = totalExpected;
                 
-                console.log(`[Upload Cache] Updated progress: ${progressPercent}% (${completedJobs}/${totalExpected})`);
+                // Only log significant progress changes
+                if (attempts % 5 === 0 || progressPercent !== lastProgress) {
+                    console.log(`[Upload Cache] Progress: ${progressPercent}% (${completedJobs}/${totalExpected}) - Active: ${totalActive}`);
+                }
                 
                 this.updateUploadPanel(uploadSession);
                 
-                // More conservative completion check
-                const shouldComplete = (totalActive === 0 && attempts > 5) || attempts >= maxAttempts;
+                // Improved completion logic
+                const isComplete = (totalActive === 0 && attempts > 3) || 
+                                 progressPercent >= 100 || 
+                                 (stuckCount > 10 && totalActive === 0) ||
+                                 attempts >= maxAttempts;
                 
-                if (shouldComplete) {
-                    console.log('[Upload Cache] Completing cache monitoring:', { totalActive, attempts, maxAttempts });
+                if (isComplete) {
+                    console.log('[Upload Cache] Cache monitoring complete:', { 
+                        progressPercent, 
+                        totalActive, 
+                        attempts, 
+                        stuckCount 
+                    });
                     uploadSession.status = 'completed';
                     this.updateUploadPanel(uploadSession);
                     
                     // Refresh directory to show new files
                     this.refreshCurrentDirectory();
                     
-                    // Don't auto-hide, let user manually close or use refresh button
-                    console.log('[Upload Cache] Cache monitoring completed. Panel will remain visible.');
-                    
                     return;
                 }
                 
                 attempts++;
-                console.log(`[Upload Cache] Scheduling next check in 1 second (attempt ${attempts}/${maxAttempts})`);
-                setTimeout(checkCache, 1000);
+                // Use progressive delay: 2s -> 3s -> 3s...
+                const delay = attempts < 5 ? 2000 : 3000;
+                setTimeout(checkCache, delay);
                 
             } catch (error) {
-                console.error('[Upload Cache] Cache monitoring error:', error);
-                uploadSession.status = 'failed';
-                uploadSession.error = 'Cache monitoring failed: ' + error.message;
-                this.updateUploadPanel(uploadSession);
-                
-                // Don't auto-hide on error, let user see the error
+                if (error.name === 'AbortError') {
+                    console.warn('[Upload Cache] Request timeout, retrying...');
+                    attempts++;
+                    setTimeout(checkCache, 5000); // Longer delay after timeout
+                } else {
+                    console.error('[Upload Cache] Cache monitoring error:', error);
+                    uploadSession.status = 'failed';
+                    uploadSession.error = 'Cache monitoring failed: ' + error.message;
+                    this.updateUploadPanel(uploadSession);
+                }
             }
         };
         
-        // Start monitoring after 2 seconds
-        console.log('[Upload Cache] Starting cache monitoring in 2 seconds...');
-        setTimeout(checkCache, 2000);
+        // Start monitoring after 3 seconds (give cache time to start)
+        console.log('[Upload Cache] Starting cache monitoring in 3 seconds...');
+        setTimeout(checkCache, 3000);
+    }
+
+    // Skip cache monitoring function
+    skipCacheMonitoring() {
+        console.log('[Upload Cache] User skipped cache monitoring');
+        const panel = document.getElementById('upload-progress-panel');
+        if (panel) {
+            // Update panel to completed state
+            const uploadSession = { status: 'completed', uploadedFiles: 'unknown' };
+            panel.innerHTML = this.renderUploadPanel(uploadSession);
+            
+            // Refresh directory
+            this.refreshCurrentDirectory();
+        }
     }
 
     // Helper functions for new upload system
