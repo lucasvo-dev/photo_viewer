@@ -730,7 +730,8 @@ function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path
     // If no existing/recent relevant job, add a new one
     try {
         // Use 'folder_path' instead of 'source_path'
-        $sql = "INSERT INTO cache_jobs (folder_path, size, type, status, created_at) VALUES (?, ?, ?, 'pending', NOW())";
+        // Set total_files = 1 since this is for a single file
+        $sql = "INSERT INTO cache_jobs (folder_path, size, type, status, total_files, processed_files, created_at) VALUES (?, ?, ?, 'pending', 1, 0, NOW())";
         $stmt = $pdo->prepare($sql);
         $success = $stmt->execute([$image_source_prefixed_path, $size, $type]);
         if ($success) {
@@ -871,6 +872,85 @@ function serve_file_from_path(string $file_path, string $content_type = 'applica
 
     readfile($file_path);
     exit;
+}
+
+/**
+ * Recursively delete a directory and all its contents.
+ *
+ * @param string $directory_path The absolute path to the directory to delete.
+ * @return bool True if the directory was successfully deleted, false otherwise.
+ */
+function deleteDirectory(string $directory_path): bool
+{
+    if (!is_dir($directory_path)) {
+        return false;
+    }
+
+    $iterator = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator($directory_path, RecursiveDirectoryIterator::SKIP_DOTS),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+
+    try {
+        foreach ($iterator as $file) {
+            if ($file->isDir()) {
+                if (!rmdir($file->getRealPath())) {
+                    error_log("[deleteDirectory] Failed to remove directory: " . $file->getRealPath());
+                    return false;
+                }
+            } else {
+                if (!unlink($file->getRealPath())) {
+                    error_log("[deleteDirectory] Failed to remove file: " . $file->getRealPath());
+                    return false;
+                }
+            }
+        }
+        
+        // Remove the root directory itself
+        return rmdir($directory_path);
+    } catch (Exception $e) {
+        error_log("[deleteDirectory] Error deleting directory {$directory_path}: " . $e->getMessage());
+        return false;
+    }
+}
+
+/**
+ * Recursively count files in a directory and all subdirectories.
+ * Only counts files with allowed extensions.
+ *
+ * @param string $directory_path The absolute path to the directory to count files in.
+ * @return int The total number of files found.
+ */
+function count_files_recursive(string $directory_path): int
+{
+    if (!is_dir($directory_path) || !is_readable($directory_path)) {
+        return 0;
+    }
+
+    $count = 0;
+    
+    try {
+        $iterator = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($directory_path, RecursiveDirectoryIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        foreach ($iterator as $file) {
+            if ($file->isFile()) {
+                $extension = strtolower($file->getExtension());
+                // Count only files with allowed extensions (images and videos)
+                if (in_array($extension, ALLOWED_EXTENSIONS) || 
+                    in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm'])) {
+                    $count++;
+                }
+            }
+        }
+    } catch (Exception $e) {
+        error_log("[count_files_recursive] Error counting files in {$directory_path}: " . $e->getMessage());
+        return 0;
+    }
+
+    return $count;
 }
 
 // Ensure this is at the very end of the file or before a closing PHP tag if any.

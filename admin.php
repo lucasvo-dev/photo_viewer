@@ -29,7 +29,8 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
     <link rel="icon" type="image/png" href="theme/favicon.png"> <!-- Favicon -->
     <link rel="stylesheet" href="css/style.css">
     <link rel="stylesheet" href="css/admin_tabs.css">
-    <link rel="stylesheet" href="css/admin_jet.css">
+    <link rel="stylesheet" href="css/admin.css">
+    <link rel="stylesheet" href="css/admin_file_manager.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
 </head>
 <body class="admin-panel-active">
@@ -82,6 +83,10 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                             <i class="fas fa-cog"></i>
                             Bảng điều khiển Admin
                         </a>
+                        <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('file-manager-tab')">
+                            <i class="fas fa-folder-open"></i>
+                            Quản lý File & Thư mục
+                        </a>
                         <a href="javascript:void(0)" class="menu-item" onclick="switchToTabFromMenu('jet-cache-tab')">
                             <i class="fas fa-database"></i>
                             Quản lý Cache RAW
@@ -127,7 +132,10 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
 
         <!-- Tab Navigation -->
         <div class="admin-tabs">
-            <button class="admin-tab-button active" data-tab="gallery-tab">
+            <button class="admin-tab-button active" data-tab="file-manager-tab">
+                <i class="fas fa-folder-open"></i> File Manager
+            </button>
+            <button class="admin-tab-button" data-tab="gallery-tab">
                 <i class="fas fa-images"></i> Gallery & Cache
             </button>
             <button class="admin-tab-button" data-tab="jet-cache-tab">
@@ -141,8 +149,59 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
         <!-- Global Feedback -->
         <div id="admin-feedback" class="feedback-message" style="display: none;"></div>
 
+        <!-- File Manager Tab -->
+        <div class="admin-tab-content active" id="file-manager-tab">
+            <div class="tab-header">
+                <h2>Quản lý File & Thư mục</h2>
+                <p>Upload, tạo, sửa, xóa ảnh và thư mục trong các nguồn ảnh của hệ thống.</p>
+            </div>
+
+            <div class="file-manager-container">
+                <!-- Source Selection -->
+                <div class="fm-source-selection">
+                    <label for="fm-source-select">Nguồn ảnh:</label>
+                    <select id="fm-source-select" class="fm-source-select">
+                        <option value="">-- Chọn nguồn ảnh --</option>
+                    </select>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="fm-actions">
+                    <button id="fm-upload-btn" class="button primary" disabled>
+                        <i class="fas fa-upload"></i> Upload Files
+                    </button>
+                    <button id="fm-create-folder-btn" class="button" disabled>
+                        <i class="fas fa-folder-plus"></i> Tạo Thư mục
+                    </button>
+                    <button id="fm-refresh-btn" class="button">
+                        <i class="fas fa-sync"></i> Làm mới
+                    </button>
+                </div>
+
+                <!-- Breadcrumb Navigation -->
+                <div id="fm-breadcrumb" class="fm-breadcrumb">
+                    <span class="breadcrumb-item" data-path="">
+                        <i class="fas fa-home"></i> Root
+                    </span>
+                </div>
+
+                <!-- Loading Indicator -->
+                <div id="fm-loading" class="fm-loading">
+                    Đang tải danh sách...
+                </div>
+
+                <!-- File Browser Content -->
+                <div id="file-manager-content" class="fm-content">
+                    <div class="fm-message fm-message-info">
+                        <i class="fas fa-info-circle"></i>
+                        <p>Chọn một nguồn ảnh để bắt đầu quản lý file và thư mục.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Gallery & Cache Management Tab -->
-        <div class="admin-tab-content active" id="gallery-tab">
+        <div class="admin-tab-content" id="gallery-tab">
             <div class="tab-header">
                 <h2>Quản lý Gallery & Cache</h2>
                 <p>Quản lý mật khẩu, xem lượt truy cập, lấy link chia sẻ và cache cho các thư mục ảnh.</p>
@@ -182,6 +241,8 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
 
             <div id="admin-loading" class="loading-indicator" style="display: none;">Đang tải...</div>
         </div>
+
+
 
         <!-- RAW Cache Management Tab -->
         <div class="admin-tab-content" id="jet-cache-tab">
@@ -390,6 +451,7 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
     <script src="js/admin_users.js"></script>
     <script src="js/admin_tabs.js"></script>
     <script src="js/admin_jet_cache.js"></script>
+    <script src="js/admin_file_manager.js"></script>
     
     <!-- Logo click handler for Admin -->
     <script>

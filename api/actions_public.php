@@ -1198,6 +1198,266 @@ switch ($action) {
         }
         break;
 
+    case 'get_cache_status':
+        // Get current cache queue status - enhanced real-time tracking
+        try {
+            // Get recent jobs (last 10 minutes for better tracking)
+            $stmt = $pdo->prepare("
+                SELECT 
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_jobs,
+                    COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_jobs,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_jobs,
+                    COUNT(CASE WHEN status = 'failed' THEN 1 END) as failed_jobs
+                FROM cache_jobs 
+                WHERE created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+            ");
+            $stmt->execute();
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Get currently processing files info
+            $stmt_current = $pdo->prepare("
+                SELECT 
+                    current_file_processing,
+                    processed_files,
+                    total_files,
+                    worker_id,
+                    folder_path,
+                    TIMESTAMPDIFF(SECOND, processed_at, NOW()) as processing_duration
+                FROM cache_jobs 
+                WHERE status = 'processing' 
+                ORDER BY processed_at DESC
+                LIMIT 10
+            ");
+            $stmt_current->execute();
+            $current_processing = $stmt_current->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Calculate individual file progress (each cache job is for 1 file)
+            $stmt_files = $pdo->prepare("
+                SELECT 
+                    COUNT(*) as total_files,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_files,
+                    COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_files,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_files
+                FROM cache_jobs 
+                WHERE created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+            ");
+            $stmt_files->execute();
+            $file_result = $stmt_files->fetch(PDO::FETCH_ASSOC);
+            
+            $total_files = (int)($file_result['total_files'] ?? 0);
+            $completed_files = (int)($file_result['completed_files'] ?? 0);
+            $processing_files = (int)($file_result['processing_files'] ?? 0);
+            $pending_files = (int)($file_result['pending_files'] ?? 0);
+            
+            // Real progress percentage based on completed files
+            $progress_percentage = $total_files > 0 ? 
+                round(($completed_files / $total_files) * 100, 1) : 100;
+            
+            // Check if any work is actually happening
+            $is_actually_working = false;
+            $current_activity = null;
+            
+            if (!empty($current_processing)) {
+                foreach ($current_processing as $job) {
+                    // If processing duration is recent (less than 30 seconds since last update)
+                    if ($job['processing_duration'] < 30) {
+                        $is_actually_working = true;
+                        $current_activity = [
+                            'file' => basename($job['current_file_processing'] ?? basename($job['folder_path'] ?? '')),
+                            'progress' => 50, // Individual file is being processed
+                            'processed' => (int)$job['processed_files'],
+                            'total' => (int)$job['total_files'],
+                            'worker' => $job['worker_id']
+                        ];
+                        break;
+                    }
+                }
+            }
+            
+            // Remaining files calculation
+            $remaining_files = $pending_files + $processing_files;
+            
+            $enhanced_result = [
+                'pending_jobs' => (int)($result['pending_jobs'] ?? 0),
+                'processing_jobs' => (int)($result['processing_jobs'] ?? 0),
+                'completed_jobs' => (int)($result['completed_jobs'] ?? 0),
+                'failed_jobs' => (int)($result['failed_jobs'] ?? 0),
+                'total_files' => $total_files,
+                'completed_files' => $completed_files,
+                'processing_files' => $processing_files,
+                'pending_files' => $pending_files,
+                'remaining_files' => $remaining_files,
+                'progress_percentage' => $progress_percentage,
+                'is_actually_working' => $is_actually_working,
+                'current_activity' => $current_activity,
+                'timestamp' => time()
+            ];
+            
+            error_log("[get_cache_status] File-based result: " . json_encode($enhanced_result));
+            json_response($enhanced_result);
+        } catch (Exception $e) {
+            error_log("[get_cache_status] Error: " . $e->getMessage());
+            json_response([
+                'pending_jobs' => 0,
+                'processing_jobs' => 0,
+                'completed_jobs' => 0,
+                'failed_jobs' => 0,
+                'total_files' => 0,
+                'completed_files' => 0,
+                'processing_files' => 0,
+                'pending_files' => 0,
+                'remaining_files' => 0,
+                'progress_percentage' => 100,
+                'is_actually_working' => false,
+                'current_activity' => null,
+                'timestamp' => time()
+            ]);
+        }
+        break;
+
+    case 'stop_cache_workers':
+        // Stop all cache workers for current session/user
+        try {
+            // Mark recent pending/processing jobs as failed
+            $stmt = $pdo->prepare("
+                UPDATE cache_jobs 
+                SET status = 'cancelled', 
+                    result_message = 'Cancelled by user',
+                    completed_at = UNIX_TIMESTAMP()
+                WHERE status IN ('pending', 'processing') 
+                AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+            ");
+            $stmt->execute();
+            $affected = $stmt->rowCount();
+            
+            error_log("[stop_cache_workers] Cancelled {$affected} cache jobs");
+            json_response([
+                'success' => true,
+                'cancelled_jobs' => $affected,
+                'message' => "Đã hủy {$affected} cache job(s)"
+            ]);
+        } catch (Exception $e) {
+            error_log("[stop_cache_workers] Error: " . $e->getMessage());
+            json_response([
+                'success' => false,
+                'error' => 'Không thể hủy cache workers'
+            ]);
+        }
+        break;
+
+    case 'get_specific_cache_status':
+        // Get cache status for specific uploaded files only
+        try {
+            $file_paths = $_POST['file_paths'] ?? [];
+            
+            if (empty($file_paths)) {
+                json_response([
+                    'total_files' => 0,
+                    'completed_files' => 0,
+                    'pending_files' => 0,
+                    'processing_files' => 0,
+                    'remaining_files' => 0,
+                    'progress_percentage' => 100,
+                    'is_actually_working' => false,
+                    'current_activity' => null,
+                    'timestamp' => time()
+                ]);
+                return;
+            }
+            
+            // Create placeholders for IN clause
+            $placeholders = str_repeat('?,', count($file_paths) - 1) . '?';
+            
+            // Get status for specific files
+            $stmt = $pdo->prepare("
+                SELECT 
+                    COUNT(*) as total_files,
+                    COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_files,
+                    COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_files,
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_files
+                FROM cache_jobs 
+                WHERE folder_path IN ($placeholders)
+                AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+            ");
+            $stmt->execute($file_paths);
+            $file_result = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            // Get current processing activity for these files
+            $stmt_current = $pdo->prepare("
+                SELECT 
+                    current_file_processing,
+                    processed_files,
+                    total_files,
+                    worker_id,
+                    folder_path,
+                    TIMESTAMPDIFF(SECOND, processed_at, NOW()) as processing_duration
+                FROM cache_jobs 
+                WHERE folder_path IN ($placeholders)
+                AND status = 'processing'
+                AND created_at > DATE_SUB(NOW(), INTERVAL 30 MINUTE)
+                ORDER BY processed_at DESC
+                LIMIT 1
+            ");
+            $stmt_current->execute($file_paths);
+            $current_processing = $stmt_current->fetch(PDO::FETCH_ASSOC);
+            
+            $total_files = (int)($file_result['total_files'] ?? 0);
+            $completed_files = (int)($file_result['completed_files'] ?? 0);
+            $processing_files = (int)($file_result['processing_files'] ?? 0);
+            $pending_files = (int)($file_result['pending_files'] ?? 0);
+            
+            // Calculate progress
+            $progress_percentage = $total_files > 0 ? 
+                round(($completed_files / $total_files) * 100, 1) : 100;
+            
+            // Check if actually working
+            $is_actually_working = false;
+            $current_activity = null;
+            
+            if ($current_processing && ($current_processing['processing_duration'] ?? 999) < 30) {
+                $is_actually_working = true;
+                $current_activity = [
+                    'file' => basename($current_processing['current_file_processing'] ?? basename($current_processing['folder_path'] ?? '')),
+                    'progress' => 50,
+                    'processed' => (int)($current_processing['processed_files'] ?? 0),
+                    'total' => (int)($current_processing['total_files'] ?? 1),
+                    'worker' => $current_processing['worker_id'] ?? null
+                ];
+            }
+            
+            $remaining_files = $pending_files + $processing_files;
+            
+            $result = [
+                'total_files' => $total_files,
+                'completed_files' => $completed_files,
+                'processing_files' => $processing_files,
+                'pending_files' => $pending_files,
+                'remaining_files' => $remaining_files,
+                'progress_percentage' => $progress_percentage,
+                'is_actually_working' => $is_actually_working,
+                'current_activity' => $current_activity,
+                'timestamp' => time()
+            ];
+            
+            error_log("[get_specific_cache_status] Files: " . count($file_paths) . ", Result: " . json_encode($result));
+            json_response($result);
+            
+        } catch (Exception $e) {
+            error_log("[get_specific_cache_status] Error: " . $e->getMessage());
+            json_response([
+                'total_files' => 0,
+                'completed_files' => 0,
+                'processing_files' => 0,
+                'pending_files' => 0,
+                'remaining_files' => 0,
+                'progress_percentage' => 100,
+                'is_actually_working' => false,
+                'current_activity' => null,
+                'timestamp' => time()
+            ]);
+        }
+        break;
+
     default:
         json_error('Hành động không hợp lệ.', 400);
 } 

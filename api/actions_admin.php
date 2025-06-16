@@ -11,16 +11,43 @@ if (!isset($action)) {
     die('Invalid access.');
 }
 
-// Check if the user is logged in for all admin actions (except login itself)
-if ($action !== 'admin_login' && $action !== 'admin_check_auth' && (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'designer']))) {
-    // For admin_check_auth, it needs to run to report not logged in
-    if ($action !== 'admin_check_auth') {
-        json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
-        exit;
-    }
+// Check if the user is logged in for all admin actions (except login and debug actions)
+$allowed_no_auth_actions = ['admin_login', 'admin_check_auth', 'admin_debug_session'];
+if (!in_array($action, $allowed_no_auth_actions) && (!isset($_SESSION['user_role']) || !in_array($_SESSION['user_role'], ['admin', 'designer']))) {
+    json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
+    exit;
 }
 
 switch ($action) {
+    case 'admin_debug_session':
+        // Debug endpoint for session checking
+        $debug_info = [
+            'session_started' => session_status() === PHP_SESSION_ACTIVE,
+            'session_data' => $_SESSION ?? [],
+            'user_role' => $_SESSION['user_role'] ?? null,
+            'username' => $_SESSION['username'] ?? null,
+            'auth_check' => isset($_SESSION['user_role']) && in_array($_SESSION['user_role'], ['admin', 'designer'])
+        ];
+        json_response($debug_info);
+        break;
+        
+    case 'file_manager_get_sources':
+        // Get available image sources for file manager
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền truy cập.", 403);
+        }
+        
+        $sources = [];
+        foreach (IMAGE_SOURCES as $key => $config) {
+            $sources[] = [
+                'key' => $key,
+                'name' => $config['name']
+            ];
+        }
+        
+        json_response(['sources' => $sources]);
+        break;
+
     case 'admin_login':
         if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
             json_error('Phương thức không hợp lệ.', 405);
@@ -837,10 +864,615 @@ switch ($action) {
         }
         break;
 
+    case 'file_manager_browse':
+        // Browse directories and files in a source
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền quản lý file.", 403);
+        }
+
+        $source_key = $_GET['source'] ?? null;
+        $path = $_GET['path'] ?? '';
+
+        error_log("[file_manager_browse] Request - Source: '{$source_key}', Path: '{$path}'");
+
+        if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
+            error_log("[file_manager_browse] Invalid source key: " . ($source_key ?: 'null'));
+            json_error("Nguồn ảnh không hợp lệ: " . ($source_key ?: 'null'), 400);
+        }
+
+        // Build source-prefixed path
+        $source_prefixed_path = $source_key;
+        if (!empty($path)) {
+            $source_prefixed_path .= '/' . ltrim($path, '/');
+        }
+
+        error_log("[file_manager_browse] Source prefixed path: '{$source_prefixed_path}'");
+
+        $path_info = validate_source_and_path($source_prefixed_path);
+
+        if (!$path_info) {
+            error_log("[file_manager_browse] Path validation failed for: " . $source_prefixed_path);
+            
+            // Additional debug: check if source exists
+            $source_root = IMAGE_SOURCES[$source_key]['path'] ?? 'N/A';
+            error_log("[file_manager_browse] Source root path: '{$source_root}', exists: " . (file_exists($source_root) ? 'YES' : 'NO'));
+            
+            json_error("Đường dẫn không hợp lệ hoặc không thể truy cập.", 400);
+        }
+
+        $directory = $path_info['absolute_path'];
+        error_log("[file_manager_browse] Absolute directory path: '{$directory}'");
+        $items = [];
+
+        try {
+            if (!is_readable($directory)) {
+                error_log("[file_manager_browse] Directory not readable: '{$directory}'");
+                throw new Exception("Thư mục không có quyền đọc: " . $directory);
+            }
+
+            if (!is_dir($directory)) {
+                error_log("[file_manager_browse] Path is not a directory: '{$directory}'");
+                throw new Exception("Đường dẫn không phải là thư mục: " . $directory);
+            }
+
+            $iterator = new DirectoryIterator($directory);
+            $item_count = 0;
+            
+            foreach ($iterator as $fileinfo) {
+                if ($fileinfo->isDot()) continue;
+
+                // Build relative path for item
+                $item_relative_path = empty($path) ? $fileinfo->getFilename() : ltrim($path, '/') . '/' . $fileinfo->getFilename();
+
+                $item = [
+                    'name' => $fileinfo->getFilename(),
+                    'type' => $fileinfo->isDir() ? 'directory' : 'file',
+                    'size' => $fileinfo->isFile() ? $fileinfo->getSize() : null,
+                    'modified' => $fileinfo->getMTime(),
+                    'path' => $item_relative_path
+                ];
+
+                if ($fileinfo->isFile()) {
+                    $extension = strtolower($fileinfo->getExtension());
+                    $item['extension'] = $extension;
+                    $item['is_image'] = in_array($extension, ALLOWED_EXTENSIONS);
+                    $item['is_video'] = in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
+                } else {
+                    // For directories, count files recursively
+                    $item['file_count'] = count_files_recursive($fileinfo->getPathname());
+                }
+
+                $items[] = $item;
+                $item_count++;
+            }
+
+            error_log("[file_manager_browse] Found {$item_count} items in directory");
+
+            // Sort: directories first, then by name
+            usort($items, function($a, $b) {
+                if ($a['type'] !== $b['type']) {
+                    return $a['type'] === 'directory' ? -1 : 1;
+                }
+                return strcmp($a['name'], $b['name']);
+            });
+
+            $response_data = [
+                'items' => $items,
+                'current_path' => $path,
+                'source_key' => $source_key,
+                'source_name' => IMAGE_SOURCES[$source_key]['name'],
+                'absolute_path' => $directory
+            ];
+
+            error_log("[file_manager_browse] Success - returning " . count($items) . " items");
+            json_response($response_data);
+
+        } catch (Exception $e) {
+            error_log("[file_manager_browse] Error for source '{$source_key}' path '{$path}': " . $e->getMessage());
+            error_log("[file_manager_browse] Exception trace: " . $e->getTraceAsString());
+            json_error("Không thể đọc thư mục: " . $e->getMessage());
+        }
+        break;
+
+    case 'file_manager_upload':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền upload.", 403);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+
+        // Enhanced logging for debugging
+        error_log("[file_manager_upload] ===== UPLOAD REQUEST START =====");
+        error_log("[file_manager_upload] POST data: " . print_r($_POST, true));
+        error_log("[file_manager_upload] FILES structure: " . print_r($_FILES, true));
+        error_log("[file_manager_upload] Content Length: " . ($_SERVER['CONTENT_LENGTH'] ?? 'unknown'));
+        error_log("[file_manager_upload] Request URI: " . $_SERVER['REQUEST_URI']);
+        error_log("[file_manager_upload] Request Method: " . $_SERVER['REQUEST_METHOD']);
+
+        // Check for upload errors at PHP level
+        if (empty($_FILES)) {
+            error_log("[file_manager_upload] ERROR: No files in \$_FILES array");
+            json_error("Không có file nào được upload. Có thể file quá lớn hoặc vượt quá giới hạn upload.", 400);
+        }
+
+        // Check for post_max_size exceeded (this truncates $_POST and $_FILES)
+        if (empty($_POST) && empty($_FILES) && $_SERVER['CONTENT_LENGTH'] > 0) {
+            $postMaxSize = ini_get('post_max_size');
+            error_log("[file_manager_upload] ERROR: Possible post_max_size exceeded. post_max_size: {$postMaxSize}, content_length: " . $_SERVER['CONTENT_LENGTH']);
+            json_error("Dữ liệu upload quá lớn. Vui lòng giảm số lượng file hoặc kích thước file.", 413);
+        }
+
+        $source_key = $_POST['source'] ?? null;
+        $target_path = $_POST['path'] ?? '';
+        $overwrite_mode = $_POST['overwrite_mode'] ?? 'ask';
+
+        error_log("[file_manager_upload] Source key: {$source_key}");
+        error_log("[file_manager_upload] Target path: {$target_path}");
+        error_log("[file_manager_upload] Overwrite mode: {$overwrite_mode}");
+        error_log("[file_manager_upload] IMAGE_SOURCES available: " . print_r(array_keys(IMAGE_SOURCES), true));
+
+        if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
+            error_log("[file_manager_upload] ERROR: Invalid source key");
+            json_error("Nguồn ảnh không hợp lệ.", 400);
+        }
+
+        // More detailed FILES validation
+        if (!isset($_FILES['files'])) {
+            error_log("[file_manager_upload] ERROR: No 'files' key in \$_FILES");
+            json_error("Không có file nào được upload.", 400);
+        }
+
+        // Handle both single file and array formats
+        $files_data = $_FILES['files'];
+        if (!is_array($files_data['name'])) {
+            // Convert single file to array format
+            $files_data = [
+                'name' => [$files_data['name']],
+                'tmp_name' => [$files_data['tmp_name']],
+                'error' => [$files_data['error']],
+                'size' => [$files_data['size']],
+                'type' => [$files_data['type']]
+            ];
+        }
+
+        $file_count = count($files_data['name']);
+        error_log("[file_manager_upload] Processing {$file_count} files");
+
+        if ($file_count === 0) {
+            error_log("[file_manager_upload] ERROR: No files to process");
+            json_error("Không có file nào được upload.", 400);
+        }
+
+        // Check for any upload errors
+        $has_upload_errors = false;
+        for ($i = 0; $i < $file_count; $i++) {
+            if ($files_data['error'][$i] !== UPLOAD_ERR_OK) {
+                $has_upload_errors = true;
+                error_log("[file_manager_upload] Upload error for file {$i} ({$files_data['name'][$i]}): " . $files_data['error'][$i]);
+            }
+        }
+
+        if ($has_upload_errors) {
+            error_log("[file_manager_upload] WARNING: Some files have upload errors, but continuing with valid files");
+        }
+
+        $source_prefixed_path = $source_key . ($target_path ? '/' . ltrim($target_path, '/') : '');
+        error_log("[file_manager_upload] Source prefixed path: {$source_prefixed_path}");
+        
+        $path_info = validate_source_and_path($source_prefixed_path);
+        error_log("[file_manager_upload] Path validation result: " . print_r($path_info, true));
+
+        if (!$path_info) {
+            error_log("[file_manager_upload] ERROR: Invalid target path");
+            json_error("Đường dẫn đích không hợp lệ.", 400);
+        }
+
+        $target_directory = $path_info['absolute_path'];
+        error_log("[file_manager_upload] Target directory: {$target_directory}");
+        error_log("[file_manager_upload] Directory exists: " . (is_dir($target_directory) ? 'YES' : 'NO'));
+        error_log("[file_manager_upload] Directory writable: " . (is_writable($target_directory) ? 'YES' : 'NO'));
+        
+        if (!is_writable($target_directory)) {
+            error_log("[file_manager_upload] ERROR: Directory not writable");
+            json_error("Thư mục đích không có quyền ghi.", 403);
+        }
+
+        $uploaded_files = [];
+        $errors = [];
+        $duplicates = [];
+
+        // First pass: check for duplicates if mode is 'ask'
+        if ($overwrite_mode === 'ask') {
+            error_log("[file_manager_upload] Checking for duplicates...");
+            for ($i = 0; $i < $file_count; $i++) {
+                if ($files_data['error'][$i] !== UPLOAD_ERR_OK) continue;
+                
+                $filename = $files_data['name'][$i];
+                $safe_filename = preg_replace('/[^a-zA-Z0-9\._-]/', '_', $filename);
+                $destination = $target_directory . DIRECTORY_SEPARATOR . $safe_filename;
+                
+                if (file_exists($destination)) {
+                    $duplicates[] = $filename;
+                    error_log("[file_manager_upload] Duplicate found: {$filename}");
+                }
+            }
+            
+            // If duplicates found, return them for user decision
+            if (!empty($duplicates)) {
+                error_log("[file_manager_upload] Returning duplicates for user decision: " . implode(', ', $duplicates));
+                json_response([
+                    'duplicates' => $duplicates,
+                    'message' => 'File(s) đã tồn tại, cần quyết định ghi đè hay đổi tên.'
+                ]);
+                return;
+            }
+        }
+
+        // Process uploads
+        error_log("[file_manager_upload] Starting file processing...");
+        for ($i = 0; $i < $file_count; $i++) {
+            error_log("[file_manager_upload] Processing file {$i}/{$file_count}");
+            
+            if ($files_data['error'][$i] !== UPLOAD_ERR_OK) {
+                $error_msg = "Upload error for {$files_data['name'][$i]}: ";
+                switch ($files_data['error'][$i]) {
+                    case UPLOAD_ERR_INI_SIZE:
+                        $error_msg .= "File quá lớn (vượt quá upload_max_filesize)";
+                        break;
+                    case UPLOAD_ERR_FORM_SIZE:
+                        $error_msg .= "File quá lớn (vượt quá MAX_FILE_SIZE)";
+                        break;
+                    case UPLOAD_ERR_PARTIAL:
+                        $error_msg .= "Upload bị gián đoạn";
+                        break;
+                    case UPLOAD_ERR_NO_FILE:
+                        $error_msg .= "Không có file";
+                        break;
+                    case UPLOAD_ERR_NO_TMP_DIR:
+                        $error_msg .= "Không có thư mục temp";
+                        break;
+                    case UPLOAD_ERR_CANT_WRITE:
+                        $error_msg .= "Không thể ghi file";
+                        break;
+                    case UPLOAD_ERR_EXTENSION:
+                        $error_msg .= "Extension bị cấm";
+                        break;
+                    default:
+                        $error_msg .= "Lỗi không xác định ({$files_data['error'][$i]})";
+                }
+                error_log("[file_manager_upload] " . $error_msg);
+                $errors[] = $error_msg;
+                continue;
+            }
+
+            $filename = $files_data['name'][$i];
+            $temp_path = $files_data['tmp_name'][$i];
+            $file_size = $files_data['size'][$i];
+
+            error_log("[file_manager_upload] File details - Name: {$filename}, Size: {$file_size}, Temp: {$temp_path}");
+
+            // Validate file extension
+            $extension = strtolower(pathinfo($filename, PATHINFO_EXTENSION));
+            if (!in_array($extension, ALLOWED_EXTENSIONS)) {
+                $error_msg = "File {$filename}: Định dạng không được hỗ trợ ({$extension})";
+                error_log("[file_manager_upload] " . $error_msg);
+                $errors[] = $error_msg;
+                continue;
+            }
+
+            // Skip file size validation - no limits
+
+            // Generate safe filename
+            $safe_filename = preg_replace('/[^a-zA-Z0-9\._-]/', '_', $filename);
+            $destination = $target_directory . DIRECTORY_SEPARATOR . $safe_filename;
+
+            // Handle duplicate filenames based on mode
+            if (file_exists($destination)) {
+                if ($overwrite_mode === 'overwrite') {
+                    error_log("[file_manager_upload] File exists, overwriting: {$safe_filename}");
+                    // Keep the same filename, file will be overwritten
+                } elseif ($overwrite_mode === 'rename') {
+                    // Auto-rename with counter
+                    $counter = 1;
+                    $name_part = pathinfo($safe_filename, PATHINFO_FILENAME);
+                    $ext_part = pathinfo($safe_filename, PATHINFO_EXTENSION);
+                    
+                    do {
+                        $safe_filename = $name_part . "_{$counter}." . $ext_part;
+                        $destination = $target_directory . DIRECTORY_SEPARATOR . $safe_filename;
+                        $counter++;
+                    } while (file_exists($destination));
+                    
+                    error_log("[file_manager_upload] File exists, renamed to: {$safe_filename}");
+                }
+                // If mode is 'ask', duplicates should have been handled earlier
+            }
+
+            error_log("[file_manager_upload] Attempting to move file from {$temp_path} to {$destination}");
+            
+            if (move_uploaded_file($temp_path, $destination)) {
+                error_log("[file_manager_upload] Successfully moved file {$filename}");
+                
+                $uploaded_files[] = [
+                    'original_name' => $filename,
+                    'saved_name' => $safe_filename,
+                    'size' => $file_size,
+                    'path' => $target_path . '/' . $safe_filename
+                ];
+
+                // Verify file was actually saved
+                if (file_exists($destination)) {
+                    $saved_size = filesize($destination);
+                    error_log("[file_manager_upload] File verified to exist at destination: {$saved_size} bytes");
+                } else {
+                    error_log("[file_manager_upload] WARNING: File not found at destination after move_uploaded_file succeeded!");
+                }
+
+                // Automatically add to thumbnail generation queue
+                try {
+                    $file_source_prefixed_path = $source_key . '/' . ltrim($target_path . '/' . $safe_filename, '/');
+                    
+                    // Add jobs for all thumbnail sizes
+                    foreach (THUMBNAIL_SIZES as $size) {
+                        $is_video = in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
+                        add_thumbnail_job_to_queue($pdo, $file_source_prefixed_path, $size, $is_video ? 'video' : 'image');
+                    }
+                    
+                    error_log("[file_manager_upload] Added thumbnail jobs for uploaded file: {$file_source_prefixed_path}");
+                } catch (Exception $e) {
+                    error_log("[file_manager_upload] Failed to add thumbnail jobs: " . $e->getMessage());
+                }
+
+            } else {
+                $error_msg = "Không thể lưu file {$filename}";
+                error_log("[file_manager_upload] Failed to move file {$filename} from {$temp_path} to {$destination}");
+                $errors[] = $error_msg;
+            }
+        }
+
+        $response_data = [
+            'uploaded_files' => $uploaded_files,
+            'errors' => $errors,
+            'success_count' => count($uploaded_files),
+            'error_count' => count($errors)
+        ];
+        
+        error_log("[file_manager_upload] Final response: " . print_r($response_data, true));
+        error_log("[file_manager_upload] ===== UPLOAD REQUEST END =====");
+        json_response($response_data);
+        break;
+
+
+
+    case 'file_manager_create_folder':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền tạo thư mục.", 403);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+
+        $source_key = $_POST['source'] ?? null;
+        $parent_path = $_POST['parent_path'] ?? '';
+        $folder_name = $_POST['folder_name'] ?? '';
+
+        if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
+            json_error("Nguồn ảnh không hợp lệ.", 400);
+        }
+
+        if (empty($folder_name) || !preg_match('/^[a-zA-Z0-9\s\._-]+$/', $folder_name)) {
+            json_error("Tên thư mục không hợp lệ. Chỉ cho phép chữ, số, dấu cách, dấu chấm, gạch dưới và gạch ngang.", 400);
+        }
+
+        $source_prefixed_path = $source_key . ($parent_path ? '/' . ltrim($parent_path, '/') : '');
+        $path_info = validate_source_and_path($source_prefixed_path);
+
+        if (!$path_info) {
+            json_error("Đường dẫn cha không hợp lệ.", 400);
+        }
+
+        $parent_directory = $path_info['absolute_path'];
+        $new_folder_path = $parent_directory . DIRECTORY_SEPARATOR . $folder_name;
+
+        if (file_exists($new_folder_path)) {
+            json_error("Thư mục đã tồn tại.", 409);
+        }
+
+        if (!is_writable($parent_directory)) {
+            json_error("Không có quyền tạo thư mục trong thư mục cha.", 403);
+        }
+
+        if (mkdir($new_folder_path, 0755)) {
+            json_response([
+                'folder_name' => $folder_name,
+                'folder_path' => $parent_path . '/' . $folder_name,
+                'created_at' => time()
+            ]);
+        } else {
+            json_error("Không thể tạo thư mục.");
+        }
+        break;
+
+    case 'file_manager_delete':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền xóa file/thư mục.", 403);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+
+        $source_key = $_POST['source'] ?? null;
+        $items_raw = $_POST['items'] ?? [];
+        
+        // Parse JSON if it's a string
+        if (is_string($items_raw)) {
+            $items = json_decode($items_raw, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                json_error("Dữ liệu items không hợp lệ.", 400);
+            }
+        } else {
+            $items = $items_raw;
+        }
+
+        if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
+            json_error("Nguồn ảnh không hợp lệ.", 400);
+        }
+
+        if (empty($items) || !is_array($items)) {
+            json_error("Không có item nào được chọn để xóa.", 400);
+        }
+
+        $deleted_items = [];
+        $errors = [];
+
+        foreach ($items as $item_path) {
+            try {
+                // Build full path from source root, not from current directory
+                $source_prefixed_path = $source_key . '/' . ltrim($item_path, '/');
+                error_log("[file_manager_delete] Processing item: {$item_path}");
+                error_log("[file_manager_delete] Source prefixed path: {$source_prefixed_path}");
+                
+                // Try both directory and file validation
+                $path_info = validate_source_and_path($source_prefixed_path);
+                if (!$path_info) {
+                    // If directory validation fails, try file validation
+                    $path_info = validate_source_and_file_path($source_prefixed_path);
+                    error_log("[file_manager_delete] Tried file validation: " . ($path_info ? 'VALID' : 'INVALID'));
+                } else {
+                    error_log("[file_manager_delete] Directory validation: VALID");
+                }
+                
+                if ($path_info) {
+                    error_log("[file_manager_delete] Absolute path: " . $path_info['absolute_path']);
+                } else {
+                    error_log("[file_manager_delete] Both directory and file validation failed for: {$source_prefixed_path}");
+                }
+
+                if (!$path_info) {
+                    $errors[] = "Đường dẫn không hợp lệ: {$item_path}";
+                    continue;
+                }
+
+                $target_path = $path_info['absolute_path'];
+
+                if (!file_exists($target_path)) {
+                    $errors[] = "File/thư mục không tồn tại: {$item_path}";
+                    continue;
+                }
+
+                if (is_dir($target_path)) {
+                    // Recursive delete directory
+                    error_log("[file_manager_delete] Attempting to delete directory: {$target_path}");
+                    
+                    if (deleteDirectory($target_path)) {
+                        $deleted_items[] = ['path' => $item_path, 'type' => 'directory'];
+                        error_log("[file_manager_delete] Successfully deleted directory: {$item_path}");
+                    } else {
+                        $error_msg = "Không thể xóa thư mục: {$item_path}";
+                        $errors[] = $error_msg;
+                        error_log("[file_manager_delete] Failed to delete directory: {$item_path}");
+                    }
+                } else {
+                    // Delete file
+                    error_log("[file_manager_delete] Attempting to delete file: {$target_path}");
+                    
+                    if (unlink($target_path)) {
+                        $deleted_items[] = ['path' => $item_path, 'type' => 'file'];
+                        error_log("[file_manager_delete] Successfully deleted file: {$item_path}");
+                        
+                        // Clean up associated thumbnails
+                        try {
+                            foreach (THUMBNAIL_SIZES as $size) {
+                                $cache_path = get_thumbnail_cache_path($source_prefixed_path, $size);
+                                if (file_exists($cache_path)) {
+                                    unlink($cache_path);
+                                    error_log("[file_manager_delete] Cleaned thumbnail cache: {$cache_path}");
+                                }
+                            }
+                        } catch (Exception $e) {
+                            error_log("[file_manager_delete] Failed to clean thumbnails for {$source_prefixed_path}: " . $e->getMessage());
+                        }
+                    } else {
+                        $error_msg = "Không thể xóa file: {$item_path}";
+                        $errors[] = $error_msg;
+                        error_log("[file_manager_delete] Failed to delete file: {$item_path}");
+                    }
+                }
+            } catch (Exception $e) {
+                $errors[] = "Lỗi khi xóa {$item_path}: " . $e->getMessage();
+            }
+        }
+
+        json_response([
+            'deleted_items' => $deleted_items,
+            'errors' => $errors,
+            'success_count' => count($deleted_items),
+            'error_count' => count($errors)
+        ]);
+        break;
+
+    case 'file_manager_rename':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền đổi tên file/thư mục.", 403);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+
+        $source_key = $_POST['source'] ?? null;
+        $old_path = $_POST['old_path'] ?? '';
+        $new_name = $_POST['new_name'] ?? '';
+
+        if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
+            json_error("Nguồn ảnh không hợp lệ.", 400);
+        }
+
+        if (empty($new_name) || !preg_match('/^[a-zA-Z0-9\s\._-]+$/', $new_name)) {
+            json_error("Tên mới không hợp lệ. Chỉ cho phép chữ, số, dấu cách, dấu chấm, gạch dưới và gạch ngang.", 400);
+        }
+
+        $source_prefixed_path = $source_key . '/' . ltrim($old_path, '/');
+        $path_info = validate_source_and_path($source_prefixed_path);
+
+        if (!$path_info) {
+            json_error("Đường dẫn cũ không hợp lệ.", 400);
+        }
+
+        $old_absolute_path = $path_info['absolute_path'];
+        $parent_directory = dirname($old_absolute_path);
+        $new_absolute_path = $parent_directory . DIRECTORY_SEPARATOR . $new_name;
+
+        if (!file_exists($old_absolute_path)) {
+            json_error("File/thư mục không tồn tại.", 404);
+        }
+
+        if (file_exists($new_absolute_path)) {
+            json_error("Tên mới đã tồn tại.", 409);
+        }
+
+        if (rename($old_absolute_path, $new_absolute_path)) {
+            $new_relative_path = dirname($old_path) . '/' . $new_name;
+            $new_relative_path = ltrim($new_relative_path, './');
+
+            json_response([
+                'old_path' => $old_path,
+                'new_path' => $new_relative_path,
+                'new_name' => $new_name
+            ]);
+        } else {
+            json_error("Không thể đổi tên file/thư mục.");
+        }
+        break;
+
     // Default case for unknown admin actions
     default:
-        // If the action starts with 'admin_' but isn't handled above
-        if (strpos($action, 'admin_') === 0) {
+        // If the action starts with 'admin_' or 'file_manager_' but isn't handled above
+        if (strpos($action, 'admin_') === 0 || strpos($action, 'file_manager_') === 0) {
             json_error("Hành động admin không xác định: " . htmlspecialchars($action), 400);
         }
         // Otherwise, fall through (handled by api.php main or actions_public.php default)

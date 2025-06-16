@@ -35,8 +35,8 @@ if (strpos($action, 'jet_') === 0) {
 // New log after the first if block (commented out to reduce log noise)
 // error_log('--- API.PHP AFTER JET APP SPECIFIC ACTIONS IF --- Action: ' . $action);
 
-// Handle admin-only actions
-if (strpos($action, 'admin_') === 0) {
+// Handle admin-only actions (admin_* and file_manager_*)
+if (strpos($action, 'admin_') === 0 || strpos($action, 'file_manager_') === 0) {
     // Check for admin role using the new role-based system
     if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
         json_error("Truy cập bị từ chối. Yêu cầu quyền admin.", 403);
