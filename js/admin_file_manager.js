@@ -2029,37 +2029,83 @@ class AdminFileManager {
             uploadSession.uploadedFiles = 0; // Initialize uploaded count
             this.updateUploadPanel(uploadSession);
             
-            // Upload all files at once (simpler approach) with progress tracking
-            const result = await this.uploadBatch(fileArray, 'skip', (progress, fileCount) => {
-                // Update upload progress in real-time
-                uploadSession.uploadProgress = progress;
+            // Upload files one by one for accurate progress tracking
+            let successCount = 0;
+            let allErrors = [];
+            let uploadedFilePaths = [];
+            
+            for (let i = 0; i < fileArray.length; i++) {
+                const file = fileArray[i];
+                const fileProgress = Math.round(((i + 1) / fileArray.length) * 100);
+                
+                // Update progress before uploading each file
+                uploadSession.uploadProgress = Math.round((i / fileArray.length) * 100);
+                uploadSession.uploadedFiles = i;
+                uploadSession.currentFileName = file.name; // Show current file name
                 this.updateUploadPanel(uploadSession);
-                console.log(`[Upload Progress] ${progress}% (${fileCount} files)`);
-            });
+                
+                console.log(`[Upload] Processing file ${i + 1}/${fileArray.length}: ${file.name}`);
+                
+                try {
+                    // Upload single file
+                    const result = await this.uploadBatch([file], 'skip', (progress) => {
+                        // Calculate overall progress: completed files + current file progress
+                        const completedProgress = (i / fileArray.length) * 100;
+                        const currentFileProgress = (progress / fileArray.length);
+                        const totalProgress = Math.round(completedProgress + currentFileProgress);
+                        
+                        uploadSession.uploadProgress = totalProgress;
+                        this.updateUploadPanel(uploadSession);
+                    });
+                    
+                    if (result.success_count > 0) {
+                        successCount += result.success_count;
+                        
+                        // Track uploaded file paths
+                        if (result.uploaded_files && result.uploaded_files.length > 0) {
+                            result.uploaded_files.forEach(uploadedFile => {
+                                const filePath = this.currentSource + '/' + uploadedFile.path.replace(/^\/+/, '');
+                                uploadedFilePaths.push(filePath);
+                            });
+                        }
+                    }
+                    
+                    if (result.errors && result.errors.length > 0) {
+                        allErrors.push(...result.errors);
+                    }
+                    
+                    // Update progress after each file
+                    uploadSession.uploadedFiles = successCount;
+                    uploadSession.uploadProgress = Math.round(((i + 1) / fileArray.length) * 100);
+                    uploadSession.currentFileName = `✅ ${file.name}`; // Show completed file
+                    this.updateUploadPanel(uploadSession);
+                    
+                } catch (error) {
+                    console.error(`[Upload] Error uploading file ${file.name}:`, error);
+                    allErrors.push(`${file.name}: ${error.message}`);
+                }
+                
+                // Small delay between files to show progress
+                if (i < fileArray.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                }
+            }
             
-            // Update session with results
-            uploadSession.uploadedFiles = result.success_count || 0;
-            uploadSession.errors = result.errors || [];
+            // Update session with final results
+            uploadSession.uploadedFiles = successCount;
+            uploadSession.errors = allErrors;
             uploadSession.uploadProgress = 100; // Upload completed
+            uploadSession.uploadedFilePaths = uploadedFilePaths;
             
-            console.log(`[Upload] Upload completed: ${uploadSession.uploadedFiles}/${uploadSession.totalFiles} files successful`);
+            console.log(`[Upload] Upload completed: ${successCount}/${fileArray.length} files successful`);
             
             // Show upload completion briefly
             uploadSession.status = 'upload_completed';
             this.updateUploadPanel(uploadSession);
             
-            // Extract uploaded file paths for cache monitoring
-            if (result.uploaded_files && result.uploaded_files.length > 0) {
-                uploadSession.uploadedFilePaths = result.uploaded_files.map(file => {
-                    // Build source-prefixed path for cache monitoring
-                    return this.currentSource + '/' + file.path.replace(/^\/+/, '');
-                });
-                console.log('[Upload] Uploaded file paths for cache monitoring:', uploadSession.uploadedFilePaths);
-            } else {
-                uploadSession.uploadedFilePaths = [];
-            }
+            console.log('[Upload] Uploaded file paths for cache monitoring:', uploadSession.uploadedFilePaths);
             
-            if (result.success_count > 0) {
+            if (successCount > 0) {
                 // Wait a moment to show upload completion
                 await new Promise(resolve => setTimeout(resolve, 1000));
                 
@@ -2078,7 +2124,7 @@ class AdminFileManager {
                 }
             } else {
                 uploadSession.status = 'failed';
-                uploadSession.error = result.error || 'Upload failed';
+                uploadSession.error = allErrors.length > 0 ? allErrors.join('; ') : 'Upload failed';
                 this.updateUploadPanel(uploadSession);
             }
             
@@ -2107,7 +2153,7 @@ class AdminFileManager {
     }
 
     renderUploadPanel(uploadSession) {
-        const { totalFiles, uploadedFiles, status, error, cacheProgress, cacheCompleted, cacheTotal } = uploadSession;
+        const { totalFiles, uploadedFiles, status, error, cacheProgress, cacheCompleted, cacheTotal, currentFileName } = uploadSession;
         
         let statusText = '';
         let progressPercent = 0;
@@ -2119,7 +2165,8 @@ class AdminFileManager {
                 // Show actual uploaded count vs total selected files
                 const actualUploaded = uploadedFiles || 0;
                 const actualProgress = uploadSession.uploadProgress || 0;
-                statusText = `🟢 Uploading ${actualUploaded}/${totalFiles} files... (${actualProgress}%)`;
+                const currentFile = currentFileName ? ` - ${currentFileName}` : '';
+                statusText = `🟢 Uploading ${actualUploaded}/${totalFiles} files... (${actualProgress}%)${currentFile}`;
                 progressPercent = actualProgress;
                 iconClass = 'fa-upload';
                 statusClass = 'uploading';
