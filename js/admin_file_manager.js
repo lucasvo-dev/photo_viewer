@@ -1492,6 +1492,7 @@ class AdminFileManager {
             
             let totalUploaded = 0;
             let allErrors = [];
+            let uploadedFiles = []; // Track successfully uploaded files
             
             // Process files in batches
             for (let i = 0; i < fileArray.length; i += batchSize) {
@@ -1524,6 +1525,14 @@ class AdminFileManager {
                     }
                     
                     totalUploaded += (result.success_count || 0);
+                    
+                    // Track successfully uploaded files for cache monitoring
+                    if (result.success_count > 0) {
+                        batch.forEach(file => {
+                            const filePath = `${this.currentSource}/${this.currentPath}/${file.name}`.replace(/\/+/g, '/');
+                            uploadedFiles.push(filePath);
+                        });
+                    }
                     
                     // Update progress after each batch
                     this.updateUploadProgress(
@@ -1571,18 +1580,8 @@ class AdminFileManager {
                 if (cancelUploadBtn) cancelUploadBtn.style.display = 'none';
                 if (cancelCacheBtn) cancelCacheBtn.style.display = 'inline-block';
                 
-                // Collect uploaded file paths for targeted cache monitoring
-                const uploadedFiles = [];
-                for (let i = 0; i < allBatches.length; i++) {
-                    const batch = allBatches[i];
-                    if (i < processedBatches) {
-                        // Add files from processed batches
-                        Array.from(batch).forEach(file => {
-                            const filePath = `${this.currentSource}/${this.currentPath}/${file.name}`.replace(/\/+/g, '/');
-                            uploadedFiles.push(filePath);
-                        });
-                    }
-                }
+                // Use the uploadedFiles array we built during batch processing
+                this.log(`Monitoring cache for ${uploadedFiles.length} uploaded files:`, uploadedFiles);
                 
                 // Wait a moment for cache jobs to be created
                 await new Promise(resolve => setTimeout(resolve, 2000));
