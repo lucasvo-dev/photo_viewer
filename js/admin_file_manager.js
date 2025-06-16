@@ -1571,7 +1571,7 @@ class AdminFileManager {
 
             // Monitor cache generation for uploaded files
             if (totalUploaded > 0) {
-                this.updateUploadProgress(fileArray.length, fileArray.length, 'Đang kiểm tra cache generation...', 100);
+                this.updateUploadProgress(totalUploaded, fileArray.length, '🔄 Chuyển sang tạo cache...', Math.round((totalUploaded / fileArray.length) * 100));
                 
                 // Switch to cache monitoring mode - show cache cancel button
                 const cancelUploadBtn = document.getElementById('cancel-upload-btn');
@@ -1596,8 +1596,9 @@ class AdminFileManager {
                     return;
                 }
                 
-                // Wait a moment for cache jobs to be created
-                await new Promise(resolve => setTimeout(resolve, 2000));
+                // Wait longer for cache jobs to be created
+                this.updateUploadProgress(totalUploaded, fileArray.length, '⏳ Đang tạo cache jobs...', Math.round((totalUploaded / fileArray.length) * 100));
+                await new Promise(resolve => setTimeout(resolve, 3000));
                 
                 await this.waitForCacheGeneration(totalUploaded, uploadedFiles);
             }
@@ -1610,8 +1611,8 @@ class AdminFileManager {
                 this.updateUploadProgress(fileArray.length, fileArray.length, 'Upload hoàn thành với lỗi', 100);
                 this.showUploadComplete(totalUploaded, totalErrors, allErrors);
             } else {
-                // If no errors, wait for cache completion will handle the final display
-                this.updateUploadProgress(fileArray.length, fileArray.length, 'Files uploaded, cache processing...', 100);
+                // If no errors, don't show 100% yet - let cache monitoring handle it
+                this.log('Upload completed successfully, cache monitoring will handle final display');
             }
 
             // Refresh directory
@@ -1752,7 +1753,7 @@ class AdminFileManager {
                             uploadedCount,
                             uploadedCount,
                             `🔍 Đang chờ cache jobs được tạo... (${attempts}/5)`,
-                            100
+                            null // Don't force 100% while waiting
                         );
                     } else {
                         this.log('No cache jobs found after 5 attempts, assuming cache not needed');
