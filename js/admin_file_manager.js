@@ -962,8 +962,20 @@ class AdminFileManager {
         
         console.log('[File Manager] File validation passed, proceeding with batch upload');
 
-        // Use batch upload for better reliability
-        await this.performUploadWithFiles(fileInput.files, overwriteMode);
+        // Use new Google Drive style optimistic upload system
+        try {
+            await this.performUploadWithFiles(fileInput.files);
+            
+            // Clear file input
+            fileInput.value = '';
+            
+            // Close upload dialog
+            this.closeDialog();
+            
+        } catch (error) {
+            console.error('Upload error:', error);
+            this.showMessage('Có lỗi xảy ra khi upload files. Vui lòng thử lại.', 'error');
+        }
     }
 
     async showCreateFolderDialog() {
@@ -1337,7 +1349,7 @@ class AdminFileManager {
     }
 
     refreshCurrentDirectory() {
-        if (this.currentSource) {
+        if (this.currentSource && this.currentPath !== undefined) {
             this.loadDirectory(this.currentPath);
         }
     }
@@ -1531,6 +1543,7 @@ class AdminFileManager {
                         batch.forEach(file => {
                             const filePath = `${this.currentSource}/${this.currentPath}/${file.name}`.replace(/\/+/g, '/');
                             uploadedFiles.push(filePath);
+                            this.log('[Upload] Added to uploadedFiles:', filePath);
                         });
                     }
                     
@@ -1733,6 +1746,7 @@ class AdminFileManager {
                 // Use specific file monitoring if we have uploaded files list
                 let response;
                 if (uploadedFiles.length > 0) {
+                    this.log('[Cache API] Calling get_specific_cache_status with files:', uploadedFiles);
                     const formData = new FormData();
                     formData.append('action', 'get_specific_cache_status');
                     uploadedFiles.forEach(filePath => {
@@ -1743,15 +1757,12 @@ class AdminFileManager {
                         body: formData
                     });
                 } else {
+                    this.log('[Cache API] Calling general get_cache_status');
                     // Fallback to general cache status
                     response = await fetch('api.php?action=get_cache_status');
                 }
                 
                 const status = await response.json();
-                
-                this.log('[Cache Status]', status);
-                this.log('[Cache Status] Uploaded files being monitored:', uploadedFiles);
-                this.log('[Cache Status] Expected files:', uploadedFiles.length, 'Found cache jobs:', totalFiles);
                 
                 // Use corrected file-based status information
                 const totalFiles = status.total_files || 0;
@@ -1763,6 +1774,12 @@ class AdminFileManager {
                 
                 // Check if there's any pending or processing work
                 const activeCacheJobs = (status.pending_jobs || 0) + (status.processing_jobs || 0);
+                
+                this.log('[Cache Status]', status);
+                this.log('[Cache Status] Uploaded files being monitored:', uploadedFiles);
+                this.log('[Cache Status] Expected files:', uploadedFiles.length, 'Found cache jobs:', totalFiles);
+                this.log('[Cache Status] Active jobs:', activeCacheJobs, 'Is working:', isWorking);
+                this.log('[Cache Status] Progress:', completedFiles, '/', totalFiles, '=', progressPercent, '%');
                 
                 // If we have any cache activity at all, show it even if totalFiles is 0
                 if (activeCacheJobs > 0 && totalFiles === 0) {
@@ -1810,14 +1827,14 @@ class AdminFileManager {
                         // Reset attempts to give general monitoring a chance
                         attempts = 0;
                     }
-                } else if (totalFiles > 0 && activeCacheJobs === 0 && progressPercent >= 100) {
-                    // All files have been processed and completed
-                    const expectedTotalFiles = uploadedFiles.length;
+                } else if (progressPercent >= 100 && (activeCacheJobs === 0 || totalFiles > 0)) {
+                    // Cache completed - stop monitoring
+                    const expectedTotalFiles = uploadedFiles.length || totalFiles;
                     this.updateCacheProgress(
-                        totalFiles,
-                        totalFiles,
+                        completedFiles || totalFiles,
+                        totalFiles || expectedTotalFiles,
                         0,
-                        `✅ Cache hoàn thành! (${totalFiles}/${expectedTotalFiles} files)`,
+                        `✅ Cache hoàn thành! (${completedFiles || totalFiles} files)`,
                         100
                     );
                     
@@ -1828,9 +1845,7 @@ class AdminFileManager {
                     if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
                     if (closeBtn) closeBtn.style.display = 'inline-block';
                     
-                    // Don't auto-close, let user decide when to close
-                    const expectedTotalCount = uploadedFiles.length;
-                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache hoàn thành ${totalFiles}/${expectedTotalCount} files`, 'success');
+                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache hoàn thành`, 'success');
                     break;
                 } else if (activeCacheJobs > 0 || isWorking || remainingFiles > 0) {
                     const currentFile = currentActivity?.file || '';
@@ -1943,6 +1958,394 @@ class AdminFileManager {
             if (closeBtn) closeBtn.style.display = 'inline-block';
             
             this.showMessage('Upload hoàn thành. Cache có thể vẫn đang xử lý background.', 'info');
+        }
+    }
+
+    // Redesigned upload system theo Google Drive pattern
+    async performUploadWithFiles(files) {
+        if (!files || files.length === 0) return;
+
+        // Convert FileList to Array if needed
+        const fileArray = Array.from(files);
+
+        // 1. OPTIMISTIC UI - Assume success, update UI immediately
+        this.showOptimisticUploadProgress(fileArray);
+        
+        // 2. NON-BLOCKING - User can continue working
+        this.makeUploadNonBlocking();
+        
+        // 3. Track only current upload batch
+        const uploadSession = {
+            id: Date.now(),
+            files: fileArray,
+            uploadedFiles: [],
+            startTime: Date.now()
+        };
+        
+        try {
+            // Process files in batches
+            const batchSize = 5;
+            const batches = this.createBatches(fileArray, batchSize);
+            
+            for (let i = 0; i < batches.length; i++) {
+                const batch = batches[i];
+                const result = await this.uploadBatch(batch, 'skip'); // Use skip mode for optimistic UI
+                
+                // Update optimistic UI with real progress
+                this.updateOptimisticProgress(uploadSession, result);
+                
+                // Track successfully uploaded files
+                if (result.success_count > 0) {
+                    batch.forEach(file => {
+                        const filePath = `${this.currentSource}/${this.currentPath}/${file.name}`.replace(/\/+/g, '/');
+                        uploadSession.uploadedFiles.push({
+                            path: filePath,
+                            name: file.name,
+                            size: file.size,
+                            uploadedAt: Date.now()
+                        });
+                    });
+                }
+            }
+            
+            // 4. SMART CACHE TRACKING - Only for current upload
+            this.startSmartCacheTracking(uploadSession);
+            
+        } catch (error) {
+            this.handleUploadError(uploadSession, error);
+        }
+    }
+
+    // 1. OPTIMISTIC UI IMPLEMENTATION
+    showOptimisticUploadProgress(files) {
+        // Show compact, non-blocking progress indicator
+        this.createCompactProgressIndicator(files);
+        
+        // Immediately show files in grid (optimistic)
+        this.addFilesToGridOptimistically(files);
+        
+        // Update file count optimistically
+        this.updateFileCountOptimistically(files.length);
+    }
+
+    createCompactProgressIndicator(files) {
+        // Create Google Drive style compact progress bar
+        const progressContainer = document.createElement('div');
+        progressContainer.id = 'compact-upload-progress';
+        progressContainer.className = 'compact-upload-progress';
+        progressContainer.innerHTML = `
+            <div class="compact-progress-header">
+                <span class="progress-icon">📤</span>
+                <span class="progress-text">Uploading ${files.length} files...</span>
+                <button class="progress-minimize" onclick="this.parentElement.parentElement.classList.add('minimized')">−</button>
+                <button class="progress-close" onclick="this.parentElement.parentElement.remove()">×</button>
+            </div>
+            <div class="compact-progress-bar">
+                <div class="progress-fill" style="width: 0%"></div>
+            </div>
+            <div class="compact-progress-details">
+                <span class="progress-status">Preparing upload...</span>
+                <span class="progress-percentage">0%</span>
+            </div>
+        `;
+        
+        // Position: Bottom right corner (non-blocking)
+        progressContainer.style.cssText = `
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 320px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+            z-index: 1000;
+            transition: all 0.3s ease;
+        `;
+        
+        document.body.appendChild(progressContainer);
+    }
+
+    // 2. NON-BLOCKING UI
+    makeUploadNonBlocking() {
+        // Close modal if open
+        const modal = document.getElementById('upload-progress-modal');
+        if (modal) {
+            modal.style.display = 'none';
+        }
+        
+        // User can continue working
+        this.enableUserInteraction();
+    }
+
+    enableUserInteraction() {
+        // Re-enable all interface elements
+        const disabledElements = document.querySelectorAll('[disabled]');
+        disabledElements.forEach(el => el.disabled = false);
+        
+        // Allow navigation
+        document.body.style.pointerEvents = 'auto';
+    }
+
+    // 3. SMART CACHE TRACKING
+    async startSmartCacheTracking(uploadSession) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        // Update to cache phase
+        this.updateProgressPhase('cache', uploadSession.uploadedFiles.length);
+        
+        // Track ONLY current upload session files
+        let cacheCheckCount = 0;
+        const maxCacheChecks = 30; // 30 seconds max
+        
+        const checkCacheProgress = async () => {
+            try {
+                // Get cache status for ONLY uploaded files in this session
+                const cacheStatus = await this.getSessionCacheStatus(uploadSession);
+                
+                this.updateCacheProgress(cacheStatus, uploadSession);
+                
+                // Check completion
+                if (cacheStatus.isComplete || cacheCheckCount >= maxCacheChecks) {
+                    this.completeCacheTracking(uploadSession, cacheStatus);
+                    return;
+                }
+                
+                cacheCheckCount++;
+                setTimeout(checkCacheProgress, 1000); // Check every second
+                
+            } catch (error) {
+                console.error('[Cache Tracking Error]', error);
+                this.completeCacheTracking(uploadSession, { error: true });
+            }
+        };
+        
+        // Start cache tracking after short delay
+        setTimeout(checkCacheProgress, 2000);
+    }
+
+    async getSessionCacheStatus(uploadSession) {
+        // Get cache status for specific files uploaded in this session
+        const formData = new FormData();
+        formData.append('action', 'get_session_cache_status');
+        formData.append('session_id', uploadSession.id);
+        formData.append('upload_time', uploadSession.startTime);
+        
+        uploadSession.uploadedFiles.forEach(file => {
+            formData.append('file_paths[]', file.path);
+        });
+        
+        const response = await fetch('api.php', {
+            method: 'POST',
+            body: formData
+        });
+        
+        return await response.json();
+    }
+
+    updateCacheProgress(cacheStatus, uploadSession) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        const expectedFiles = uploadSession.uploadedFiles.length;
+        const completedFiles = cacheStatus.completed_files || 0;
+        const progressPercent = expectedFiles > 0 ? Math.round((completedFiles / expectedFiles) * 100) : 100;
+        
+        // Update progress bar
+        const progressFill = progressIndicator.querySelector('.progress-fill');
+        const progressStatus = progressIndicator.querySelector('.progress-status');
+        const progressPercentage = progressIndicator.querySelector('.progress-percentage');
+        
+        if (progressFill) {
+            progressFill.style.width = `${progressPercent}%`;
+            progressFill.style.background = '#f59e0b'; // Orange for cache
+        }
+        
+        if (progressStatus) {
+            progressStatus.textContent = `Creating thumbnails... (${completedFiles}/${expectedFiles})`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${progressPercent}%`;
+        }
+        
+        // Update icon
+        const progressIcon = progressIndicator.querySelector('.progress-icon');
+        if (progressIcon) {
+            progressIcon.textContent = '🔄'; // Processing icon
+        }
+    }
+
+    completeCacheTracking(uploadSession, cacheStatus) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        // Update to completion state
+        const progressFill = progressIndicator.querySelector('.progress-fill');
+        const progressStatus = progressIndicator.querySelector('.progress-status');
+        const progressPercentage = progressIndicator.querySelector('.progress-percentage');
+        const progressIcon = progressIndicator.querySelector('.progress-icon');
+        
+        if (cacheStatus.error) {
+            // Error state
+            if (progressFill) progressFill.style.background = '#ef4444';
+            if (progressStatus) progressStatus.textContent = 'Some files failed to process';
+            if (progressIcon) progressIcon.textContent = '⚠️';
+        } else {
+            // Success state
+            if (progressFill) {
+                progressFill.style.width = '100%';
+                progressFill.style.background = '#10b981'; // Green
+            }
+            if (progressStatus) progressStatus.textContent = `${uploadSession.uploadedFiles.length} files uploaded successfully`;
+            if (progressPercentage) progressPercentage.textContent = '100%';
+            if (progressIcon) progressIcon.textContent = '✅';
+        }
+        
+        // Auto-hide after 3 seconds
+        setTimeout(() => {
+            if (progressIndicator) {
+                progressIndicator.style.opacity = '0';
+                setTimeout(() => progressIndicator.remove(), 300);
+            }
+        }, 3000);
+        
+        // Refresh file grid to show final state
+        this.refreshCurrentDirectory();
+    }
+
+    // OPTIMISTIC FILE GRID UPDATES
+    addFilesToGridOptimistically(files) {
+        const fileGrid = document.getElementById('file-grid');
+        if (!fileGrid) return;
+        
+        files.forEach(file => {
+            const fileElement = this.createOptimisticFileElement(file);
+            fileGrid.appendChild(fileElement);
+        });
+    }
+
+    createOptimisticFileElement(file) {
+        const fileDiv = document.createElement('div');
+        fileDiv.className = 'file-item optimistic-upload';
+        fileDiv.innerHTML = `
+            <div class="file-thumbnail">
+                <div class="upload-placeholder">
+                    <span class="upload-icon">📄</span>
+                    <div class="upload-progress-ring">
+                        <div class="ring-progress" style="--progress: 0"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="file-name">${file.name}</div>
+            <div class="file-size">${this.formatFileSize(file.size)}</div>
+            <div class="upload-status">Uploading...</div>
+        `;
+        
+        return fileDiv;
+    }
+
+    updateOptimisticProgress(uploadSession, result) {
+        // Update optimistic file elements with real progress
+        const optimisticElements = document.querySelectorAll('.file-item.optimistic-upload');
+        
+        // Update progress rings and status
+        optimisticElements.forEach((element, index) => {
+            const progressRing = element.querySelector('.ring-progress');
+            const status = element.querySelector('.upload-status');
+            
+            if (result.success_count > index) {
+                // File uploaded successfully
+                if (progressRing) progressRing.style.setProperty('--progress', '100');
+                if (status) status.textContent = 'Uploaded ✓';
+                element.classList.add('upload-success');
+            }
+        });
+    }
+
+    updateProgressPhase(phase, fileCount) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        const progressStatus = progressIndicator.querySelector('.progress-status');
+        const progressPercentage = progressIndicator.querySelector('.progress-percentage');
+        
+        if (progressStatus) {
+            progressStatus.textContent = `Uploading ${fileCount} files... (${phase})`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${fileCount} files`;
+        }
+    }
+
+    updateFileCountOptimistically(fileCount) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        const progressStatus = progressIndicator.querySelector('.progress-status');
+        const progressPercentage = progressIndicator.querySelector('.progress-percentage');
+        
+        if (progressStatus) {
+            progressStatus.textContent = `${fileCount} files`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = `${fileCount} files`;
+        }
+    }
+
+    handleUploadError(uploadSession, error) {
+        const progressIndicator = document.getElementById('compact-upload-progress');
+        if (!progressIndicator) return;
+        
+        const progressStatus = progressIndicator.querySelector('.progress-status');
+        const progressPercentage = progressIndicator.querySelector('.progress-percentage');
+        const progressIcon = progressIndicator.querySelector('.progress-icon');
+        
+        if (progressStatus) {
+            progressStatus.textContent = `Error: ${error.message}`;
+        }
+        
+        if (progressPercentage) {
+            progressPercentage.textContent = 'Error';
+        }
+        
+        if (progressIcon) {
+            progressIcon.textContent = '❌';
+        }
+        
+        // Auto-hide after 5 seconds
+        setTimeout(() => {
+            if (progressIndicator) {
+                progressIndicator.style.opacity = '0';
+                setTimeout(() => progressIndicator.remove(), 300);
+            }
+        }, 5000);
+    }
+
+    // Helper function to create batches
+    createBatches(files, batchSize) {
+        const batches = [];
+        for (let i = 0; i < files.length; i += batchSize) {
+            batches.push(files.slice(i, i + batchSize));
+        }
+        return batches;
+    }
+
+    // Helper function to format file size
+    formatFileSize(bytes) {
+        if (bytes === 0) return '0 Bytes';
+        const k = 1024;
+        const sizes = ['Bytes', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+
+    // Helper function to refresh directory
+    async refreshCurrentDirectory() {
+        if (this.currentSource && this.currentPath !== undefined) {
+            await this.loadDirectory(this.currentPath);
         }
     }
 }
