@@ -1596,9 +1596,27 @@ class AdminFileManager {
                     return;
                 }
                 
-                // Wait longer for cache jobs to be created
+                // Wait shorter for cache jobs to be created
                 this.updateUploadProgress(totalUploaded, fileArray.length, '⏳ Đang tạo cache jobs...', Math.round((totalUploaded / fileArray.length) * 100));
-                await new Promise(resolve => setTimeout(resolve, 3000));
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                
+                // Check immediately if there's any cache activity
+                try {
+                    const quickCheck = await fetch('api.php?action=get_cache_status');
+                    const quickStatus = await quickCheck.json();
+                    if (quickStatus.total_files > 0 || quickStatus.pending_jobs > 0 || quickStatus.processing_jobs > 0) {
+                        this.log('Found immediate cache activity, starting monitoring');
+                        this.updateCacheProgress(
+                            quickStatus.completed_files || 0,
+                            quickStatus.total_files || uploadedFiles.length,
+                            quickStatus.remaining_files || quickStatus.total_files || uploadedFiles.length,
+                            '🟡 Phát hiện cache activity...',
+                            quickStatus.progress_percentage || 0
+                        );
+                    }
+                } catch (error) {
+                    this.log('Quick cache check failed:', error);
+                }
                 
                 await this.waitForCacheGeneration(totalUploaded, uploadedFiles);
             }
@@ -1761,25 +1779,29 @@ class AdminFileManager {
                 
                 // If we have no recent cache activity at all, keep waiting longer
                 if (totalFiles === 0 && activeCacheJobs === 0) {
-                    if (attempts < 15) { // Wait much longer - 15 seconds
+                    if (attempts < 8) { // Wait shorter - 8 seconds
                         // Give it more attempts in case jobs are still being created
                         this.updateUploadProgress(
                             uploadedCount,
                             uploadedCount,
-                            `🔍 Đang chờ cache jobs được tạo... (${attempts}/15)`,
+                            `🔍 Đang chờ cache jobs được tạo... (${attempts}/8)`,
                             null // Don't force 100% while waiting
                         );
                     } else {
-                        this.log('No cache jobs found after 15 attempts, but continue monitoring general cache');
+                        this.log('No cache jobs found after 8 attempts, but continue monitoring general cache');
                         this.log('Expected files for cache:', uploadedFiles);
                         
                         // Check if some files might not need cache (already exist)
                         const expectedCount = uploadedFiles.length;
-                        this.updateUploadProgress(
-                            uploadedCount,
-                            uploadedCount,
-                            `🔍 Một số files có thể đã có cache (${expectedCount} files uploaded)`,
-                            null
+                        
+                        // Force switch to general cache monitoring immediately
+                        this.log('Switching to general cache monitoring immediately');
+                        this.updateCacheProgress(
+                            0,
+                            expectedCount,
+                            expectedCount,
+                            '🟡 Chuyển sang theo dõi cache tổng quát...',
+                            0
                         );
                         
                         // Switch to general cache monitoring instead of giving up

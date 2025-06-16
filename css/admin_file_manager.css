@@ -550,11 +550,18 @@
 
 /* Upload Progress Modal */
 .upload-progress-modal {
-    max-width: 480px;
-    width: 90vw;
+    max-width: 420px;
+    width: 420px;
     padding: 16px;
     box-sizing: border-box;
     margin: 0 auto;
+}
+
+@media (max-width: 768px) {
+    .upload-progress-modal {
+        width: 90vw;
+        max-width: 90vw;
+    }
 }
 
 .progress-info {
