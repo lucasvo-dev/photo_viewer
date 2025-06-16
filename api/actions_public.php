@@ -1349,63 +1349,86 @@ switch ($action) {
         // Get cache status for specific uploaded files only
         try {
             $file_paths = $_POST['file_paths'] ?? [];
-            
+            $upload_timestamp_ms = $_POST['upload_timestamp'] ?? 0;
+
             error_log("[get_specific_cache_status] Received file_paths: " . json_encode($file_paths));
+            error_log("[get_specific_cache_status] Received timestamp (ms): " . $upload_timestamp_ms);
             
             if (empty($file_paths)) {
+                // Return empty if no files specified
                 json_response([
-                    'total_files' => 0,
-                    'completed_files' => 0,
-                    'pending_files' => 0,
-                    'processing_files' => 0,
-                    'remaining_files' => 0,
-                    'progress_percentage' => 100,
-                    'is_actually_working' => false,
-                    'current_activity' => null,
-                    'timestamp' => time()
+                    'total_files' => 0, 'completed_files' => 0, 'pending_files' => 0,
+                    'processing_files' => 0, 'remaining_files' => 0, 'progress_percentage' => 100,
+                    'is_actually_working' => false, 'current_activity' => null, 'timestamp' => time()
                 ]);
                 return;
             }
+
+            // If timestamp is not provided, fallback to old behavior (should not happen with new JS)
+            $time_condition = "AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)";
+            $time_params = [];
             
-            // Extract directory from first file path to find recent cache jobs in same folder
-            $first_file = $file_paths[0];
-            $path_parts = pathinfo($first_file);
-            $target_dir = $path_parts['dirname'];
+            if (!empty($upload_timestamp_ms) && is_numeric($upload_timestamp_ms)) {
+                 // Convert JS timestamp (milliseconds) to MySQL DATETIME format
+                 // Subtract a few seconds to account for clock differences / request delay
+                $upload_time_sec = ($upload_timestamp_ms / 1000) - 5;
+                $mysql_timestamp = date('Y-m-d H:i:s', $upload_time_sec);
+                $time_condition = "AND created_at >= ?";
+                $time_params[] = $mysql_timestamp;
+                error_log("[get_specific_cache_status] Using time condition: created_at >= {$mysql_timestamp}");
+            } else {
+                error_log("[get_specific_cache_status] WARNING: No upload_timestamp received, falling back to 10 minute window.");
+            }
             
-            error_log("[get_specific_cache_status] Target directory: '$target_dir'");
-            error_log("[get_specific_cache_status] Expected file count: " . count($file_paths));
+            // Build exact file path conditions for cache jobs
+            $file_conditions = [];
+            $file_params = [];
             
-            // Get recent cache jobs from the same directory (only last 5 minutes for current upload)
+            foreach ($file_paths as $file_path) {
+                // Each cache job has folder_path = exact file path
+                $file_conditions[] = "folder_path = ?";
+                $file_params[] = $file_path;
+            }
+            
+            $where_clause = '(' . implode(' OR ', $file_conditions) . ')';
+            
+            error_log("[get_specific_cache_status] Query WHERE: $where_clause");
+            error_log("[get_specific_cache_status] Query params: " . json_encode($file_params));
+            
+            // Get cache jobs for these specific files (created in last 10 minutes)
             $stmt = $pdo->prepare("
                 SELECT 
                     COUNT(*) as total_files,
                     COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_files,
                     COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_files,
-                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_files
+                    COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_files,
+                    GROUP_CONCAT(CASE WHEN status = 'processing' THEN folder_path END) as processing_files_list
                 FROM cache_jobs 
-                WHERE folder_path LIKE ?
-                AND created_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                WHERE $where_clause
+                $time_condition
             ");
-            $stmt->execute([$target_dir . '/%']);
+
+            $all_params = array_merge($file_params, $time_params);
+            $stmt->execute($all_params);
             $file_result = $stmt->fetch(PDO::FETCH_ASSOC);
             
-            // Get current processing activity for these files
+            // Get current processing activity
             $stmt_current = $pdo->prepare("
                 SELECT 
                     current_file_processing,
+                    folder_path,
                     processed_files,
                     total_files,
                     worker_id,
-                    folder_path,
                     TIMESTAMPDIFF(SECOND, processed_at, NOW()) as processing_duration
                 FROM cache_jobs 
-                WHERE folder_path LIKE ?
+                WHERE $where_clause
                 AND status = 'processing'
-                AND created_at > DATE_SUB(NOW(), INTERVAL 10 MINUTE)
+                $time_condition
                 ORDER BY processed_at DESC
                 LIMIT 1
             ");
-            $stmt_current->execute([$target_dir . '/%']);
+            $stmt_current->execute($all_params);
             $current_processing = $stmt_current->fetch(PDO::FETCH_ASSOC);
             
             $db_total_files = (int)($file_result['total_files'] ?? 0);
@@ -1413,30 +1436,35 @@ switch ($action) {
             $processing_files = (int)($file_result['processing_files'] ?? 0);
             $pending_files = (int)($file_result['pending_files'] ?? 0);
             
-            // Use expected count if database count is higher (avoid counting old cache jobs)
             $expected_count = count($file_paths);
-            $total_files = ($db_total_files > $expected_count * 2) ? $expected_count : $db_total_files;
             
-            // If no recent cache jobs found, but we expect some, show expected count
-            if ($total_files === 0 && $expected_count > 0) {
+            // If no cache jobs found yet, show expected count as pending
+            if ($db_total_files === 0) {
                 $total_files = $expected_count;
-                $completed_files = 0; // Reset since no jobs found
+                $pending_files = $expected_count;
+                $completed_files = 0;
+                $processing_files = 0;
+            } else {
+                $total_files = $db_total_files;
             }
             
-            // Calculate progress based on corrected total
+            // Calculate progress
             $progress_percentage = $total_files > 0 ? 
-                round(($completed_files / $total_files) * 100, 1) : 100;
+                round(($completed_files / $total_files) * 100, 1) : 0;
                 
-            error_log("[get_specific_cache_status] DB total: $db_total_files, Expected: $expected_count, Using: $total_files");
+            error_log("[get_specific_cache_status] Expected: $expected_count, DB found: $db_total_files, Using total: $total_files");
+            error_log("[get_specific_cache_status] Completed: $completed_files, Processing: $processing_files, Pending: $pending_files");
             
             // Check if actually working
             $is_actually_working = false;
             $current_activity = null;
             
-            if ($current_processing && ($current_processing['processing_duration'] ?? 999) < 30) {
+            if ($current_processing && ($current_processing['processing_duration'] ?? 999) < 60) {
                 $is_actually_working = true;
+                $current_file = $current_processing['current_file_processing'] ?? 
+                               basename($current_processing['folder_path'] ?? '');
                 $current_activity = [
-                    'file' => basename($current_processing['current_file_processing'] ?? basename($current_processing['folder_path'] ?? '')),
+                    'file' => basename($current_file),
                     'progress' => 50,
                     'processed' => (int)($current_processing['processed_files'] ?? 0),
                     'total' => (int)($current_processing['total_files'] ?? 1),
@@ -1458,8 +1486,6 @@ switch ($action) {
                 'timestamp' => time()
             ];
             
-            error_log("[get_specific_cache_status] Files: " . count($file_paths) . ", Paths: " . json_encode($file_paths));
-            error_log("[get_specific_cache_status] Query result: " . json_encode($file_result));
             error_log("[get_specific_cache_status] Final result: " . json_encode($result));
             json_response($result);
             
@@ -1501,65 +1527,78 @@ switch ($action) {
                 return;
             }
             
-            // Convert upload time to MySQL timestamp
-            $upload_timestamp = date('Y-m-d H:i:s', $upload_time / 1000);
+            // Get cache jobs for these specific files (no time filtering)
+            // Use exact file path matching for accurate results
+            $placeholders = str_repeat('?,', count($file_paths) - 1) . '?';
             
-            // Get cache jobs created AFTER upload time for these specific files
-            $like_conditions = [];
-            $like_params = [];
-            
-            foreach ($file_paths as $file_path) {
-                $path_parts = pathinfo($file_path);
-                $dir = $path_parts['dirname'];
-                $filename_without_ext = $path_parts['filename'];
-                $extension = $path_parts['extension'] ?? '';
-                
-                // Create flexible pattern for filename matching
-                $pattern = $dir . '/' . $filename_without_ext . '%.' . $extension;
-                $like_conditions[] = "folder_path LIKE ?";
-                $like_params[] = $pattern;
-            }
-            
-            $where_clause = '(' . implode(' OR ', $like_conditions) . ')';
-            
-            // Get cache jobs for this session only (created after upload time)
+            // Get cache jobs for these files, grouped by size
             $stmt = $pdo->prepare("
                 SELECT 
+                    size,
                     COUNT(*) as total_files,
                     COUNT(CASE WHEN status = 'completed' THEN 1 END) as completed_files,
                     COUNT(CASE WHEN status = 'processing' THEN 1 END) as processing_files,
                     COUNT(CASE WHEN status = 'pending' THEN 1 END) as pending_files
                 FROM cache_jobs 
-                WHERE $where_clause
-                AND created_at >= ?
-                AND created_at <= DATE_ADD(?, INTERVAL 5 MINUTE)
+                WHERE folder_path IN ($placeholders)
+                GROUP BY size
+                ORDER BY size
             ");
             
-            // Add upload timestamp to params
-            $like_params[] = $upload_timestamp;
-            $like_params[] = $upload_timestamp;
+            $like_params = $file_paths;
             
             $stmt->execute($like_params);
-            $session_result = $stmt->fetch(PDO::FETCH_ASSOC);
+            $size_results = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
-            $total_files = (int)($session_result['total_files'] ?? 0);
-            $completed_files = (int)($session_result['completed_files'] ?? 0);
-            $processing_files = (int)($session_result['processing_files'] ?? 0);
-            $pending_files = (int)($session_result['pending_files'] ?? 0);
+            // Initialize counters for each cache size
+            $cache_150 = ['total' => 0, 'completed' => 0, 'processing' => 0, 'pending' => 0];
+            $cache_750 = ['total' => 0, 'completed' => 0, 'processing' => 0, 'pending' => 0];
+            
+            // Process results by size
+            foreach ($size_results as $result) {
+                $size = (int)$result['size'];
+                $data = [
+                    'total' => (int)$result['total_files'],
+                    'completed' => (int)$result['completed_files'],
+                    'processing' => (int)$result['processing_files'],
+                    'pending' => (int)$result['pending_files']
+                ];
+                
+                if ($size === 150) {
+                    $cache_150 = $data;
+                } elseif ($size === 750) {
+                    $cache_750 = $data;
+                }
+            }
+            
+            // Calculate totals
+            $total_files = $cache_150['total'] + $cache_750['total'];
+            $completed_files = $cache_150['completed'] + $cache_750['completed'];
+            $processing_files = $cache_150['processing'] + $cache_750['processing'];
+            $pending_files = $cache_150['pending'] + $cache_750['pending'];
             
             // Use expected file count if no cache jobs found yet
             $expected_files = count($file_paths);
+            $expected_total = $expected_files * 2; // 2 sizes per file (150px + 750px)
+            
             if ($total_files === 0) {
-                $total_files = $expected_files;
-                $pending_files = $expected_files;
+                // No cache jobs found yet, set expected counts
+                $cache_150 = ['total' => $expected_files, 'completed' => 0, 'processing' => 0, 'pending' => $expected_files];
+                $cache_750 = ['total' => $expected_files, 'completed' => 0, 'processing' => 0, 'pending' => $expected_files];
+                $total_files = $expected_total;
+                $pending_files = $expected_total;
             }
             
-            // Calculate progress
+            // Calculate progress for each size
+            $progress_150 = $cache_150['total'] > 0 ? 
+                round(($cache_150['completed'] / $cache_150['total']) * 100, 1) : 100;
+            $progress_750 = $cache_750['total'] > 0 ? 
+                round(($cache_750['completed'] / $cache_750['total']) * 100, 1) : 100;
             $progress_percentage = $total_files > 0 ? 
                 round(($completed_files / $total_files) * 100, 1) : 100;
             
             // Determine if cache is complete
-            $isComplete = ($completed_files >= $expected_files) || 
+            $isComplete = ($completed_files >= $expected_total) || 
                          ($total_files > 0 && $pending_files === 0 && $processing_files === 0);
             
             // Get current activity
@@ -1568,17 +1607,13 @@ switch ($action) {
                 $stmt_current = $pdo->prepare("
                     SELECT current_file_processing, folder_path
                     FROM cache_jobs 
-                    WHERE $where_clause
+                    WHERE folder_path IN ($placeholders)
                     AND status = 'processing'
-                    AND created_at >= ?
                     ORDER BY processed_at DESC
                     LIMIT 1
                 ");
-                $current_params = $like_params;
-                array_pop($current_params); // Remove second timestamp
-                $current_params[] = $upload_timestamp;
                 
-                $stmt_current->execute($current_params);
+                $stmt_current->execute($file_paths);
                 $current_job = $stmt_current->fetch(PDO::FETCH_ASSOC);
                 
                 if ($current_job && $current_job['current_file_processing']) {
@@ -1597,10 +1632,26 @@ switch ($action) {
                 'current_activity' => $current_activity,
                 'session_id' => $session_id,
                 'expected_files' => $expected_files,
+                'expected_total' => $expected_total,
+                // Detailed breakdown by cache size
+                'cache_150' => [
+                    'total' => $cache_150['total'],
+                    'completed' => $cache_150['completed'],
+                    'processing' => $cache_150['processing'],
+                    'pending' => $cache_150['pending'],
+                    'progress' => $progress_150
+                ],
+                'cache_750' => [
+                    'total' => $cache_750['total'],
+                    'completed' => $cache_750['completed'],
+                    'processing' => $cache_750['processing'],
+                    'pending' => $cache_750['pending'],
+                    'progress' => $progress_750
+                ],
                 'timestamp' => time()
             ];
             
-            error_log("[get_session_cache_status] Session: $session_id, Expected: $expected_files, Found: $total_files, Completed: $completed_files");
+            error_log("[get_session_cache_status] Session: $session_id, Expected: $expected_files, Total: $total_files, 150px: {$cache_150['completed']}/{$cache_150['total']}, 750px: {$cache_750['completed']}/{$cache_750['total']}");
             json_response($result);
             
         } catch (Exception $e) {

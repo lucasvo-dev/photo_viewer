@@ -21,6 +21,8 @@ class AdminFileManager {
         this.isUploading = false;
         this.uploadAbortController = null;
         this.uploadProgressModal = null;
+        this.activeUploadSessions = []; // Track active upload sessions
+        this.globalCancelFlag = false; // Global flag to stop all monitoring
         
         this.init();
     }
@@ -262,7 +264,7 @@ class AdminFileManager {
             <div class="fm-controls">
                 <div class="selection-controls">
                     <label>
-                        <input type="checkbox" id="fm-select-all"> Chọn tất cả
+                        <input type="checkbox" id="fm-select-all"> Chọn tất cả file
                     </label>
                     <button id="fm-delete-selected" class="button danger" disabled>
                         <i class="fas fa-trash"></i> Xóa đã chọn
@@ -392,9 +394,24 @@ class AdminFileManager {
             }
         });
 
-        // Item selection
+        // Item selection with folder protection
         content.addEventListener('change', (e) => {
             if (e.target.classList.contains('item-checkbox')) {
+                const item = e.target.closest('.fm-item');
+                const itemType = item.dataset.type;
+                
+                // If user is trying to select a folder
+                if (itemType === 'directory' && e.target.checked) {
+                    // Check how many folders are already selected
+                    const selectedFolders = document.querySelectorAll('.fm-item[data-type="directory"] .item-checkbox:checked');
+                    
+                    if (selectedFolders.length > 1) {
+                        // Uncheck this folder and show warning
+                        e.target.checked = false;
+                        this.showMessage('Chỉ được chọn tối đa 1 thư mục để đảm bảo an toàn', 'warning');
+                    }
+                }
+                
                 this.updateSelection();
             }
         });
@@ -504,23 +521,55 @@ class AdminFileManager {
         const deleteBtn = document.getElementById('fm-delete-selected');
         
         this.selectedItems.clear();
+        let selectedFolders = 0;
+        let selectedFiles = 0;
         
         checkboxes.forEach(checkbox => {
             if (checkbox.checked) {
                 const item = checkbox.closest('.fm-item');
                 this.selectedItems.add(item.dataset.path);
+                
+                // Count types
+                if (item.dataset.type === 'directory') {
+                    selectedFolders++;
+                } else {
+                    selectedFiles++;
+                }
             }
         });
 
         if (deleteBtn) {
             deleteBtn.disabled = this.selectedItems.size === 0;
+            
+            // Update button text based on selection
+            if (this.selectedItems.size === 0) {
+                deleteBtn.innerHTML = '<i class="fas fa-trash"></i> Xóa đã chọn';
+            } else if (selectedFolders > 0 && selectedFiles > 0) {
+                deleteBtn.innerHTML = `<i class="fas fa-trash"></i> Xóa ${selectedFolders} thư mục + ${selectedFiles} file`;
+                deleteBtn.className = 'button danger folder-warning';
+            } else if (selectedFolders > 0) {
+                deleteBtn.innerHTML = `<i class="fas fa-trash"></i> ⚠️ Xóa ${selectedFolders} thư mục`;
+                deleteBtn.className = 'button danger folder-warning';
+            } else {
+                deleteBtn.innerHTML = `<i class="fas fa-trash"></i> Xóa ${selectedFiles} file`;
+                deleteBtn.className = 'button danger';
+            }
         }
     }
 
     selectAll(checked) {
         const checkboxes = document.querySelectorAll('.fm-item .item-checkbox');
         checkboxes.forEach(checkbox => {
-            checkbox.checked = checked;
+            const item = checkbox.closest('.fm-item');
+            const itemType = item.dataset.type;
+            
+            // Only select files (images/videos), not directories
+            if (itemType === 'file') {
+                checkbox.checked = checked;
+            } else {
+                // Keep directories unchecked for safety
+                checkbox.checked = false;
+            }
         });
         this.updateSelection();
     }
@@ -1083,12 +1132,51 @@ class AdminFileManager {
         this.isDeletingSelected = true;
 
         try {
-            const itemList = selectedItemsArray.join('\n• ');
-            const confirmed = confirm(`Bạn có chắc muốn xóa ${this.selectedItems.size} item(s) sau?\n\n• ${itemList}\n\nHành động này không thể hoàn tác!`);
+            // Check if any folders are selected
+            const selectedFolders = [];
+            const selectedFiles = [];
             
-            if (!confirmed) {
-                this.log('Delete cancelled by user');
-                return;
+            selectedItemsArray.forEach(itemPath => {
+                const item = document.querySelector(`.fm-item[data-path="${itemPath}"]`);
+                if (item) {
+                    const itemType = item.dataset.type;
+                    if (itemType === 'directory') {
+                        selectedFolders.push(itemPath);
+                    } else {
+                        selectedFiles.push(itemPath);
+                    }
+                }
+            });
+
+            // Special confirmation for folders
+            if (selectedFolders.length > 0) {
+                const folderWarning = selectedFolders.length === 1 ? 
+                    `\n⚠️  CẢNH BÁO: Bạn đang xóa 1 THỦ MỤC!\nThư mục: ${selectedFolders[0]}\nTất cả nội dung bên trong sẽ bị xóa vĩnh viễn!` :
+                    `\n⚠️  CẢNH BÁO: Bạn đang xóa ${selectedFolders.length} THỦ MỤC!\nCác thư mục: ${selectedFolders.join(', ')}\nTất cả nội dung bên trong sẽ bị xóa vĩnh viễn!`;
+                
+                const itemList = selectedItemsArray.join('\n• ');
+                const confirmed = confirm(`${folderWarning}\n\nDanh sách đầy đủ:\n• ${itemList}\n\nBạn có THỰC SỰ chắc chắn muốn xóa?\nHành động này KHÔNG THỂ hoàn tác!`);
+                
+                if (!confirmed) {
+                    this.log('Delete cancelled by user due to folder warning');
+                    return;
+                }
+                
+                // Double confirmation for folders
+                const doubleConfirm = confirm(`XÁC NHẬN LẦN CUỐI:\nBạn sắp xóa ${selectedFolders.length} thư mục và ${selectedFiles.length} file.\n\nNhấn OK để XÓA VĨNH VIỄN hoặc Cancel để hủy.`);
+                if (!doubleConfirm) {
+                    this.log('Delete cancelled by user at double confirmation');
+                    return;
+                }
+            } else {
+                // Normal confirmation for files only
+                const itemList = selectedItemsArray.join('\n• ');
+                const confirmed = confirm(`Bạn có chắc muốn xóa ${this.selectedItems.size} file(s) sau?\n\n• ${itemList}\n\nHành động này không thể hoàn tác!`);
+                
+                if (!confirmed) {
+                    this.log('Delete cancelled by user');
+                    return;
+                }
             }
             // Check if we're deleting the current directory or any of its parents
             const isCurrentDirectoryDeleted = selectedItemsArray.some(item => {
@@ -1758,18 +1846,20 @@ class AdminFileManager {
     }
 
     async waitForCacheGeneration(uploadedCount, uploadedFiles = []) {
-        // Enhanced cache generation monitoring with real-time progress for specific files
+        // Simplified cache generation monitoring with accurate progress tracking
         let attempts = 0;
-        const maxAttempts = 60; // 60 seconds max wait (increased)
+        const maxAttempts = 60; // 60 seconds max wait
         let lastProgress = -1;
         let stuckCount = 0;
         
+        this.log('[Cache Monitor] Starting cache monitoring for files:', uploadedFiles);
+        
         while (attempts < maxAttempts) {
             try {
-                // Use specific file monitoring if we have uploaded files list
+                // Always use specific file monitoring if we have uploaded files list
                 let response;
                 if (uploadedFiles.length > 0) {
-                    this.log('[Cache API] Calling get_specific_cache_status with files:', uploadedFiles);
+                    this.log('[Cache API] Calling get_specific_cache_status with', uploadedFiles.length, 'files');
                     const formData = new FormData();
                     formData.append('action', 'get_specific_cache_status');
                     uploadedFiles.forEach(filePath => {
@@ -1780,145 +1870,82 @@ class AdminFileManager {
                         body: formData
                     });
                 } else {
-                    this.log('[Cache API] Calling general get_cache_status');
-                    // Fallback to general cache status
+                    this.log('[Cache API] No specific files, using general cache status');
                     response = await fetch('api.php?action=get_cache_status');
                 }
                 
                 const status = await response.json();
                 
-                // Use corrected file-based status information
                 const totalFiles = status.total_files || 0;
                 const completedFiles = status.completed_files || 0;
+                const processingFiles = status.processing_files || 0;
+                const pendingFiles = status.pending_files || 0;
                 const remainingFiles = status.remaining_files || 0;
-                const progressPercent = status.progress_percentage || 100;
+                const progressPercent = status.progress_percentage || 0;
                 const isWorking = status.is_actually_working || false;
                 const currentActivity = status.current_activity;
                 
-                // Check if there's any pending or processing work
-                const activeCacheJobs = (status.pending_jobs || 0) + (status.processing_jobs || 0);
+                this.log('[Cache Status] Total:', totalFiles, 'Completed:', completedFiles, 'Processing:', processingFiles, 'Pending:', pendingFiles);
+                this.log('[Cache Status] Progress:', progressPercent + '%', 'Is working:', isWorking);
                 
-                this.log('[Cache Status]', status);
-                this.log('[Cache Status] Uploaded files being monitored:', uploadedFiles);
-                this.log('[Cache Status] Expected files:', uploadedFiles.length, 'Found cache jobs:', totalFiles);
-                this.log('[Cache Status] Active jobs:', activeCacheJobs, 'Is working:', isWorking);
-                this.log('[Cache Status] Progress:', completedFiles, '/', totalFiles, '=', progressPercent, '%');
-                
-                // If we have any cache activity at all, show it even if totalFiles is 0
-                if (activeCacheJobs > 0 && totalFiles === 0) {
-                    this.log('Found active cache jobs but no specific files - showing general cache progress');
-                    this.updateCacheProgress(
-                        status.completed_files || 0,
-                        activeCacheJobs + (status.completed_files || 0),
-                        activeCacheJobs,
-                        currentActivity?.file || 'Đang xử lý cache...',
-                        status.progress_percentage || 0
-                    );
-                    continue; // Skip other conditions and continue monitoring
-                }
-                
-                // If we have no recent cache activity at all, keep waiting longer
-                if (totalFiles === 0 && activeCacheJobs === 0) {
-                    if (attempts < 8) { // Wait shorter - 8 seconds
-                        // Give it more attempts in case jobs are still being created
+                // Determine current status and display appropriate progress
+                if (totalFiles === 0) {
+                    // No cache jobs found yet
+                    if (attempts < 10) {
                         this.updateUploadProgress(
                             uploadedCount,
                             uploadedCount,
-                            `🔍 Đang chờ cache jobs được tạo... (${attempts}/8)`,
-                            null // Don't force 100% while waiting
+                            `🔍 Đang chờ cache jobs được tạo... (${attempts + 1}/10)`,
+                            null
                         );
                     } else {
-                        this.log('No cache jobs found after 8 attempts, but continue monitoring general cache');
-                        this.log('Expected files for cache:', uploadedFiles);
-                        
-                        // Check if some files might not need cache (already exist)
-                        const expectedCount = uploadedFiles.length;
-                        
-                        // Force switch to general cache monitoring immediately
-                        this.log('Switching to general cache monitoring immediately');
-                        this.updateCacheProgress(
-                            0,
-                            expectedCount,
-                            expectedCount,
-                            '🟡 Chuyển sang theo dõi cache tổng quát...',
-                            0
+                        // After 10 seconds, assume no cache needed
+                        this.updateUploadProgress(
+                            uploadedCount,
+                            uploadedCount,
+                            '✅ Upload hoàn thành - không cần cache',
+                            100
                         );
-                        
-                        // Switch to general cache monitoring instead of giving up
-                        uploadedFiles = []; // Clear specific files, use general monitoring
-                        
-                        // Reset attempts to give general monitoring a chance
-                        attempts = 0;
+                        this.showCompleteButtons();
+                        this.showMessage(`Upload thành công ${uploadedCount} file(s)`, 'success');
+                        break;
                     }
-                } else if (progressPercent >= 100 && (activeCacheJobs === 0 || totalFiles > 0)) {
-                    // Cache completed - stop monitoring
-                    const expectedTotalFiles = uploadedFiles.length || totalFiles;
+                } else if (completedFiles >= totalFiles) {
+                    // Cache completed
                     this.updateCacheProgress(
-                        completedFiles || totalFiles,
-                        totalFiles || expectedTotalFiles,
+                        completedFiles,
+                        totalFiles,
                         0,
-                        `✅ Cache hoàn thành! (${completedFiles || totalFiles} files)`,
+                        `✅ Cache hoàn thành! (${completedFiles}/${totalFiles} files)`,
                         100
                     );
-                    
-                    // Hide cancel cache button, show close button
-                    const cancelCacheBtn = document.getElementById('cancel-cache-btn');
-                    const closeBtn = document.getElementById('close-upload-btn');
-                    
-                    if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
-                    if (closeBtn) closeBtn.style.display = 'inline-block';
-                    
+                    this.showCompleteButtons();
                     this.showMessage(`Upload thành công ${uploadedCount} file(s), cache hoàn thành`, 'success');
                     break;
-                } else if (activeCacheJobs > 0 || isWorking || remainingFiles > 0) {
-                    const currentFile = currentActivity?.file || '';
-                    
-                    // Use the new cache progress method - but show expected total if different
-                    const expectedTotal = uploadedFiles.length;
-                    const displayTotal = totalFiles > 0 ? totalFiles : expectedTotal;
-                    const displayCompleted = totalFiles > 0 ? completedFiles : 0;
-                    const displayRemaining = totalFiles > 0 ? remainingFiles : expectedTotal;
-                    
+                } else if (processingFiles > 0 || pendingFiles > 0 || isWorking) {
+                    // Cache in progress
+                    const currentFile = currentActivity?.file || 'Đang xử lý...';
                     this.updateCacheProgress(
-                        displayCompleted,
-                        displayTotal,
-                        displayRemaining,
+                        completedFiles,
+                        totalFiles,
+                        remainingFiles,
                         currentFile,
-                        totalFiles > 0 ? progressPercent : 0
+                        progressPercent
                     );
                     
                     // Check if progress is stuck
                     if (Math.abs(progressPercent - lastProgress) < 0.1) {
                         stuckCount++;
-                        if (stuckCount >= 10) { // Stuck for 10 seconds
-                            this.log(`Cache progress might be stuck at ${progressPercent}%`);
+                        if (stuckCount >= 15) { // Stuck for 15 seconds
+                            this.log(`Cache progress stuck at ${progressPercent}% for 15 seconds`);
+                            // Continue monitoring but log the issue
                         }
                     } else {
                         lastProgress = progressPercent;
                         stuckCount = 0;
                     }
-                    
-                } else if (totalFiles > 0 && progressPercent >= 100) {
-                    // All work completed
-                    this.updateCacheProgress(
-                        totalFiles,
-                        totalFiles,
-                        0,
-                        `Cache generation hoàn thành! (${totalFiles} files)`,
-                        100
-                    );
-                    
-                    // Show completion but don't auto-close
-                    const cancelCacheBtn = document.getElementById('cancel-cache-btn');
-                    const closeBtn = document.getElementById('close-upload-btn');
-                    
-                    if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
-                    if (closeBtn) closeBtn.style.display = 'inline-block';
-                    
-                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
-                    break;
-                } else if (totalFiles > 0) {
-                    // Still have files but no active jobs - might be waiting
+                } else {
+                    // Unclear state - continue monitoring
                     this.updateCacheProgress(
                         completedFiles,
                         totalFiles,
@@ -1926,45 +1953,23 @@ class AdminFileManager {
                         'Đang chờ worker xử lý...',
                         progressPercent
                     );
-                } else {
-                    // No files to process - but if we've been waiting too long, assume complete
-                    if (attempts > 30) { // After 30 seconds, assume cache is done or not needed
-                        this.updateUploadProgress(
-                            uploadedCount,
-                            uploadedCount,
-                            '✅ Upload hoàn thành - cache có thể đã sẵn sàng',
-                            100
-                        );
-                        
-                        // Show close button
-                        const cancelCacheBtn = document.getElementById('cancel-cache-btn');
-                        const closeBtn = document.getElementById('close-upload-btn');
-                        
-                        if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
-                        if (closeBtn) closeBtn.style.display = 'inline-block';
-                        
-                        this.showMessage(`Upload thành công ${uploadedCount} file(s)`, 'success');
-                        break;
-                    } else {
-                        // Continue monitoring
-                        this.updateUploadProgress(
-                            uploadedCount,
-                            uploadedCount,
-                            `🔍 Tiếp tục theo dõi cache... (${attempts}s)`,
-                            null
-                        );
-                    }
                 }
+                
             } catch (error) {
                 this.log('Cache status check failed:', error);
-                // Don't break immediately on single failed request
-                if (attempts > 5) break; // Only break after multiple failures
+                // Continue monitoring on error, but break after multiple failures
+                if (attempts > 10) {
+                    this.log('Too many cache status failures, stopping monitoring');
+                    break;
+                }
             }
             
+            // Wait 1 second before next check
             await new Promise(resolve => setTimeout(resolve, 1000));
             attempts++;
         }
         
+        // Handle timeout
         if (attempts >= maxAttempts) {
             this.updateUploadProgress(
                 uploadedCount,
@@ -1972,16 +1977,18 @@ class AdminFileManager {
                 '⏰ Cache monitoring timeout - có thể vẫn đang xử lý background',
                 100
             );
-            
-            // Show close button when timeout
-            const cancelCacheBtn = document.getElementById('cancel-cache-btn');
-            const closeBtn = document.getElementById('close-upload-btn');
-            
-            if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
-            if (closeBtn) closeBtn.style.display = 'inline-block';
-            
+            this.showCompleteButtons();
             this.showMessage('Upload hoàn thành. Cache có thể vẫn đang xử lý background.', 'info');
         }
+    }
+    
+    showCompleteButtons() {
+        // Helper method to show completion buttons
+        const cancelCacheBtn = document.getElementById('cancel-cache-btn');
+        const closeBtn = document.getElementById('close-upload-btn');
+        
+        if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
+        if (closeBtn) closeBtn.style.display = 'inline-block';
     }
 
     // Simple upload system with background progress panel
@@ -2008,14 +2015,38 @@ class AdminFileManager {
         this.closeDialog();
         
         try {
+            // Show upload progress
+            uploadSession.status = 'uploading';
+            uploadSession.uploadProgress = 0;
+            this.updateUploadPanel(uploadSession);
+            
             // Upload all files at once (simpler approach)
             const result = await this.uploadBatch(fileArray, 'skip');
             
             // Update session with results
             uploadSession.uploadedFiles = result.success_count || 0;
             uploadSession.errors = result.errors || [];
+            uploadSession.uploadProgress = 100; // Upload completed
+            
+            // Show upload completion briefly
+            uploadSession.status = 'upload_completed';
+            this.updateUploadPanel(uploadSession);
+            
+            // Extract uploaded file paths for cache monitoring
+            if (result.uploaded_files && result.uploaded_files.length > 0) {
+                uploadSession.uploadedFilePaths = result.uploaded_files.map(file => {
+                    // Build source-prefixed path for cache monitoring
+                    return this.currentSource + '/' + file.path.replace(/^\/+/, '');
+                });
+                console.log('[Upload] Uploaded file paths for cache monitoring:', uploadSession.uploadedFilePaths);
+            } else {
+                uploadSession.uploadedFilePaths = [];
+            }
             
             if (result.success_count > 0) {
+                // Wait a moment to show upload completion
+                await new Promise(resolve => setTimeout(resolve, 1000));
+                
                 // Check if we should monitor cache
                 if (uploadSession.uploadedFiles > 0) {
                     uploadSession.status = 'caching';
@@ -2069,15 +2100,26 @@ class AdminFileManager {
         
         switch (status) {
             case 'uploading':
-                statusText = `Uploading ${totalFiles} files...`;
-                progressPercent = 0;
+                statusText = `🟢 Uploading ${uploadedFiles}/${totalFiles} files...`;
+                progressPercent = uploadSession.uploadProgress || 0;
                 iconClass = 'fa-upload';
                 statusClass = 'uploading';
                 break;
+            case 'upload_completed':
+                statusText = `🟢 Upload completed! ${uploadedFiles}/${totalFiles} files`;
+                progressPercent = 100;
+                iconClass = 'fa-check';
+                statusClass = 'upload-completed';
+                break;
             case 'caching':
-                // Show detailed cache progress like Jet system
+                // Show detailed cache progress with size breakdown
                 if (cacheProgress !== undefined && cacheTotal > 0) {
+                    const cache150 = uploadSession.cache150 || {};
+                    const cache750 = uploadSession.cache750 || {};
                     statusText = `Generating thumbnails... ${cacheProgress}% (${cacheCompleted}/${cacheTotal} jobs)`;
+                    if (cache150.total > 0 || cache750.total > 0) {
+                        statusText += `<br><small>150px: ${cache150.completed || 0}/${cache150.total || 0} | 750px: ${cache750.completed || 0}/${cache750.total || 0}</small>`;
+                    }
                     progressPercent = cacheProgress;
                 } else {
                     statusText = `Generating thumbnails... (${uploadedFiles} files uploaded)`;
@@ -2098,6 +2140,12 @@ class AdminFileManager {
                 iconClass = 'fa-times';
                 statusClass = 'failed';
                 break;
+            case 'cancelled':
+                statusText = `Cache generation đã bị hủy`;
+                progressPercent = 0;
+                iconClass = 'fa-ban';
+                statusClass = 'cancelled';
+                break;
         }
         
         return `
@@ -2109,13 +2157,7 @@ class AdminFileManager {
             <div class="upload-panel-progress">
                 <div class="upload-progress-bar ${statusClass}" style="width: ${progressPercent}%"></div>
             </div>
-            ${status === 'caching' ? `
-                <div class="upload-panel-actions">
-                    <button class="upload-panel-skip" onclick="window.fileManager.skipCacheMonitoring()" title="Bỏ qua theo dõi cache">
-                        <i class="fas fa-forward"></i> Bỏ qua
-                    </button>
-                </div>
-            ` : ''}
+
             ${status === 'completed' ? `
                 <div class="upload-panel-actions">
                     <button class="upload-panel-refresh" onclick="window.fileManager.refreshCurrentDirectory()" title="Làm mới">
@@ -2138,76 +2180,159 @@ class AdminFileManager {
         const maxAttempts = 30; // Reduce to 30 attempts (90 seconds total)
         let lastProgress = -1;
         let stuckCount = 0;
+        let monitoringCancelled = false;
         
-        console.log('[Upload Cache] Starting optimized cache monitoring for session:', uploadSession);
+        // Reset global cancel flag for new session
+        this.globalCancelFlag = false;
+        console.log('[Upload Cache] Global cancel flag reset for new session');
+        
+        // Store monitoring control in session
+        uploadSession.cancelMonitoring = () => {
+            monitoringCancelled = true;
+            console.log('[Upload Cache] Monitoring cancelled by user');
+        };
+        
+        // Add session to active tracking
+        this.activeUploadSessions.push(uploadSession);
+        
+        console.log('[Upload Cache] Starting cache monitoring for session:', uploadSession);
+        
+        // Get uploaded file paths for specific monitoring
+        const uploadedFilePaths = uploadSession.uploadedFilePaths || [];
+        console.log('[Upload Cache] Monitoring files:', uploadedFilePaths);
         
         const checkCache = async () => {
+            // Check global cancel flag first
+            if (this.globalCancelFlag) {
+                console.log('[Upload Cache] Monitoring stopped - global cancel flag set');
+                uploadSession.status = 'cancelled';
+                this.updateUploadPanel(uploadSession);
+                // Remove from active sessions
+                this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
+                return;
+            }
+            
+            // Check if monitoring was cancelled
+            if (monitoringCancelled) {
+                console.log('[Upload Cache] Monitoring stopped - user cancelled');
+                uploadSession.status = 'cancelled';
+                this.updateUploadPanel(uploadSession);
+                // Remove from active sessions
+                this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
+                return;
+            }
+            
             try {
                 // Reduce logging frequency
                 if (attempts % 5 === 0) {
                     console.log(`[Upload Cache] Check ${attempts + 1}/${maxAttempts} - Monitoring cache...`);
                 }
                 
-                // Use general cache status API with timeout
+                // Use specific cache status API with timeout
                 const controller = new AbortController();
                 const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
                 
-                const response = await fetch('api.php?action=get_cache_status', {
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
+                let response;
+                if (uploadedFilePaths.length > 0) {
+                    // Use session-based cache monitoring for accurate tracking
+                    const formData = new FormData();
+                    formData.append('action', 'get_session_cache_status');
+                    formData.append('session_id', uploadSession.id.toString());
+                    formData.append('upload_time', uploadSession.startTime.toString());
+                    uploadedFilePaths.forEach(filePath => {
+                        formData.append('file_paths[]', filePath);
+                    });
+                    response = await fetch('api.php', {
+                        method: 'POST',
+                        body: formData,
+                        signal: controller.signal
+                    });
+                } else {
+                    // Fallback to general cache status
+                    response = await fetch('api.php?action=get_cache_status', {
+                        signal: controller.signal
+                    });
+                }
                 
+                clearTimeout(timeoutId);
                 const status = await response.json();
                 
-                // Calculate progress - use simpler logic
-                const totalExpected = uploadSession.uploadedFiles * 2; // 150px + 750px thumbnails
-                const completedJobs = status.completed_files || 0;
-                const pendingJobs = status.pending_jobs || 0;
-                const processingJobs = status.processing_jobs || 0;
-                const totalActive = pendingJobs + processingJobs;
-                
-                // Update progress percentage
-                const progressPercent = totalExpected > 0 ? Math.min(100, Math.round((completedJobs / totalExpected) * 100)) : 0;
+                // Use accurate progress from session-based API
+                const totalFiles = status.total_files || 0;
+                const completedFiles = status.completed_files || 0;
+                const processingFiles = status.processing_files || 0;
+                const pendingFiles = status.pending_files || 0;
+                const progressPercent = status.progress_percentage || 0;
+                const isComplete = status.isComplete || false;
+                const isWorking = processingFiles > 0;
+                const totalActive = processingFiles + pendingFiles;
                 
                 // Check if progress is stuck
-                if (progressPercent === lastProgress) {
+                if (Math.abs(progressPercent - lastProgress) < 0.1) {
                     stuckCount++;
                 } else {
                     stuckCount = 0;
                     lastProgress = progressPercent;
                 }
                 
+                // Extract detailed cache info
+                const cache150 = status.cache_150 || {};
+                const cache750 = status.cache_750 || {};
+                
                 // Update session with progress info
                 uploadSession.cacheProgress = progressPercent;
-                uploadSession.cacheCompleted = completedJobs;
-                uploadSession.cacheTotal = totalExpected;
+                uploadSession.cacheCompleted = completedFiles;
+                uploadSession.cacheTotal = totalFiles;
+                uploadSession.cache150 = cache150;
+                uploadSession.cache750 = cache750;
                 
                 // Only log significant progress changes
-                if (attempts % 5 === 0 || progressPercent !== lastProgress) {
-                    console.log(`[Upload Cache] Progress: ${progressPercent}% (${completedJobs}/${totalExpected}) - Active: ${totalActive}`);
+                if (attempts % 5 === 0 || Math.abs(progressPercent - lastProgress) > 0.1) {
+                    console.log(`[Upload Cache] Progress: ${progressPercent}% (${completedFiles}/${totalFiles})`);
+                    console.log(`[Upload Cache] 150px: ${cache150.completed || 0}/${cache150.total || 0} (${cache150.progress || 0}%)`);
+                    console.log(`[Upload Cache] 750px: ${cache750.completed || 0}/${cache750.total || 0} (${cache750.progress || 0}%)`);
+                    console.log(`[Upload Cache] Active: ${totalActive}, Working: ${isWorking}`);
                 }
                 
                 this.updateUploadPanel(uploadSession);
                 
-                // Improved completion logic
-                const isComplete = (totalActive === 0 && attempts > 3) || 
-                                 progressPercent >= 100 || 
-                                 (stuckCount > 10 && totalActive === 0) ||
-                                 attempts >= maxAttempts;
-                
+                // Session-based completion logic
                 if (isComplete) {
-                    console.log('[Upload Cache] Cache monitoring complete:', { 
-                        progressPercent, 
-                        totalActive, 
-                        attempts, 
-                        stuckCount 
-                    });
+                    // API indicates cache is complete
+                    console.log('[Upload Cache] Cache monitoring complete - session finished');
                     uploadSession.status = 'completed';
                     this.updateUploadPanel(uploadSession);
-                    
-                    // Refresh directory to show new files
                     this.refreshCurrentDirectory();
-                    
+                    // Remove from active sessions
+                    this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
+                    return;
+                } else if (totalFiles === 0 && attempts >= 10) {
+                    // No cache jobs found after 10 attempts, assume no cache needed
+                    console.log('[Upload Cache] No cache jobs found, assuming complete');
+                    uploadSession.status = 'completed';
+                    this.updateUploadPanel(uploadSession);
+                    this.refreshCurrentDirectory();
+                    // Remove from active sessions
+                    this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
+                    return;
+                } else if (stuckCount > 15 && totalActive === 0) {
+                    // Progress stuck and no active jobs
+                    console.log('[Upload Cache] Progress stuck with no active jobs, assuming complete');
+                    uploadSession.status = 'completed';
+                    this.updateUploadPanel(uploadSession);
+                    this.refreshCurrentDirectory();
+                    // Remove from active sessions
+                    this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
+                    return;
+                } else if (attempts >= maxAttempts) {
+                    // Timeout
+                    console.log('[Upload Cache] Cache monitoring timeout');
+                    uploadSession.status = 'completed';
+                    uploadSession.error = 'Cache monitoring timeout - may still be processing in background';
+                    this.updateUploadPanel(uploadSession);
+                    this.refreshCurrentDirectory();
+                    // Remove from active sessions
+                    this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
                     return;
                 }
                 
@@ -2226,6 +2351,8 @@ class AdminFileManager {
                     uploadSession.status = 'failed';
                     uploadSession.error = 'Cache monitoring failed: ' + error.message;
                     this.updateUploadPanel(uploadSession);
+                    // Remove from active sessions
+                    this.activeUploadSessions = this.activeUploadSessions.filter(s => s.id !== uploadSession.id);
                 }
             }
         };
@@ -2235,17 +2362,71 @@ class AdminFileManager {
         setTimeout(checkCache, 3000);
     }
 
-    // Skip cache monitoring function
-    skipCacheMonitoring() {
-        console.log('[Upload Cache] User skipped cache monitoring');
+    // Cancel cache generation function
+    async cancelCacheGeneration() {
+        console.log('[Upload Cache] User cancelled cache generation');
+        console.log('[Upload Cache] Active sessions count:', this.activeUploadSessions.length);
+        
+        // Set global cancel flag to stop all monitoring immediately
+        this.globalCancelFlag = true;
+        console.log('[Upload Cache] Global cancel flag set to true');
+        
+        // Stop all active monitoring sessions
+        if (this.activeUploadSessions && this.activeUploadSessions.length > 0) {
+            console.log('[Upload Cache] Cancelling monitoring for', this.activeUploadSessions.length, 'sessions');
+            this.activeUploadSessions.forEach((session, index) => {
+                console.log(`[Upload Cache] Cancelling session ${index + 1}:`, session.id);
+                if (session.cancelMonitoring) {
+                    session.cancelMonitoring();
+                } else {
+                    console.warn('[Upload Cache] Session missing cancelMonitoring function:', session);
+                }
+            });
+        } else {
+            console.log('[Upload Cache] No active sessions to cancel');
+        }
+        
+        try {
+            // Call API to stop cache workers
+            const response = await fetch('api.php', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: 'action=stop_cache_workers'
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                console.log(`[Upload Cache] Cancelled ${result.cancelled_jobs || 0} cache jobs`);
+                // Use alert instead of this.showMessage to avoid context issues
+                alert(`Đã hủy ${result.cancelled_jobs || 0} cache job(s)`);
+            } else {
+                console.log('[Upload Cache] No cache jobs to cancel');
+                alert('Không có cache job nào để hủy');
+            }
+        } catch (error) {
+            console.error('[Upload Cache] Error cancelling cache:', error);
+            alert('Lỗi khi hủy cache generation: ' + error.message);
+        }
+        
+        // Update panel to cancelled state
         const panel = document.getElementById('upload-progress-panel');
         if (panel) {
-            // Update panel to completed state
-            const uploadSession = { status: 'completed', uploadedFiles: 'unknown' };
+            const uploadSession = { 
+                status: 'cancelled', 
+                uploadedFiles: 'unknown',
+                error: 'Cache generation đã bị hủy bởi người dùng'
+            };
             panel.innerHTML = this.renderUploadPanel(uploadSession);
             
-            // Refresh directory
-            this.refreshCurrentDirectory();
+            // Refresh directory after a short delay
+            setTimeout(() => {
+                if (window.fileManager && window.fileManager.refreshCurrentDirectory) {
+                    window.fileManager.refreshCurrentDirectory();
+                }
+            }, 1000);
         }
     }
 
@@ -2281,6 +2462,18 @@ function initFileManager() {
         console.error('Failed to initialize File Manager:', error);
     }
 }
+
+// Global function for cancel cache (accessible from onclick)
+window.cancelCacheGeneration = async function() {
+    console.log('[Global] Cancel cache generation called');
+    if (window.fileManager && typeof window.fileManager.cancelCacheGeneration === 'function') {
+        // Call the class method which contains the full logic
+        await window.fileManager.cancelCacheGeneration();
+    } else {
+        console.error('[Global] FileManager not initialized or method not found');
+        alert('Lỗi: Trình quản lý file chưa sẵn sàng hoặc có lỗi logic.');
+    }
+};
 
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', initFileManager);

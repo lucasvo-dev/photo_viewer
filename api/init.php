@@ -94,11 +94,11 @@ define('THUMBNAIL_SIZES_API', (defined('THUMBNAIL_SIZES') && is_array(THUMBNAIL_
     : [150, 750]); // Default API sizes
 
 // --- Request Action and Search Term ---
-$action = $_REQUEST['action'] ?? ''; // Use REQUEST to handle both GET and POST actions
+$action = $_POST['action'] ?? $_GET['action'] ?? ''; // Check POST first, then GET
 $search_term = isset($_GET['search']) ? trim($_GET['search']) : null;
 
 // Debug action
-error_log("[API_INIT] Action from REQUEST: " . $action);
+error_log("[API_INIT] Action resolved: " . $action);
 error_log("[API_INIT] GET action: " . ($_GET['action'] ?? 'NOT SET'));
 error_log("[API_INIT] POST action: " . ($_POST['action'] ?? 'NOT SET'));
 

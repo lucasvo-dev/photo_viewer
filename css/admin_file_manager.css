@@ -483,6 +483,47 @@
     color: #e6edf3;
 }
 
+/* Dialog Form Elements */
+.fm-dialog-content input[type="text"] {
+    width: 100%;
+    padding: 10px 12px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 0.95rem;
+    font-family: inherit;
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.fm-dialog-content input[type="text"]:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
+}
+
+.fm-dialog-content input[type="text"]::placeholder {
+    color: #8b949e;
+}
+
+.fm-dialog-content label {
+    display: block;
+    margin-bottom: 8px;
+    color: #e6edf3;
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+.create-folder-dialog,
+.rename-dialog {
+    min-width: 400px;
+}
+
+.create-folder-dialog input,
+.rename-dialog input {
+    margin-bottom: 12px;
+}
+
 .fm-dialog-footer {
     padding: 16px 20px;
     border-top: 1px solid #30363d;
@@ -1657,6 +1698,10 @@
     background: #2f81f7;
 }
 
+.upload-progress-bar.upload-completed {
+    background: #2ea043;
+}
+
 .upload-progress-bar.caching {
     background: #fb8500;
 }
@@ -1667,6 +1712,10 @@
 
 .upload-progress-bar.failed {
     background: #f85149;
+}
+
+.upload-progress-bar.cancelled {
+    background: #8b949e;
 }
 
 .upload-panel-actions {
@@ -1722,6 +1771,29 @@
     font-size: 0.9em;
 }
 
+.upload-panel-cancel {
+    background: #f85149;
+    border: 1px solid #f85149;
+    color: white;
+    padding: 4px 8px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.8em;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s ease;
+}
+
+.upload-panel-cancel:hover {
+    background: #da3633;
+    border-color: #da3633;
+}
+
+.upload-panel-cancel i {
+    font-size: 0.9em;
+}
+
 @media (max-width: 768px) {
     .upload-progress-panel {
         width: calc(100% - 40px);
@@ -1737,4 +1809,34 @@
         flex: 1;
         justify-content: center;
     }
+}
+
+/* Folder Warning Styles */
+.button.folder-warning {
+    background: linear-gradient(135deg, #dc3545, #c82333) !important;
+    border-color: #bd2130 !important;
+    animation: pulse-warning 2s infinite;
+    font-weight: bold;
+}
+
+.button.folder-warning:hover {
+    background: linear-gradient(135deg, #c82333, #bd2130) !important;
+    transform: scale(1.02);
+}
+
+@keyframes pulse-warning {
+    0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+    50% { box-shadow: 0 0 0 8px rgba(220, 53, 69, 0.2); }
+    100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+}
+
+/* Additional safety visual cues */
+.fm-item[data-type="directory"] .item-checkbox:checked + .fm-item-icon {
+    animation: shake-warning 0.5s ease-in-out;
+}
+
+@keyframes shake-warning {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-2px); }
+    75% { transform: translateX(2px); }
 } 

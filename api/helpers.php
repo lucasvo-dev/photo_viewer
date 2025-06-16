@@ -709,6 +709,7 @@ function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path
         }
 
         // Check for recently completed or failed job for this exact image and size to avoid re-queueing too quickly
+        /*
         $stmt_recent = $pdo->prepare("SELECT status, created_at FROM cache_jobs WHERE folder_path = ? AND size = ? AND type = ? AND created_at > (NOW() - INTERVAL 5 MINUTE) ORDER BY created_at DESC LIMIT 1");
         $stmt_recent->execute([$image_source_prefixed_path, $size, $type]);
         $recent_job = $stmt_recent->fetch(PDO::FETCH_ASSOC);
@@ -721,6 +722,7 @@ function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path
             // but for now, we'll allow re-queueing after a short interval (implied by not returning false here if failed).
             // A more sophisticated retry mechanism could be added later (e.g., exponential backoff, max retries).
         }
+        */
 
     } catch (PDOException $e) {
         error_log("[Cache Job Queue] DB Error checking existing jobs for '{$image_source_prefixed_path}' size {$size} type '{$type}': " . $e->getMessage());
@@ -731,9 +733,11 @@ function add_thumbnail_job_to_queue(PDO $pdo, string $image_source_prefixed_path
     try {
         // Use 'folder_path' instead of 'source_path'
         // Set total_files = 1 since this is for a single file
-        $sql = "INSERT INTO cache_jobs (folder_path, size, type, status, total_files, processed_files, created_at) VALUES (?, ?, ?, 'pending', 1, 0, NOW())";
+        // Use UTC timestamp format consistent with database schema
+        $timestamp = gmdate('YmdHis');
+        $sql = "INSERT INTO cache_jobs (folder_path, size, type, status, total_files, processed_files, created_at) VALUES (?, ?, ?, 'pending', 1, 0, ?)";
         $stmt = $pdo->prepare($sql);
-        $success = $stmt->execute([$image_source_prefixed_path, $size, $type]);
+        $success = $stmt->execute([$image_source_prefixed_path, $size, $type, $timestamp]);
         if ($success) {
             error_log("[Cache Job Queue] Successfully added job for: {$image_source_prefixed_path}, Size: {$size}, Type: {$type}");
             return true;

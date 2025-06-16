@@ -1214,6 +1214,10 @@ switch ($action) {
                 try {
                     $file_source_prefixed_path = $source_key . '/' . ltrim($target_path . '/' . $safe_filename, '/');
                     
+                    // --- DEBUGGING ---
+                    error_log("[file_manager_upload] DEBUG: Checking THUMBNAIL_SIZES before loop. Count: " . count(THUMBNAIL_SIZES) . ", Values: " . implode(', ', THUMBNAIL_SIZES));
+                    // --- END DEBUGGING ---
+
                     // Add jobs for all thumbnail sizes
                     foreach (THUMBNAIL_SIZES as $size) {
                         $is_video = in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
@@ -1396,6 +1400,18 @@ switch ($action) {
                         } catch (Exception $e) {
                             error_log("[file_manager_delete] Failed to clean thumbnails for {$source_prefixed_path}: " . $e->getMessage());
                         }
+                        
+                        // Clean up associated cache jobs from database
+                        try {
+                            $stmt = $pdo->prepare("DELETE FROM cache_jobs WHERE folder_path = ?");
+                            $stmt->execute([$source_prefixed_path]);
+                            $deleted_jobs = $stmt->rowCount();
+                            if ($deleted_jobs > 0) {
+                                error_log("[file_manager_delete] Cleaned {$deleted_jobs} cache jobs for: {$source_prefixed_path}");
+                            }
+                        } catch (Exception $e) {
+                            error_log("[file_manager_delete] Failed to clean cache jobs for {$source_prefixed_path}: " . $e->getMessage());
+                        }
                     } else {
                         $error_msg = "Không thể xóa file: {$item_path}";
                         $errors[] = $error_msg;
@@ -1466,6 +1482,34 @@ switch ($action) {
             ]);
         } else {
             json_error("Không thể đổi tên file/thư mục.");
+        }
+        break;
+
+    case 'stop_cache_workers':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền dừng cache workers.", 403);
+        }
+
+        if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+            json_error('Phương thức không hợp lệ.', 405);
+        }
+
+        try {
+            // Cancel all pending and processing cache jobs
+            $stmt_cancel = $pdo->prepare("UPDATE cache_jobs SET status = 'cancelled', result_message = 'Cancelled by user' WHERE status IN ('pending', 'processing')");
+            $stmt_cancel->execute();
+            $cancelled_jobs = $stmt_cancel->rowCount();
+            
+            error_log("[stop_cache_workers] Cancelled {$cancelled_jobs} cache jobs");
+            
+            json_response([
+                'success' => true,
+                'cancelled_jobs' => $cancelled_jobs,
+                'message' => $cancelled_jobs > 0 ? "Đã hủy {$cancelled_jobs} cache job(s)" : "Không có cache job nào để hủy"
+            ]);
+        } catch (Exception $e) {
+            error_log("[stop_cache_workers] Error: " . $e->getMessage());
+            json_error("Lỗi khi dừng cache workers: " . $e->getMessage());
         }
         break;
 
