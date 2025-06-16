@@ -1733,6 +1733,7 @@ class AdminFileManager {
                 
                 this.log('[Cache Status]', status);
                 this.log('[Cache Status] Uploaded files being monitored:', uploadedFiles);
+                this.log('[Cache Status] Expected files:', uploadedFiles.length, 'Found cache jobs:', totalFiles);
                 
                 // Use corrected file-based status information
                 const totalFiles = status.total_files || 0;
@@ -1757,22 +1758,28 @@ class AdminFileManager {
                         );
                     } else {
                         this.log('No cache jobs found after 15 attempts, but continue monitoring general cache');
-                        // Switch to general cache monitoring instead of giving up
-                        uploadedFiles = []; // Clear specific files, use general monitoring
+                        this.log('Expected files for cache:', uploadedFiles);
+                        
+                        // Check if some files might not need cache (already exist)
+                        const expectedCount = uploadedFiles.length;
                         this.updateUploadProgress(
                             uploadedCount,
                             uploadedCount,
-                            '🔍 Chuyển sang theo dõi cache tổng quát...',
+                            `🔍 Một số files có thể đã có cache (${expectedCount} files uploaded)`,
                             null
                         );
+                        
+                        // Switch to general cache monitoring instead of giving up
+                        uploadedFiles = []; // Clear specific files, use general monitoring
                     }
                 } else if (totalFiles > 0 && activeCacheJobs === 0 && progressPercent >= 100) {
                     // All files have been processed and completed
+                    const expectedTotalFiles = uploadedFiles.length;
                     this.updateCacheProgress(
                         totalFiles,
                         totalFiles,
                         0,
-                        `Cache generation hoàn thành! (${totalFiles} files)`,
+                        `✅ Cache hoàn thành! (${totalFiles}/${expectedTotalFiles} files)`,
                         100
                     );
                     
@@ -1784,18 +1791,24 @@ class AdminFileManager {
                     if (closeBtn) closeBtn.style.display = 'inline-block';
                     
                     // Don't auto-close, let user decide when to close
-                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
+                    const expectedTotalCount = uploadedFiles.length;
+                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache hoàn thành ${totalFiles}/${expectedTotalCount} files`, 'success');
                     break;
                 } else if (activeCacheJobs > 0 || isWorking || remainingFiles > 0) {
                     const currentFile = currentActivity?.file || '';
                     
-                    // Use the new cache progress method
+                    // Use the new cache progress method - but show expected total if different
+                    const expectedTotal = uploadedFiles.length;
+                    const displayTotal = totalFiles > 0 ? totalFiles : expectedTotal;
+                    const displayCompleted = totalFiles > 0 ? completedFiles : 0;
+                    const displayRemaining = totalFiles > 0 ? remainingFiles : expectedTotal;
+                    
                     this.updateCacheProgress(
-                        completedFiles,
-                        totalFiles,
-                        remainingFiles,
+                        displayCompleted,
+                        displayTotal,
+                        displayRemaining,
                         currentFile,
-                        progressPercent
+                        totalFiles > 0 ? progressPercent : 0
                     );
                     
                     // Check if progress is stuck
