@@ -1745,36 +1745,26 @@ class AdminFileManager {
                 // Check if there's any pending or processing work
                 const activeCacheJobs = (status.pending_jobs || 0) + (status.processing_jobs || 0);
                 
-                // If we have no recent cache activity at all, exit early
+                // If we have no recent cache activity at all, keep waiting longer
                 if (totalFiles === 0 && activeCacheJobs === 0) {
-                    if (attempts < 5) {
+                    if (attempts < 15) { // Wait much longer - 15 seconds
                         // Give it more attempts in case jobs are still being created
                         this.updateUploadProgress(
                             uploadedCount,
                             uploadedCount,
-                            `🔍 Đang chờ cache jobs được tạo... (${attempts}/5)`,
+                            `🔍 Đang chờ cache jobs được tạo... (${attempts}/15)`,
                             null // Don't force 100% while waiting
                         );
                     } else {
-                        this.log('No cache jobs found after 5 attempts, assuming cache not needed');
+                        this.log('No cache jobs found after 15 attempts, but continue monitoring general cache');
+                        // Switch to general cache monitoring instead of giving up
+                        uploadedFiles = []; // Clear specific files, use general monitoring
                         this.updateUploadProgress(
                             uploadedCount,
                             uploadedCount,
-                            '✅ Upload hoàn thành (không cần cache)',
-                            100
+                            '🔍 Chuyển sang theo dõi cache tổng quát...',
+                            null
                         );
-                        
-                        // Show close button and auto-close after 2 seconds
-                        const cancelCacheBtn = document.getElementById('cancel-cache-btn');
-                        const closeBtn = document.getElementById('close-upload-btn');
-                        if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
-                        if (closeBtn) closeBtn.style.display = 'inline-block';
-                        
-                        setTimeout(() => {
-                            this.closeUploadProgress();
-                            this.refreshCurrentDirectory();
-                        }, 2000);
-                        break;
                     }
                 } else if (totalFiles > 0 && activeCacheJobs === 0 && progressPercent >= 100) {
                     // All files have been processed and completed
@@ -1793,11 +1783,8 @@ class AdminFileManager {
                     if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
                     if (closeBtn) closeBtn.style.display = 'inline-block';
                     
-                                        // Show completion and auto-close after 3 seconds  
-                    setTimeout(() => {
-                        this.closeUploadProgress();
-                        this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
-                    }, 3000);
+                    // Don't auto-close, let user decide when to close
+                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
                     break;
                 } else if (activeCacheJobs > 0 || isWorking || remainingFiles > 0) {
                     const currentFile = currentActivity?.file || '';
@@ -1832,11 +1819,14 @@ class AdminFileManager {
                         100
                     );
                     
-                    // Show completion and auto-close after 3 seconds  
-                    setTimeout(() => {
-                        this.closeUploadProgress();
-                        this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
-                    }, 3000);
+                    // Show completion but don't auto-close
+                    const cancelCacheBtn = document.getElementById('cancel-cache-btn');
+                    const closeBtn = document.getElementById('close-upload-btn');
+                    
+                    if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
+                    if (closeBtn) closeBtn.style.display = 'inline-block';
+                    
+                    this.showMessage(`Upload thành công ${uploadedCount} file(s), cache đã hoàn thành`, 'success');
                     break;
                 } else if (totalFiles > 0) {
                     // Still have files but no active jobs - might be waiting
@@ -1848,14 +1838,13 @@ class AdminFileManager {
                         progressPercent
                     );
                 } else {
-                    // No files to process
+                    // No files to process - continue monitoring
                     this.updateUploadProgress(
                         uploadedCount,
                         uploadedCount,
-                        'Cache generation không cần thiết',
-                        100
+                        '🔍 Tiếp tục theo dõi cache...',
+                        null
                     );
-                    break;
                 }
             } catch (error) {
                 this.log('Cache status check failed:', error);
@@ -1871,9 +1860,18 @@ class AdminFileManager {
             this.updateUploadProgress(
                 uploadedCount,
                 uploadedCount,
-                'Cache generation timed out (sẽ tiếp tục background)',
+                '⏰ Cache monitoring timeout - có thể vẫn đang xử lý background',
                 100
             );
+            
+            // Show close button when timeout
+            const cancelCacheBtn = document.getElementById('cancel-cache-btn');
+            const closeBtn = document.getElementById('close-upload-btn');
+            
+            if (cancelCacheBtn) cancelCacheBtn.style.display = 'none';
+            if (closeBtn) closeBtn.style.display = 'inline-block';
+            
+            this.showMessage('Upload hoàn thành. Cache có thể vẫn đang xử lý background.', 'info');
         }
     }
 }
