@@ -796,7 +796,7 @@ class AdminFileManager {
             
             const result = await response.json();
             if (result.success) {
-                // Update image data
+                // Update image data in both arrays
                 if (result.featured_status) {
                     currentImage.is_featured = true;
                     currentImage.featured_type = result.featured_status;
@@ -805,17 +805,31 @@ class AdminFileManager {
                     currentImage.featured_type = null;
                 }
                 
-                // Update preview UI
-                this.navigateToImage(this.currentPreviewIndex);
+                // Update the same item in currentItems array
+                const mainItemIndex = this.currentItems.findIndex(item => item.name === currentImage.name);
+                if (mainItemIndex >= 0 && this.currentItems[mainItemIndex].is_image) {
+                    this.currentItems[mainItemIndex].is_featured = currentImage.is_featured;
+                    this.currentItems[mainItemIndex].featured_type = currentImage.featured_type;
+                }
                 
-                // Refresh the list view to show updated status
-                this.refreshCurrentDirectory();
+                // Update preview UI (main image and badges)
+                this.updatePreviewImage(this.images[this.currentPreviewIndex]);
                 
-                this.showMessage(`Đã ${result.featured_status ? 'đánh dấu' : 'bỏ đánh dấu'} ảnh`, 'success');
+                // Update filmstrip badge for current thumbnail
+                this.updateFilmstripBadge(this.currentPreviewIndex, currentImage);
+                
+                // Also refresh all filmstrip badges to ensure consistency
+                this.refreshAllFilmstripBadges();
+                
+                // Update the list view item without full refresh
+                this.updateListViewItem(currentImage.name, currentImage);
+                
+                // Show compact success message without reloading
+                this.showCompactMessage(`${result.featured_status ? 'Đã đánh dấu' : 'Đã bỏ đánh dấu'} featured`, 'success');
             }
         } catch (error) {
             this.error('Error toggling featured status:', error);
-            this.showMessage('Lỗi khi cập nhật featured status', 'error');
+            this.showCompactMessage('Lỗi khi cập nhật featured status', 'error');
         }
     }
 
@@ -904,14 +918,20 @@ class AdminFileManager {
             });
         }
 
-        // Close dropdowns when clicking outside
-        document.addEventListener('click', (e) => {
+        // Remove any existing global dropdown handler to prevent duplicates
+        if (this.globalDropdownHandler) {
+            document.removeEventListener('click', this.globalDropdownHandler);
+        }
+
+        // Create and bind global dropdown close handler
+        this.globalDropdownHandler = (e) => {
             if (!e.target.closest('.fm-featured-dropdown')) {
                 document.querySelectorAll('.fm-featured-dropdown .dropdown-content.show').forEach(dropdown => {
                     dropdown.classList.remove('show');
                 });
             }
-        });
+        };
+        document.addEventListener('click', this.globalDropdownHandler);
 
         // Item actions
         content.addEventListener('click', (e) => {
@@ -968,10 +988,19 @@ class AdminFileManager {
                     e.preventDefault();
                     e.stopPropagation();
                     const featuredType = e.target.closest('[data-type]').dataset.type;
-                    this.setFeatured(itemPath, featuredType);
+                    
+                    // Close dropdown immediately to prevent interaction issues
                     const dropdownToClose = item.querySelector('.fm-featured-dropdown .dropdown-content.show');
                     if (dropdownToClose) {
                         dropdownToClose.classList.remove('show');
+                    }
+                    
+                    // Perform the featured action with error handling
+                    try {
+                        this.setFeatured(itemPath, featuredType);
+                    } catch (error) {
+                        this.error('Error in set-featured action:', error);
+                        this.showCompactMessage('Lỗi khi set featured status', 'error');
                     }
                     break;
                 }
@@ -3199,15 +3228,157 @@ class AdminFileManager {
                 throw new Error(data.error || 'Failed to set featured status.');
             }
     
-            this.showMessage('Featured status updated.', 'success');
+            // Find the image in current items and update
+            const imageName = imagePath.split('/').pop();
+            const imageIndex = this.currentItems.findIndex(item => item.name === imageName && item.is_image);
             
-            // Update UI by reloading directory
-            this.refreshCurrentDirectory();
+            if (imageIndex >= 0) {
+                const imageData = this.currentItems[imageIndex];
+                
+                // Update local data
+                if (data.featured_status) {
+                    imageData.is_featured = true;
+                    imageData.featured_type = data.featured_status;
+                } else {
+                    imageData.is_featured = false;
+                    imageData.featured_type = null;
+                }
+                
+                // Update UI without full refresh
+                this.updateListViewItem(imageName, imageData);
+                
+                // If this image exists in the images array (for preview), update it too
+                const previewImageIndex = this.images.findIndex(img => img.name === imageName);
+                if (previewImageIndex >= 0) {
+                    this.images[previewImageIndex].is_featured = imageData.is_featured;
+                    this.images[previewImageIndex].featured_type = imageData.featured_type;
+                    
+                    // If preview is open and this is the current image, update filmstrip
+                    if (this.previewOpen && this.currentPreviewIndex === previewImageIndex) {
+                        this.updateFilmstripBadge(previewImageIndex, imageData);
+                        this.updatePreviewImage(imageData);
+                    }
+                }
+            }
+            
+            this.showCompactMessage(`${data.featured_status ? 'Đã đánh dấu' : 'Đã bỏ đánh dấu'} featured`, 'success');
     
         } catch (error) {
             this.error('Error setting featured status:', error);
-            this.showMessage('Error: ' + error.message, 'error');
+            this.showCompactMessage('Lỗi: ' + error.message, 'error');
         }
+    }
+
+    updateFilmstripBadge(imageIndex, imageData) {
+        const filmstripContainer = document.getElementById('fm-preview-filmstrip');
+        if (!filmstripContainer) return;
+        
+        const thumbContainer = filmstripContainer.querySelector(`[data-index="${imageIndex}"]`);
+        if (!thumbContainer) return;
+        
+        // Remove existing badge
+        const existingBadge = thumbContainer.querySelector('.featured-badge');
+        if (existingBadge) {
+            existingBadge.remove();
+        }
+        
+        // Add new badge if featured
+        if (imageData.featured_type) {
+            const badge = document.createElement('span');
+            badge.className = `featured-badge ${imageData.featured_type}`;
+            badge.textContent = imageData.featured_type === 'featured' ? '⭐' : '👤';
+            thumbContainer.appendChild(badge);
+        }
+    }
+
+    refreshAllFilmstripBadges() {
+        if (!this.previewOpen || !this.images) return;
+        
+        const filmstripContainer = document.getElementById('fm-preview-filmstrip');
+        if (!filmstripContainer) return;
+        
+        // Update all filmstrip badges based on current image data
+        this.images.forEach((imageData, index) => {
+            const thumbContainer = filmstripContainer.querySelector(`[data-index="${index}"]`);
+            if (thumbContainer) {
+                // Remove existing badge
+                const existingBadge = thumbContainer.querySelector('.featured-badge');
+                if (existingBadge) {
+                    existingBadge.remove();
+                }
+                
+                // Add new badge if featured
+                if (imageData.featured_type) {
+                    const badge = document.createElement('span');
+                    badge.className = `featured-badge ${imageData.featured_type}`;
+                    badge.textContent = imageData.featured_type === 'featured' ? '⭐' : '👤';
+                    thumbContainer.appendChild(badge);
+                }
+            }
+        });
+    }
+
+    updateListViewItem(imageName, imageData) {
+        // Find the item in the list view
+        const items = document.querySelectorAll('.fm-item');
+        for (const item of items) {
+            const itemName = item.querySelector('.fm-item-name')?.textContent;
+            if (itemName === imageName) {
+                // Update the featured dropdown button
+                const featuredBtn = item.querySelector('.featured-status-btn');
+                if (featuredBtn) {
+                    // Update button state
+                    if (imageData.is_featured) {
+                        featuredBtn.classList.add('is-featured');
+                        featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
+                            ? '<i class="fas fa-user-circle"></i>' 
+                            : '<i class="fas fa-star"></i>';
+                    } else {
+                        featuredBtn.classList.remove('is-featured');
+                        featuredBtn.innerHTML = '<i class="far fa-star"></i>';
+                    }
+                }
+                break;
+            }
+        }
+    }
+
+    showCompactMessage(message, type = 'info') {
+        // Create or update a non-intrusive notification
+        let notification = document.getElementById('fm-compact-notification');
+        
+        if (!notification) {
+            notification = document.createElement('div');
+            notification.id = 'fm-compact-notification';
+            notification.className = 'fm-compact-notification';
+            document.body.appendChild(notification);
+        }
+        
+        // Update content and styling
+        notification.className = `fm-compact-notification fm-compact-${type}`;
+        notification.innerHTML = `
+            <i class="fas fa-${type === 'error' ? 'exclamation-triangle' : type === 'success' ? 'check' : 'info-circle'}"></i>
+            <span>${message}</span>
+        `;
+        
+        // Show the notification
+        notification.style.display = 'flex';
+        notification.style.opacity = '0';
+        
+        // Animate in
+        requestAnimationFrame(() => {
+            notification.style.opacity = '1';
+        });
+        
+        // Auto hide after 3 seconds
+        setTimeout(() => {
+            notification.style.opacity = '0';
+            setTimeout(() => {
+                if (notification.style.opacity === '0') {
+                    notification.style.display = 'none';
+                }
+            }, 300);
+        }, 3000);
     }
 }
 

@@ -135,13 +135,17 @@ switch ($action) {
                         $thumbnail_source_prefixed_path = str_replace('//', '/', $thumbnail_source_prefixed_path); // Normalize
                     }
 
+                    // Get cached file count for root folders
+                    $file_count = get_directory_file_count($item['source_key'], $item['name']);
+
                     $folders_data[] = [
                         'name' => $item['name'],
                         'type' => 'folder',
                         'path' => $folder_path_prefixed,
                         'protected' => $subfolder_access['protected'],
                         'authorized' => $subfolder_access['authorized'],
-                        'thumbnail' => $thumbnail_source_prefixed_path
+                        'thumbnail' => $thumbnail_source_prefixed_path,
+                        'file_count' => $file_count
                     ];
                 }
 

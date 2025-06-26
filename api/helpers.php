@@ -957,5 +957,310 @@ function count_files_recursive(string $directory_path): int
     return $count;
 }
 
+/**
+ * Get cached file count for a directory, with fallback to real-time counting
+ * 
+ * @param string $source_key Source key (e.g., 'main', 'extra_drive')
+ * @param string $directory_path Relative path within source
+ * @param bool $force_refresh Force refresh cache
+ * @return int File count
+ */
+function get_directory_file_count($source_key, $directory_path, $force_refresh = false) {
+    global $pdo;
+    
+    try {
+        // Normalize directory path
+        $directory_path = trim($directory_path, '/');
+        
+        // Check cache first (unless force refresh)
+        if (!$force_refresh) {
+            $stmt = $pdo->prepare("
+                SELECT file_count, last_scanned_at, is_scanning 
+                FROM directory_file_counts 
+                WHERE source_key = ? AND directory_path = ?
+            ");
+            $stmt->execute([$source_key, $directory_path]);
+            $cached = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($cached) {
+                $cache_age_hours = (time() - strtotime($cached['last_scanned_at'])) / 3600;
+                
+                // Return cached count if:
+                // 1. Cache is less than 24 hours old, OR
+                // 2. Currently scanning (avoid duplicate scans)
+                if ($cache_age_hours < 24 || $cached['is_scanning']) {
+                    return (int)$cached['file_count'];
+                }
+            }
+        }
+        
+        // Get absolute path for counting
+        $absolute_path = get_absolute_path_for_source($source_key, $directory_path);
+        if (!$absolute_path || !is_dir($absolute_path)) {
+            return 0;
+        }
+        
+        // Mark as scanning to prevent duplicate scans
+        $stmt = $pdo->prepare("
+            INSERT INTO directory_file_counts (source_key, directory_path, is_scanning) 
+            VALUES (?, ?, 1)
+            ON DUPLICATE KEY UPDATE is_scanning = 1, updated_at = CURRENT_TIMESTAMP
+        ");
+        $stmt->execute([$source_key, $directory_path]);
+        
+        // Count files with timing
+        $start_time = microtime(true);
+        $file_count = count_files_recursive($absolute_path);
+        $scan_duration_ms = round((microtime(true) - $start_time) * 1000);
+        
+        // Update cache with results
+        $stmt = $pdo->prepare("
+            INSERT INTO directory_file_counts 
+            (source_key, directory_path, file_count, scan_duration_ms, is_scanning, last_scanned_at) 
+            VALUES (?, ?, ?, ?, 0, CURRENT_TIMESTAMP)
+            ON DUPLICATE KEY UPDATE 
+            file_count = VALUES(file_count),
+            scan_duration_ms = VALUES(scan_duration_ms),
+            is_scanning = 0,
+            last_scanned_at = CURRENT_TIMESTAMP,
+            scan_error = NULL,
+            updated_at = CURRENT_TIMESTAMP
+        ");
+        $stmt->execute([$source_key, $directory_path, $file_count, $scan_duration_ms]);
+        
+        error_log("[FileCount] Scanned {$source_key}/{$directory_path}: {$file_count} files in {$scan_duration_ms}ms");
+        return $file_count;
+        
+    } catch (Exception $e) {
+        error_log("[FileCount] Error counting files for {$source_key}/{$directory_path}: " . $e->getMessage());
+        
+        // Mark scan as failed
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE directory_file_counts 
+                SET is_scanning = 0, scan_error = ?, updated_at = CURRENT_TIMESTAMP
+                WHERE source_key = ? AND directory_path = ?
+            ");
+            $stmt->execute([$e->getMessage(), $source_key, $directory_path]);
+        } catch (Exception $update_error) {
+            error_log("[FileCount] Failed to update error status: " . $update_error->getMessage());
+        }
+        
+        return 0;
+    }
+}
+
+/**
+ * Get absolute path for a source and relative path
+ */
+function get_absolute_path_for_source($source_key, $relative_path) {
+    if (!isset(IMAGE_SOURCES[$source_key])) {
+        return null;
+    }
+    
+    $source_config = IMAGE_SOURCES[$source_key];
+    $source_base_path = $source_config['path'];
+    
+    if (empty($relative_path) || $relative_path === '/') {
+        return realpath($source_base_path);
+    }
+    
+    $full_path = $source_base_path . DIRECTORY_SEPARATOR . ltrim($relative_path, '/\\');
+    return realpath($full_path);
+}
+
+/**
+ * Batch update file counts for multiple directories (background processing)
+ * 
+ * @param array $directories Array of ['source_key' => string, 'directory_path' => string]
+ * @param int $max_scan_time_seconds Maximum time to spend scanning
+ * @return array Results with counts and timing
+ */
+function batch_update_file_counts($directories, $max_scan_time_seconds = 30) {
+    global $pdo;
+    
+    $start_time = time();
+    $results = [];
+    $processed = 0;
+    
+    foreach ($directories as $dir) {
+        // Check time limit
+        if (time() - $start_time >= $max_scan_time_seconds) {
+            error_log("[BatchFileCount] Time limit reached after {$processed} directories");
+            break;
+        }
+        
+        $source_key = $dir['source_key'];
+        $directory_path = $dir['directory_path'];
+        
+        try {
+            $file_count = get_directory_file_count($source_key, $directory_path, true);
+            $results[] = [
+                'source_key' => $source_key,
+                'directory_path' => $directory_path,
+                'file_count' => $file_count,
+                'status' => 'success'
+            ];
+            $processed++;
+            
+        } catch (Exception $e) {
+            $results[] = [
+                'source_key' => $source_key,
+                'directory_path' => $directory_path,
+                'file_count' => 0,
+                'status' => 'error',
+                'error' => $e->getMessage()
+            ];
+        }
+    }
+    
+    error_log("[BatchFileCount] Processed {$processed} directories in " . (time() - $start_time) . " seconds");
+    return $results;
+}
+
+/**
+ * Get file count statistics for admin dashboard
+ */
+function get_file_count_statistics() {
+    global $pdo;
+    
+    try {
+        $stmt = $pdo->query("
+            SELECT 
+                COUNT(*) as total_directories,
+                SUM(file_count) as total_files,
+                AVG(file_count) as avg_files_per_dir,
+                MAX(file_count) as max_files_in_dir,
+                AVG(scan_duration_ms) as avg_scan_time_ms,
+                COUNT(CASE WHEN is_scanning = 1 THEN 1 END) as currently_scanning,
+                COUNT(CASE WHEN scan_error IS NOT NULL THEN 1 END) as scan_errors,
+                COUNT(CASE WHEN last_scanned_at > DATE_SUB(NOW(), INTERVAL 24 HOUR) THEN 1 END) as scanned_today
+            FROM directory_file_counts
+        ");
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+        
+    } catch (Exception $e) {
+        error_log("[FileCountStats] Error getting statistics: " . $e->getMessage());
+        return null;
+    }
+}
+
+/**
+ * Clean up old file count cache entries
+ * 
+ * @param int $days_old Remove entries older than this many days
+ * @return int Number of entries removed
+ */
+function cleanup_file_count_cache($days_old = 30) {
+    global $pdo;
+    
+    try {
+        $stmt = $pdo->prepare("
+            DELETE FROM directory_file_counts 
+            WHERE last_scanned_at < DATE_SUB(NOW(), INTERVAL ? DAY)
+            AND is_scanning = 0
+        ");
+        $stmt->execute([$days_old]);
+        
+        $deleted = $stmt->rowCount();
+        error_log("[FileCountCleanup] Removed {$deleted} old cache entries (older than {$days_old} days)");
+        return $deleted;
+        
+    } catch (Exception $e) {
+        error_log("[FileCountCleanup] Error cleaning up cache: " . $e->getMessage());
+        return 0;
+    }
+}
+
+function clear_all_pending_jet_cache_jobs() {
+    global $pdo;
+    if (!$pdo) {
+        error_log("PDO connection not available in clear_all_pending_jet_cache_jobs");
+        return false;
+    }
+    
+    try {
+        $stmt = $pdo->prepare("DELETE FROM jet_cache_jobs WHERE status = 'pending'");
+        $stmt->execute();
+        $deleted_count = $stmt->rowCount();
+        error_log("Cleared {$deleted_count} pending jet cache jobs");
+        return $deleted_count;
+    } catch (PDOException $e) {
+        error_log("Error clearing pending jet cache jobs: " . $e->getMessage());
+        return false;
+    }
+}
+
+// --- NEW HELPER FUNCTIONS FOR CATEGORY AND FEATURED IMAGES ---
+
+/**
+ * Get category for a given path by checking parent folders
+ */
+function getCategoryForPath($source_key, $folder_path) {
+    global $pdo;
+    
+    if (!$pdo) {
+        error_log("PDO connection not available in getCategoryForPath");
+        return null;
+    }
+    
+    // Split path into parts
+    $path_parts = explode('/', trim($folder_path, '/'));
+    
+    // Check from current path up to root
+    while (!empty($path_parts)) {
+        $current_path = implode('/', $path_parts);
+        
+        try {
+            $stmt = $pdo->prepare("
+                SELECT fc.id, fc.category_name, fc.category_slug, fc.color_code, fc.icon_class
+                FROM folder_category_mapping fcm
+                JOIN folder_categories fc ON fcm.category_id = fc.id
+                WHERE fcm.source_key = ? AND fcm.folder_path = ?
+                LIMIT 1
+            ");
+            $stmt->execute([$source_key, $current_path]);
+            
+            $category = $stmt->fetch(PDO::FETCH_ASSOC);
+            if ($category) {
+                return $category;
+            }
+        } catch (PDOException $e) {
+            error_log("Error in getCategoryForPath: " . $e->getMessage());
+        }
+        
+        // Go up one level
+        array_pop($path_parts);
+    }
+    
+    return null; // No category found
+}
+
+/**
+ * Get featured status for an image
+ */
+function getFeaturedStatus($source_key, $image_path) {
+    global $pdo;
+    
+    if (!$pdo) {
+        return null;
+    }
+    
+    try {
+        $stmt = $pdo->prepare("
+            SELECT featured_type, priority_order, alt_text, description
+            FROM featured_images 
+            WHERE source_key = ? AND image_relative_path = ?
+        ");
+        $stmt->execute([$source_key, $image_path]);
+        
+        return $stmt->fetch(PDO::FETCH_ASSOC);
+    } catch (PDOException $e) {
+        error_log("Error in getFeaturedStatus: " . $e->getMessage());
+        return null;
+    }
+}
+
 // Ensure this is at the very end of the file or before a closing PHP tag if any.
 // If there are other functions after this, make sure there's no accidental output. 

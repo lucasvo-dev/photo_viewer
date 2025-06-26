@@ -14,6 +14,7 @@ rules:
   - Let's me test all by manual
   - Do not automatically create new test files or new php executables randomly
   - rule: Identify core technologies.
+  - Nếu có ghi chú ngày tháng hay thời gian, phải kiểm tra date của ngày hôm nay để update chính xác thời gian.
     description: |
       The backend is primarily PHP (>=7.4).
       The database is mySQL.

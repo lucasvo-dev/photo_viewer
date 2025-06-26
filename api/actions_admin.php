@@ -32,11 +32,20 @@ switch ($action) {
         break;
         
     case 'file_manager_get_sources':
-        $sources = array_map(function($key, $value) {
-            return ['key' => $key, 'name' => $value['name']];
-        }, array_keys(IMAGE_SOURCES), array_values(IMAGE_SOURCES));
+        // Get available image sources for file manager
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền truy cập.", 403);
+        }
         
-        json_response(['success' => true, 'sources' => $sources]);
+        $sources = [];
+        foreach (IMAGE_SOURCES as $key => $config) {
+            $sources[] = [
+                'key' => $key,
+                'name' => $config['name']
+            ];
+        }
+        
+        json_response(['sources' => $sources]);
         break;
 
     case 'admin_login':
@@ -1722,47 +1731,55 @@ switch ($action) {
         break;
         
     case 'toggle_featured_image':
-        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
-            json_error("Chỉ admin mới có quyền.", 403);
+        error_log("[ADMIN_ACTION] Toggling featured image status");
+        
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền đánh dấu featured", 403);
         }
         
-        $source_key = $_POST['source'] ?? null;
-        $path = $_POST['path'] ?? null;
-        $type = $_POST['type'] ?? null;
-
-        if (!$source_key || !$path || !$type) {
-            json_error("Thiếu thông tin source, path, hoặc type.", 400);
+        $source_key = $_POST['source_key'] ?? '';
+        $image_path = $_POST['image_path'] ?? '';
+        $featured_type = $_POST['featured_type'] ?? 'featured';
+        
+        if (!$source_key || !$image_path) {
+            json_error("Thiếu thông tin ảnh", 400);
         }
-
+        
+        if (!in_array($featured_type, ['featured', 'portrait', 'none'])) {
+            json_error("Featured type không hợp lệ", 400);
+        }
+        
         try {
-            if ($type === 'none') {
+            if ($featured_type === 'none') {
+                // Remove featured status completely
                 $stmt = $pdo->prepare("DELETE FROM featured_images WHERE source_key = ? AND image_relative_path = ?");
-                $stmt->execute([$source_key, $path]);
-                $message = "Đã bỏ đánh dấu ảnh.";
+                $stmt->execute([$source_key, $image_path]);
+                $new_status = null;
             } else {
-                $folder_path = dirname($path);
-                $user_id = $_SESSION['user_id'] ?? 1; // Default to 1 if not set
-                
+                // Add or update featured status
+                $folder_path = dirname($image_path);
                 $stmt = $pdo->prepare("
-                    INSERT INTO featured_images (source_key, image_relative_path, folder_path, featured_type, is_featured, featured_by)
-                    VALUES (?, ?, ?, ?, TRUE, ?)
+                    INSERT INTO featured_images (source_key, image_relative_path, folder_path, featured_type, featured_by, is_featured, priority_order)
+                    VALUES (?, ?, ?, ?, ?, TRUE, 0)
                     ON DUPLICATE KEY UPDATE 
-                        featured_type = VALUES(featured_type), 
-                        is_featured = TRUE, 
-                        updated_at = NOW()
+                    featured_type = VALUES(featured_type),
+                    is_featured = TRUE,
+                    updated_at = NOW()
                 ");
-                $stmt->execute([$source_key, $path, $folder_path, $type, $user_id]);
-                $message = "Đã cập nhật trạng thái ảnh.";
+                $stmt->execute([$source_key, $image_path, $folder_path, $featured_type, $_SESSION['user_id']]);
+                $new_status = $featured_type;
             }
             
-            json_response(['success' => true, 'message' => $message]);
-
-        } catch (Exception $e) {
-            error_log("[toggle_featured_image] Error: " . $e->getMessage());
-            json_error("Lỗi server khi cập nhật trạng thái: " . $e->getMessage(), 500);
+            json_response([
+                'success' => true,
+                'featured_status' => $new_status
+            ]);
+        } catch (PDOException $e) {
+            error_log("[ADMIN_ACTION] Error toggling featured image: " . $e->getMessage());
+            json_error("Lỗi khi toggle featured: " . $e->getMessage());
         }
         break;
-
+        
     case 'get_featured_images_stats':
         error_log("[ADMIN_ACTION] Getting featured images statistics");
         

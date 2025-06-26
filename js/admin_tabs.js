@@ -73,6 +73,13 @@ function handleTabSwitch(tabName) {
                 initializeUsersTab();
             }
             break;
+        case 'file-manager-tab':
+            // Initialize file manager if needed
+            console.log('[AdminTabs] Loading file manager tab...');
+            if (typeof fileManager !== 'undefined' && fileManager.refreshCurrentDirectory) {
+                fileManager.refreshCurrentDirectory();
+            }
+            break;
         default:
             console.log(`[AdminTabs] Unknown tab: ${tabName}`);
     }
