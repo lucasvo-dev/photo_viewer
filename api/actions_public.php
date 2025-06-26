@@ -1748,7 +1748,7 @@ switch ($action) {
                 $full_path = $image['source_key'] . '/' . ltrim($image['image_relative_path'], '/');
                 
                 // Validate that the source exists and file exists
-                $path_info = validate_source_and_path($full_path);
+                $path_info = validate_source_and_file_path($full_path);
                 if ($path_info === null || !file_exists($path_info['absolute_path'])) {
                     continue; // Skip if file doesn't exist
                 }
