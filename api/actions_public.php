@@ -1670,6 +1670,246 @@ switch ($action) {
         }
         break;
 
+    // AI Content Agent API - Get Featured Images by Category
+    case 'ai_get_featured_images':
+        try {
+            // Get request parameters
+            $category_slug = $_GET['category'] ?? null;
+            $featured_type = $_GET['type'] ?? null; // 'featured', 'portrait', or null for all
+            $limit = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 20;
+            $source_key = $_GET['source'] ?? null; // Optional source filter
+            $priority_order = $_GET['priority'] ?? 'asc'; // 'asc' or 'desc'
+            $include_metadata = isset($_GET['metadata']) ? (bool)$_GET['metadata'] : false;
+            
+            // Build the query to get featured images with category information
+            $sql = "
+                SELECT DISTINCT
+                    fi.id,
+                    fi.source_key,
+                    fi.image_relative_path,
+                    fi.folder_path,
+                    fi.featured_type,
+                    fi.priority_order,
+                    fi.alt_text,
+                    fi.description,
+                    fi.created_at,
+                    fc.category_name,
+                    fc.category_slug,
+                    fc.color_code,
+                    fc.icon_class
+                FROM featured_images fi
+                LEFT JOIN folder_category_mapping fcm ON (
+                    fi.source_key = fcm.source_key AND 
+                    (fi.folder_path = fcm.folder_path OR fi.folder_path LIKE CONCAT(fcm.folder_path, '/%'))
+                )
+                LEFT JOIN folder_categories fc ON fcm.category_id = fc.id
+                WHERE fi.is_featured = 1
+            ";
+            
+            $params = [];
+            
+            // Filter by category if specified
+            if ($category_slug) {
+                $sql .= " AND fc.category_slug = ?";
+                $params[] = $category_slug;
+            }
+            
+            // Filter by featured type if specified
+            if ($featured_type && in_array($featured_type, ['featured', 'portrait'])) {
+                $sql .= " AND fi.featured_type = ?";
+                $params[] = $featured_type;
+            }
+            
+            // Filter by source if specified
+            if ($source_key) {
+                $sql .= " AND fi.source_key = ?";
+                $params[] = $source_key;
+            }
+            
+            // Order by priority
+            $order_direction = ($priority_order === 'desc') ? 'DESC' : 'ASC';
+            $sql .= " ORDER BY fi.priority_order {$order_direction}, fi.created_at DESC";
+            
+            // Add limit
+            $sql .= " LIMIT ?";
+            $params[] = $limit;
+            
+            error_log("[ai_get_featured_images] SQL: $sql");
+            error_log("[ai_get_featured_images] Params: " . json_encode($params));
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute($params);
+            $featured_images = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Process the results to include full URLs and validate file existence
+            $processed_images = [];
+            foreach ($featured_images as $image) {
+                // Construct the full source-prefixed path
+                $full_path = $image['source_key'] . '/' . ltrim($image['image_relative_path'], '/');
+                
+                // Validate that the source exists and file exists
+                $path_info = validate_source_and_path($full_path);
+                if ($path_info === null || !file_exists($path_info['absolute_path'])) {
+                    continue; // Skip if file doesn't exist
+                }
+                
+                // Basic image data
+                $image_data = [
+                    'id' => (int)$image['id'],
+                    'source_key' => $image['source_key'],
+                    'image_path' => $image['image_relative_path'],
+                    'folder_path' => $image['folder_path'],
+                    'featured_type' => $image['featured_type'],
+                    'priority_order' => (int)$image['priority_order'],
+                    'thumbnail_url' => "/api.php?action=get_thumbnail&path=" . urlencode($full_path) . "&size=750",
+                    'full_image_url' => "/api.php?action=get_image&path=" . urlencode($full_path),
+                    'category' => [
+                        'name' => $image['category_name'],
+                        'slug' => $image['category_slug'],
+                        'color' => $image['color_code'],
+                        'icon' => $image['icon_class']
+                    ]
+                ];
+                
+                // Add metadata if requested
+                if ($include_metadata) {
+                    $file_info = new SplFileInfo($path_info['absolute_path']);
+                    $image_data['metadata'] = [
+                        'filename' => $file_info->getFilename(),
+                        'filesize' => $file_info->getSize(),
+                        'modified_date' => date('Y-m-d H:i:s', $file_info->getMTime()),
+                        'alt_text' => $image['alt_text'],
+                        'description' => $image['description'],
+                        'created_at' => $image['created_at']
+                    ];
+                    
+                    // Get image dimensions if possible
+                    if (function_exists('getimagesize')) {
+                        $dimensions = @getimagesize($path_info['absolute_path']);
+                        if ($dimensions) {
+                            $image_data['metadata']['width'] = $dimensions[0];
+                            $image_data['metadata']['height'] = $dimensions[1];
+                            $image_data['metadata']['aspect_ratio'] = round($dimensions[0] / $dimensions[1], 2);
+                        }
+                    }
+                }
+                
+                $processed_images[] = $image_data;
+            }
+            
+            // Get available categories for reference
+            $categories_stmt = $pdo->query("
+                SELECT category_name, category_slug, color_code, icon_class, description 
+                FROM folder_categories 
+                ORDER BY sort_order, category_name
+            ");
+            $available_categories = $categories_stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get available sources
+            $available_sources = [];
+            foreach (IMAGE_SOURCES as $key => $config) {
+                $available_sources[] = [
+                    'key' => $key,
+                    'name' => $config['name'] ?? $key
+                ];
+            }
+            
+            json_response([
+                'success' => true,
+                'images' => $processed_images,
+                'total_found' => count($processed_images),
+                'query_params' => [
+                    'category' => $category_slug,
+                    'type' => $featured_type,
+                    'source' => $source_key,
+                    'limit' => $limit,
+                    'priority_order' => $priority_order,
+                    'include_metadata' => $include_metadata
+                ],
+                'available_categories' => $available_categories,
+                'available_sources' => $available_sources,
+                'api_version' => '1.0',
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[ai_get_featured_images] Error: " . $e->getMessage());
+            json_error('Lỗi khi lấy danh sách ảnh featured: ' . $e->getMessage(), 500);
+        }
+        break;
+
+    // AI Content Agent API - Get Categories and Statistics
+    case 'ai_get_categories':
+        try {
+            $include_stats = isset($_GET['stats']) ? (bool)$_GET['stats'] : false;
+            
+            // Get all categories
+            $categories_stmt = $pdo->query("
+                SELECT 
+                    id,
+                    category_name,
+                    category_slug,
+                    description,
+                    color_code,
+                    icon_class,
+                    sort_order,
+                    created_at
+                FROM folder_categories 
+                ORDER BY sort_order, category_name
+            ");
+            $categories = $categories_stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Add statistics if requested
+            if ($include_stats) {
+                foreach ($categories as &$category) {
+                    // Count folders in this category
+                    $folder_count_stmt = $pdo->prepare("
+                        SELECT COUNT(*) 
+                        FROM folder_category_mapping 
+                        WHERE category_id = ?
+                    ");
+                    $folder_count_stmt->execute([$category['id']]);
+                    $category['folder_count'] = (int)$folder_count_stmt->fetchColumn();
+                    
+                    // Count featured images in this category
+                    $featured_count_stmt = $pdo->prepare("
+                        SELECT 
+                            COUNT(*) as total_featured,
+                            COUNT(CASE WHEN fi.featured_type = 'featured' THEN 1 END) as featured_count,
+                            COUNT(CASE WHEN fi.featured_type = 'portrait' THEN 1 END) as portrait_count
+                        FROM featured_images fi
+                        JOIN folder_category_mapping fcm ON (
+                            fi.source_key = fcm.source_key AND 
+                            (fi.folder_path = fcm.folder_path OR fi.folder_path LIKE CONCAT(fcm.folder_path, '/%'))
+                        )
+                        WHERE fcm.category_id = ? AND fi.is_featured = 1
+                    ");
+                    $featured_count_stmt->execute([$category['id']]);
+                    $featured_stats = $featured_count_stmt->fetch(PDO::FETCH_ASSOC);
+                    
+                    $category['featured_images'] = [
+                        'total' => (int)$featured_stats['total_featured'],
+                        'featured' => (int)$featured_stats['featured_count'],
+                        'portrait' => (int)$featured_stats['portrait_count']
+                    ];
+                }
+            }
+            
+            json_response([
+                'success' => true,
+                'categories' => $categories,
+                'total_categories' => count($categories),
+                'includes_stats' => $include_stats,
+                'api_version' => '1.0',
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[ai_get_categories] Error: " . $e->getMessage());
+            json_error('Lỗi khi lấy danh sách categories: ' . $e->getMessage(), 500);
+        }
+        break;
+
     default:
         json_error('Hành động không hợp lệ.', 400);
 } 
