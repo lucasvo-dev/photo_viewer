@@ -31,6 +31,11 @@ class AdminFileManager {
         this.currentItems = []; // Store current directory items
         this.images = []; // Store only image items for preview
         
+        // Event handlers to prevent duplicates
+        this.itemClickHandler = null;
+        this.itemChangeHandler = null;
+        this.globalDropdownHandler = null;
+        
         this.init();
     }
 
@@ -901,6 +906,7 @@ class AdminFileManager {
 
     bindItemEvents() {
         const content = document.getElementById('file-manager-content');
+        if (!content) return;
         
         // Select all checkbox
         const selectAllCheckbox = content.querySelector('#fm-select-all');
@@ -933,8 +939,16 @@ class AdminFileManager {
         };
         document.addEventListener('click', this.globalDropdownHandler);
 
-        // Item actions
-        content.addEventListener('click', (e) => {
+        // Remove old item-specific listeners to prevent duplicates
+        if (this.itemClickHandler) {
+            content.removeEventListener('click', this.itemClickHandler);
+        }
+        if (this.itemChangeHandler) {
+            content.removeEventListener('change', this.itemChangeHandler);
+        }
+
+        // Define and store the new click handler
+        this.itemClickHandler = (e) => {
             const item = e.target.closest('.fm-item');
             if (!item) return;
 
@@ -948,7 +962,6 @@ class AdminFileManager {
                         e.preventDefault();
                         e.stopPropagation();
                         
-                        // Prevent multiple rapid clicks
                         if (this.isNavigating) {
                             this.log('Navigation already in progress, ignoring directory click');
                             return;
@@ -965,7 +978,6 @@ class AdminFileManager {
                         e.preventDefault();
                         e.stopPropagation();
                         
-                        // Find index of this image in current items
                         const imageIndex = this.currentItems.findIndex(i => i.path === itemPath && i.is_image);
                         if (imageIndex >= 0) {
                             this.openPreview(imageIndex);
@@ -975,7 +987,6 @@ class AdminFileManager {
                 case 'toggle-featured-dropdown':
                     e.preventDefault();
                     e.stopPropagation();
-                    // Close other dropdowns
                     document.querySelectorAll('.fm-featured-dropdown .dropdown-content.show').forEach(d => {
                         if (d.closest('.fm-item') !== item) {
                             d.classList.remove('show');
@@ -989,13 +1000,11 @@ class AdminFileManager {
                     e.stopPropagation();
                     const featuredType = e.target.closest('[data-type]').dataset.type;
                     
-                    // Close dropdown immediately to prevent interaction issues
                     const dropdownToClose = item.querySelector('.fm-featured-dropdown .dropdown-content.show');
                     if (dropdownToClose) {
                         dropdownToClose.classList.remove('show');
                     }
                     
-                    // Perform the featured action with error handling
                     try {
                         this.setFeatured(itemPath, featuredType);
                     } catch (error) {
@@ -1015,29 +1024,29 @@ class AdminFileManager {
                     this.viewFile(itemPath);
                     break;
             }
-        });
+        };
 
-        // Item selection with folder protection
-        content.addEventListener('change', (e) => {
+        // Define and store the new change handler
+        this.itemChangeHandler = (e) => {
             if (e.target.classList.contains('item-checkbox')) {
                 const item = e.target.closest('.fm-item');
                 const itemType = item.dataset.type;
                 
-                // If user is trying to select a folder
                 if (itemType === 'directory' && e.target.checked) {
-                    // Check how many folders are already selected
                     const selectedFolders = document.querySelectorAll('.fm-item[data-type="directory"] .item-checkbox:checked');
-                    
                     if (selectedFolders.length > 1) {
-                        // Uncheck this folder and show warning
                         e.target.checked = false;
-                        this.showMessage('Chỉ được chọn tối đa 1 thư mục để đảm bảo an toàn', 'warning');
+                        this.showCompactMessage('Chỉ được chọn tối đa 1 thư mục để đảm bảo an toàn', 'warning');
                     }
                 }
                 
                 this.updateSelection();
             }
-        });
+        };
+
+        // Add the new listeners
+        content.addEventListener('click', this.itemClickHandler);
+        content.addEventListener('change', this.itemChangeHandler);
     }
 
     async openDirectory(path) {

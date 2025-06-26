@@ -1,10 +1,11 @@
 /* User Management Styles */
 .admin-section {
-    background: #fff;
+    background: #0d1117; /* Dark background */
+    border: 1px solid #30363d;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    box-shadow: none;
 }
 
 .admin-actions {
@@ -15,7 +16,8 @@
     max-width: 400px;
     margin: 20px 0;
     padding: 20px;
-    background: #f8f9fa;
+    background: #161b22; /* Darker background */
+    border: 1px solid #30363d;
     border-radius: 8px;
 }
 
@@ -27,14 +29,23 @@
     display: block;
     margin-bottom: 5px;
     font-weight: 500;
+    color: #e6edf3; /* Light text */
 }
 
 .form-group input {
     width: 100%;
     padding: 8px 12px;
-    border: 1px solid #ddd;
+    background: #0d1117; /* Input background */
+    border: 1px solid #30363d;
     border-radius: 4px;
     font-size: 14px;
+    color: #e6edf3; /* Light text */
+}
+
+.form-group input:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
 }
 
 .form-actions {
@@ -53,16 +64,17 @@
 .admin-table td {
     padding: 12px;
     text-align: left;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #30363d; /* Dark border */
+    color: #e6edf3; /* Light text */
 }
 
 .admin-table th {
-    background: #f8f9fa;
+    background: #161b22; /* Dark header */
     font-weight: 500;
 }
 
 .admin-table tr:hover {
-    background: #f8f9fa;
+    background: #161b22; /* Dark hover */
 }
 
 .button.small {
@@ -126,11 +138,13 @@
 }
 
 .modal-box {
-    background: #fff;
+    background: #161b22; /* Dark modal */
     padding: 20px;
     border-radius: 8px;
     min-width: 300px;
     max-width: 500px;
+    border: 1px solid #30363d;
+    color: #e6edf3;
 }
 
 .modal-box h3 {
@@ -154,12 +168,12 @@
 
 .picks-stats li {
     padding: 5px 0;
-    border-bottom: 1px solid #eee;
+    border-bottom: 1px solid #30363d; /* Dark border */
 }
 
 .no-data {
     text-align: center;
-    color: #6c757d;
+    color: #8b949e; /* Muted light text */
     padding: 20px;
 }
 
@@ -176,17 +190,17 @@
 }
 
 .cache-stat-item {
-    background: #f8f9fa;
+    background: #161b22; /* Dark background */
     padding: 1rem;
     border-radius: 8px;
-    border: 1px solid #e9ecef;
+    border: 1px solid #30363d;
     text-align: center;
 }
 
 .stat-label {
     display: block;
     font-size: 0.9rem;
-    color: #6c757d;
+    color: #8b949e; /* Muted light text */
     margin-bottom: 0.5rem;
 }
 
@@ -194,7 +208,7 @@
     display: block;
     font-size: 1.5rem;
     font-weight: bold;
-    color: #495057;
+    color: #e6edf3; /* Light text */
 }
 
 .stat-value.stat-error {
@@ -220,10 +234,19 @@
 }
 
 .form-select, .form-input {
-    padding: 0.5rem;
-    border: 1px solid #ced4da;
-    border-radius: 4px;
-    font-size: 0.9rem;
+    width: 100%;
+    padding: 8px 12px;
+    background: #0d1117;
+    border: 1px solid #30363d;
+    border-radius: 6px;
+    color: #e6edf3;
+    font-size: 14px;
+}
+
+.form-select:focus, .form-input:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.15);
 }
 
 .form-select {
@@ -231,14 +254,13 @@
 }
 
 .form-input {
-    flex: 1;
-    min-width: 250px;
+    flex-grow: 1;
 }
 
 .help-text {
-    font-size: 0.9rem;
-    color: #6c757d;
-    margin: 0;
+    font-size: 0.85rem;
+    color: #8b949e; /* Muted light text */
+    margin-top: 5px;
 }
 
 .path-cell {
@@ -260,6 +282,16 @@
     white-space: nowrap;
     color: #dc3545;
     cursor: help;
+}
+
+.error-cell pre {
+    background-color: #21262d;
+    color: #f85149;
+    padding: 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    white-space: pre-wrap;
+    word-break: break-all;
 }
 
 @media (max-width: 768px) {
