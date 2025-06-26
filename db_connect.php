@@ -559,6 +559,121 @@ try {
             error_log("Error during jet_image_picks table cleanup: " . $e->getMessage());
         }
 
+        // --- NEW TABLES FOR CATEGORY AND FEATURED IMAGES ---
+        
+        // Create folder_categories table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS folder_categories (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            category_name VARCHAR(100) NOT NULL UNIQUE,
+            category_slug VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            color_code VARCHAR(7) DEFAULT '#3B82F6',
+            icon_class VARCHAR(50) DEFAULT 'fas fa-folder',
+            sort_order INT DEFAULT 0,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )");
+        
+        // Create folder_category_mapping table  
+        $pdo->exec("CREATE TABLE IF NOT EXISTS folder_category_mapping (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            source_key VARCHAR(50) NOT NULL,
+            folder_path VARCHAR(500) NOT NULL,
+            category_id INT NOT NULL,
+            is_inherited BOOLEAN DEFAULT FALSE,
+            created_by INT DEFAULT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (category_id) REFERENCES folder_categories(id) ON DELETE CASCADE,
+            FOREIGN KEY (created_by) REFERENCES users(id) ON DELETE SET NULL,
+            UNIQUE KEY unique_folder_category (source_key, folder_path(255)),
+            KEY idx_source_folder (source_key, folder_path(255))
+        )");
+        
+        // Create featured_images table
+        $pdo->exec("CREATE TABLE IF NOT EXISTS featured_images (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            source_key VARCHAR(50) NOT NULL,
+            image_relative_path VARCHAR(500) NOT NULL,
+            folder_path VARCHAR(500) NOT NULL,
+            featured_type ENUM('featured', 'portrait') DEFAULT 'featured',
+            is_featured BOOLEAN DEFAULT TRUE,
+            priority_order INT DEFAULT 0,
+            featured_by INT DEFAULT NULL,
+            alt_text VARCHAR(255),
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            FOREIGN KEY (featured_by) REFERENCES users(id) ON DELETE SET NULL,
+            UNIQUE KEY unique_featured_image (source_key, image_relative_path(255)),
+            KEY idx_folder_featured (source_key, folder_path(255), is_featured),
+            KEY idx_featured_type (featured_type, is_featured)
+        )");
+        
+        // Insert default photography categories if not exists
+        $check_categories = $pdo->query("SELECT COUNT(*) FROM folder_categories")->fetchColumn();
+        if ($check_categories == 0) {
+            $pdo->exec("INSERT INTO folder_categories (category_name, category_slug, description, color_code, sort_order) VALUES
+                ('Đám Cưới', 'wedding', 'Cưới chính thức, lễ cưới, tiệc cưới', '#EF4444', 1),
+                ('Pre-Wedding', 'pre-wedding', 'Cưới chụp trước ngày cưới, concept romantic', '#F97316', 2),
+                ('Kỷ Yếu', 'graduation', 'Kỷ yếu học sinh sinh viên, concept và trường học', '#3B82F6', 3),
+                ('Doanh Nghiệp', 'corporate', 'Doanh nghiệp, profile, team building, sự kiện công ty', '#6B7280', 4),
+                ('Thẻ', 'id-photo', 'Thẻ, hồ sơ, chân dung chính thức', '#10B981', 5)
+            ");
+            error_log("Inserted default photography categories.");
+        } else {
+            // Update existing categories to new naming scheme
+            try {
+                $pdo->exec("UPDATE folder_categories SET 
+                    category_name = 'Đám Cưới', 
+                    description = 'Cưới chính thức, lễ cưới, tiệc cưới'
+                    WHERE category_slug = 'wedding' AND category_name LIKE '%Ảnh%'");
+                
+                $pdo->exec("UPDATE folder_categories SET 
+                    category_name = 'Pre-Wedding', 
+                    description = 'Cưới chụp trước ngày cưới, concept romantic'
+                    WHERE category_slug = 'pre-wedding' AND category_name LIKE '%Ảnh%'");
+                
+                // Merge graduation categories
+                $stmt = $pdo->prepare("SELECT id FROM folder_categories WHERE category_slug = 'graduation-school' LIMIT 1");
+                $stmt->execute();
+                $school_id = $stmt->fetchColumn();
+                
+                $stmt = $pdo->prepare("SELECT id FROM folder_categories WHERE category_slug = 'graduation-concept' LIMIT 1");
+                $stmt->execute();
+                $concept_id = $stmt->fetchColumn();
+                
+                if ($school_id && $concept_id) {
+                    // Update mappings from concept to school category
+                    $pdo->prepare("UPDATE folder_category_mapping SET category_id = ? WHERE category_id = ?")
+                        ->execute([$school_id, $concept_id]);
+                    
+                    // Delete concept category
+                    $pdo->prepare("DELETE FROM folder_categories WHERE id = ?")->execute([$concept_id]);
+                }
+                
+                // Update remaining categories
+                $pdo->exec("UPDATE folder_categories SET 
+                    category_name = 'Kỷ Yếu', 
+                    category_slug = 'graduation',
+                    description = 'Kỷ yếu học sinh sinh viên, concept và trường học'
+                    WHERE category_slug IN ('graduation-school', 'graduation-concept')");
+                
+                $pdo->exec("UPDATE folder_categories SET 
+                    category_name = 'Doanh Nghiệp', 
+                    description = 'Doanh nghiệp, profile, team building, sự kiện công ty'
+                    WHERE category_slug = 'corporate' AND category_name LIKE '%Ảnh%'");
+                
+                $pdo->exec("UPDATE folder_categories SET 
+                    category_name = 'Thẻ', 
+                    description = 'Thẻ, hồ sơ, chân dung chính thức'
+                    WHERE category_slug = 'id-photo' AND category_name LIKE '%Ảnh%'");
+                
+                error_log("Updated category names and merged graduation categories.");
+            } catch (PDOException $e) {
+                error_log("Error updating categories: " . $e->getMessage());
+            }
+        }
+
         // --- AUTO-MIGRATION: Ensure new columns exist ---
         add_column_if_not_exists($pdo, 'zip_jobs', 'items_json', 'TEXT DEFAULT NULL');
         add_column_if_not_exists($pdo, 'zip_jobs', 'result_message', 'TEXT NULL DEFAULT NULL');
@@ -603,6 +718,33 @@ try {
         } else {
             // Admin user already exists
             error_log("AUTO-SETUP: Admin user already exists, skipping creation.");
+        }
+
+        // Create directory_file_counts table for performance optimization
+        $sql_directory_counts = "CREATE TABLE IF NOT EXISTS directory_file_counts (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            source_key VARCHAR(50) NOT NULL,
+            directory_path VARCHAR(1024) NOT NULL,
+            file_count INT DEFAULT 0,
+            last_scanned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            scan_duration_ms INT DEFAULT 0,
+            is_scanning TINYINT(1) DEFAULT 0,
+            scan_error TEXT NULL,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            
+            UNIQUE KEY unique_directory (source_key, directory_path(500)),
+            INDEX idx_source_key (source_key),
+            INDEX idx_last_scanned (last_scanned_at),
+            INDEX idx_is_scanning (is_scanning),
+            INDEX idx_file_count (file_count)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+        try {
+            $pdo->exec($sql_directory_counts);
+            error_log("[DB Setup] directory_file_counts table created/verified successfully");
+        } catch (PDOException $e) {
+            error_log("[DB Setup] Error creating directory_file_counts table: " . $e->getMessage());
         }
 
     }

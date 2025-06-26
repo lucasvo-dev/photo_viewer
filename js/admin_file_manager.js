@@ -24,6 +24,13 @@ class AdminFileManager {
         this.activeUploadSessions = []; // Track active upload sessions
         this.globalCancelFlag = false; // Global flag to stop all monitoring
         
+        // New properties for grid view and preview
+        this.currentView = 'list'; // 'list' or 'grid'
+        this.previewOpen = false;
+        this.currentPreviewIndex = -1;
+        this.currentItems = []; // Store current directory items
+        this.images = []; // Store only image items for preview
+        
         this.init();
     }
 
@@ -240,6 +247,18 @@ class AdminFileManager {
     }
 
     renderDirectory(items) {
+        // Store items for grid/list view and preview
+        this.currentItems = items || [];
+        this.images = this.currentItems.filter(item => item.is_image);
+        
+        if (this.currentView === 'grid') {
+            this.renderGridView(items);
+        } else {
+            this.renderListView(items);
+        }
+    }
+
+    renderListView(items) {
         const content = document.getElementById('file-manager-content');
         
         if (!items || items.length === 0) {
@@ -257,13 +276,61 @@ class AdminFileManager {
         const directories = items.filter(item => item.type === 'directory').length;
         const files = items.filter(item => item.type === 'file').length;
         const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
-        
-        // Check if we're at root level (no file counts available)
-        const isRootLevel = directories > 0 && !items.some(item => item.type === 'directory' && item.file_count !== undefined);
 
         const itemsHtml = items.map(item => this.renderItem(item)).join('');
         
+        // Check if current folder has category
+        const currentCategory = this.getCurrentFolderCategory(items);
+        
         content.innerHTML = `
+            ${currentCategory ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="${currentCategory.icon_class || 'fas fa-folder'}"></i>
+                        Category: <strong style="color: ${currentCategory.color_code}">${currentCategory.category_name}</strong>
+                        ${currentCategory.inherited ? '<span class="fm-category-inherited">(Inherited from parent)</span>' : ''}
+                    </div>
+                    ${!currentCategory.inherited ? `
+                        <button onclick="fileManager.editFolderCategory()" class="button small">
+                            <i class="fas fa-edit"></i> Thay đổi
+                        </button>
+                    ` : ''}
+                </div>
+            ` : !this.isRootDirectory() ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="fas fa-tag"></i>
+                        Chưa có category
+                    </div>
+                    <button onclick="fileManager.setFolderCategory()" class="button small primary">
+                        <i class="fas fa-plus"></i> Set Category
+                    </button>
+                </div>
+            ` : ''}
+            <div class="fm-toolbar">
+                <div class="fm-view-toggle">
+                    <button class="${this.currentView === 'list' ? 'active' : ''}" onclick="fileManager.toggleView('list')">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button class="${this.currentView === 'grid' ? 'active' : ''}" onclick="fileManager.toggleView('grid')">
+                        <i class="fas fa-th"></i>
+                    </button>
+                </div>
+                <div class="fm-stats">
+                    <span class="fm-stat-item">
+                        <i class="fas fa-folder"></i> ${directories} thư mục
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-file"></i> ${files} file
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-list"></i> Tổng: ${totalItems} mục
+                    </span>
+                </div>
+            </div>
             <div class="fm-controls">
                 <div class="selection-controls">
                     <label>
@@ -272,27 +339,6 @@ class AdminFileManager {
                     <button id="fm-delete-selected" class="button danger" disabled>
                         <i class="fas fa-trash"></i> Xóa đã chọn
                     </button>
-                </div>
-                <div class="fm-stats">
-                    <span class="fm-stat-item">
-                        <i class="fas fa-folder"></i> ${directories} thư mục
-                    </span>
-                    ${files > 0 ? `
-                        <span class="fm-stat-item">
-                            <i class="fas fa-file"></i> ${files} file
-                        </span>
-                        <span class="fm-stat-item">
-                            <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
-                        </span>
-                    ` : ''}
-                    <span class="fm-stat-item">
-                        <i class="fas fa-list"></i> ${isRootLevel ? `${totalItems} thư mục gốc` : `Tổng: ${totalItems} mục`}
-                    </span>
-                    ${isRootLevel ? `
-                        <span class="fm-stat-item fm-performance-note">
-                            <i class="fas fa-info-circle"></i> Vào thư mục để xem số lượng file
-                        </span>
-                    ` : ''}
                 </div>
             </div>
             <div class="fm-items">
@@ -303,15 +349,109 @@ class AdminFileManager {
         this.bindItemEvents();
     }
 
+    renderGridView(items) {
+        const content = document.getElementById('file-manager-content');
+        
+        if (!items || items.length === 0) {
+            content.innerHTML = `
+                <div class="fm-empty">
+                    <i class="fas fa-folder-open"></i>
+                    <p>Thư mục trống</p>
+                </div>
+            `;
+            return;
+        }
+
+        // Calculate statistics
+        const totalItems = items.length;
+        const featuredCount = items.filter(item => item.is_featured).length;
+        const portraitCount = items.filter(item => item.featured_type === 'portrait').length;
+
+        // Check if current folder has category
+        const currentCategory = this.getCurrentFolderCategory(items);
+        
+        content.innerHTML = `
+            ${currentCategory ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="${currentCategory.icon_class || 'fas fa-folder'}"></i>
+                        Category: <strong style="color: ${currentCategory.color_code}">${currentCategory.category_name}</strong>
+                        ${currentCategory.inherited ? '<span class="fm-category-inherited">(Inherited from parent)</span>' : ''}
+                    </div>
+                    ${!currentCategory.inherited ? `
+                        <button onclick="fileManager.editFolderCategory()" class="button small">
+                            <i class="fas fa-edit"></i> Thay đổi
+                        </button>
+                    ` : ''}
+                </div>
+            ` : !this.isRootDirectory() ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="fas fa-tag"></i>
+                        Chưa có category
+                    </div>
+                    <button onclick="fileManager.setFolderCategory()" class="button small primary">
+                        <i class="fas fa-plus"></i> Set Category
+                    </button>
+                </div>
+            ` : ''}
+            <div class="fm-toolbar">
+                <div class="fm-view-toggle">
+                    <button class="${this.currentView === 'list' ? 'active' : ''}" onclick="fileManager.toggleView('list')">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button class="${this.currentView === 'grid' ? 'active' : ''}" onclick="fileManager.toggleView('grid')">
+                        <i class="fas fa-th"></i>
+                    </button>
+                </div>
+                <div class="fm-filters">
+                    <button class="filter-btn active" data-filter="all">All (${totalItems})</button>
+                    <button class="filter-btn" data-filter="featured">Featured ⭐ (${featuredCount})</button>
+                    <button class="filter-btn" data-filter="portrait">Portrait 👤 (${portraitCount})</button>
+                </div>
+            </div>
+            <div class="fm-grid-view">
+                ${items.map((item, index) => this.renderGridItem(item, index)).join('')}
+            </div>
+        `;
+
+        this.bindGridEvents();
+    }
+
     renderItem(item) {
         const isDirectory = item.type === 'directory';
         const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
         const size = isDirectory ? '' : this.formatFileSize(item.size);
         const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
         
-        // File count for directories (only show if available)
-        const fileCount = isDirectory && item.file_count !== undefined && item.file_count > 0 ? 
+        // File count for directories
+        const fileCount = isDirectory && item.file_count !== undefined ? 
             `<span class="fm-item-count">${item.file_count} files</span>` : '';
+
+        // Category info for items
+        let categoryInfo = '';
+        if (isDirectory && item.category) {
+            categoryInfo = `<span class="fm-item-category">
+                <i class="${item.category.icon_class || 'fas fa-tag'}"></i>
+                ${item.category.category_name}
+            </span>`;
+        } else if (isDirectory) {
+            // Check for inherited category from current folder
+            const currentCategory = this.getCurrentFolderCategory(this.currentItems);
+            if (currentCategory) {
+                categoryInfo = `<span class="fm-item-category inherited">
+                    <i class="${currentCategory.icon_class || 'fas fa-tag'}"></i>
+                    ${currentCategory.category_name} (inherited)
+                </span>`;
+            }
+        }
+
+        // Featured badge for images
+        const featuredBadge = item.is_featured ? `
+            <span class="featured-badge ${item.featured_type}">
+                ${item.featured_type === 'portrait' ? '👤' : '⭐'}
+            </span>
+        ` : '';
 
         return `
             <div class="fm-item" data-path="${item.path}" data-type="${item.type}">
@@ -320,17 +460,28 @@ class AdminFileManager {
                 </div>
                 <div class="fm-item-icon">
                     <i class="${icon}"></i>
+                    ${isDirectory && item.category ? `<span class="fm-category-indicator" style="background: ${item.category.color_code}"></span>` : ''}
+                    ${featuredBadge}
                 </div>
                 <div class="fm-item-details">
                     <div class="fm-item-name" ${isDirectory ? 'data-action="open"' : ''}>${item.name}</div>
                     <div class="fm-item-meta">
                         ${size}${size && fileCount ? ' • ' : ''}${fileCount}${(size || fileCount) && modified ? ' • ' : ''}${modified}
+                        ${categoryInfo}
                     </div>
                 </div>
                 <div class="fm-item-actions">
                     <button class="fm-action-btn" data-action="rename" title="Đổi tên">
                         <i class="fas fa-edit"></i>
                     </button>
+                    ${isDirectory ? `
+                        <div class="fm-category-dropdown">
+                            <button class="category-dropdown-btn" onclick="fileManager.showCategoryDropdown(event, '${item.path}')" title="Set Category">
+                                <i class="fas fa-tag"></i>
+                                <i class="fas fa-chevron-down"></i>
+                            </button>
+                        </div>
+                    ` : ''}
                     <button class="fm-action-btn danger" data-action="delete" title="Xóa">
                         <i class="fas fa-trash"></i>
                     </button>
@@ -343,6 +494,561 @@ class AdminFileManager {
                 </div>
             </div>
         `;
+    }
+
+    renderGridItem(item, index) {
+        const isDirectory = item.type === 'directory';
+        
+        if (isDirectory) {
+            return `
+                <div class="fm-grid-item folder" data-path="${item.path}" data-type="directory" data-index="${index}">
+                    ${item.category ? `
+                        <div class="fm-category-badge" style="background: ${item.category.color_code}">
+                            ${item.category.category_name}
+                        </div>
+                    ` : ''}
+                    <div class="folder-icon">
+                        <i class="fas fa-folder"></i>
+                    </div>
+                    <div class="folder-name">${item.name}</div>
+                    <div class="folder-meta">${item.file_count || 0} items</div>
+                </div>
+            `;
+        } else if (item.is_image) {
+            const badge = item.featured_type === 'featured' ? '⭐' : 
+                         item.featured_type === 'portrait' ? '👤' : '';
+
+            // Build proper source-prefixed path
+            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
+            
+            return `
+                <div class="fm-grid-item image" data-index="${index}" data-path="${item.path}" data-type="file">
+                    <img src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750" 
+                         loading="lazy" alt="${item.name}" />
+                    ${badge ? `<span class="featured-badge ${item.featured_type}">${badge}</span>` : ''}
+                    <div class="fm-grid-item-name">${item.name}</div>
+                </div>
+            `;
+        } else {
+            // Non-image files
+            const icon = this.getFileIcon(item.extension);
+            return `
+                <div class="fm-grid-item file" data-index="${index}" data-path="${item.path}" data-type="file">
+                    <div class="file-icon">
+                        <i class="${icon}"></i>
+                    </div>
+                    <div class="file-name">${item.name}</div>
+                    <div class="file-meta">${this.formatFileSize(item.size)}</div>
+                </div>
+            `;
+        }
+    }
+
+    toggleView(view) {
+        this.currentView = view;
+        this.renderDirectory(this.currentItems);
+    }
+
+    isRootDirectory() {
+        return !this.currentPath || this.currentPath.trim() === '' || this.currentPath === '/' || this.currentPath === '.';
+    }
+
+    getCurrentFolderCategory(items) {
+        // Check if any directory has a category (indicating inheritance)
+        for (const item of items) {
+            if (item.type === 'directory' && item.category) {
+                // This means parent folder has category
+                return {
+                    ...item.category,
+                    inherited: true
+                };
+            }
+        }
+        return null;
+    }
+
+    bindGridEvents() {
+        const content = document.getElementById('file-manager-content');
+        
+        // Grid item clicks
+        content.addEventListener('click', (e) => {
+            const gridItem = e.target.closest('.fm-grid-item');
+            if (!gridItem) return;
+            
+            const type = gridItem.dataset.type;
+            const path = gridItem.dataset.path;
+            const index = parseInt(gridItem.dataset.index);
+            
+            if (type === 'directory') {
+                this.openDirectory(path);
+            } else if (type === 'file') {
+                const item = this.currentItems[index];
+                if (item && item.is_image) {
+                    this.openPreview(index);
+                }
+            }
+        });
+        
+        // Filter buttons
+        const filterBtns = content.querySelectorAll('.filter-btn');
+        filterBtns.forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                filterBtns.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                this.applyFilter(btn.dataset.filter);
+            });
+        });
+    }
+
+    applyFilter(filter) {
+        let filteredItems = [...this.currentItems];
+        
+        switch (filter) {
+            case 'featured':
+                filteredItems = filteredItems.filter(item => item.featured_type === 'featured');
+                break;
+            case 'portrait':
+                filteredItems = filteredItems.filter(item => item.featured_type === 'portrait');
+                break;
+        }
+        
+        const gridView = document.querySelector('.fm-grid-view');
+        if (gridView) {
+            gridView.innerHTML = filteredItems.map((item, index) => 
+                this.renderGridItem(item, index)
+            ).join('');
+        }
+    }
+
+    openPreview(index) {
+        if (!this.currentItems[index] || !this.currentItems[index].is_image) {
+            console.error('[FileManager] Attempted to open preview with invalid image.');
+            return;
+        }
+        
+        this.currentPreviewIndex = index;
+        this.previewOpen = true;
+        
+        // Filter only images for preview navigation
+        this.images = this.currentItems.filter(item => item.is_image);
+        const imageIndex = this.images.findIndex(img => img.name === this.currentItems[index].name);
+        
+        if (imageIndex === -1) {
+            console.error('[FileManager] Could not find image in filtered list.');
+            return;
+        }
+        
+        this.currentPreviewIndex = imageIndex;
+        
+        // Create overlay if it doesn't exist
+        if (!document.getElementById('fm-preview-overlay')) {
+            this.renderPreviewOverlayStructure();
+        }
+        
+        // Update the main image
+        this.updatePreviewImage(this.images[this.currentPreviewIndex]);
+        
+        // Render filmstrip
+        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
+        
+        // Add keyboard listeners
+        this.bindPreviewEvents();
+        
+        // Focus overlay for keyboard navigation
+        const overlay = document.getElementById('fm-preview-overlay');
+        if (overlay) {
+            overlay.tabIndex = -1;
+            overlay.style.outline = 'none';
+            setTimeout(() => overlay.focus(), 50);
+        }
+    }
+
+    renderPreviewOverlayStructure() {
+        // Remove existing overlay if any
+        const existingOverlay = document.getElementById('fm-preview-overlay');
+        if (existingOverlay) existingOverlay.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'fm-preview-overlay';
+        overlay.className = 'fm-preview-overlay';
+
+        // Main image container
+        const imageContainer = document.createElement('div');
+        imageContainer.className = 'fm-preview-container';
+        
+        const imgPreview = document.createElement('img');
+        imgPreview.id = 'fm-preview-main-image';
+        imgPreview.className = 'fm-preview-image';
+        imgPreview.alt = 'Preview Image';
+        
+        imageContainer.appendChild(imgPreview);
+
+        // Header with info and close button
+        const header = document.createElement('div');
+        header.className = 'fm-preview-header';
+        
+        const infoPanel = document.createElement('div');
+        infoPanel.className = 'fm-preview-info';
+        
+        const imageTitle = document.createElement('h3');
+        imageTitle.id = 'fm-preview-title';
+        
+        const badgesContainer = document.createElement('div');
+        badgesContainer.id = 'fm-preview-badges';
+        badgesContainer.className = 'fm-preview-badges';
+        
+        infoPanel.appendChild(imageTitle);
+        infoPanel.appendChild(badgesContainer);
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'fm-preview-close';
+        closeBtn.innerHTML = '<i class="fas fa-times"></i>';
+        closeBtn.addEventListener('click', () => this.closePreview());
+        
+        header.appendChild(infoPanel);
+        header.appendChild(closeBtn);
+
+        // Navigation controls
+        const controls = document.createElement('div');
+        controls.className = 'fm-preview-controls';
+        
+        const prevBtn = document.createElement('button');
+        prevBtn.className = 'fm-preview-nav-btn prev';
+        prevBtn.innerHTML = '<i class="fas fa-chevron-left"></i>';
+        prevBtn.addEventListener('click', () => this.navigatePreview(-1));
+        
+        const nextBtn = document.createElement('button');
+        nextBtn.className = 'fm-preview-nav-btn next';
+        nextBtn.innerHTML = '<i class="fas fa-chevron-right"></i>';
+        nextBtn.addEventListener('click', () => this.navigatePreview(1));
+        
+        controls.appendChild(prevBtn);
+        controls.appendChild(nextBtn);
+
+        // Filmstrip container
+        const filmstrip = document.createElement('div');
+        filmstrip.id = 'fm-preview-filmstrip';
+        filmstrip.className = 'fm-preview-filmstrip';
+
+        // Assemble overlay
+        overlay.appendChild(header);
+        overlay.appendChild(imageContainer);
+        overlay.appendChild(controls);
+        overlay.appendChild(filmstrip);
+
+        document.body.appendChild(overlay);
+    }
+
+    updatePreviewImage(image) {
+        const imgPreview = document.getElementById('fm-preview-main-image');
+        const titleElement = document.getElementById('fm-preview-title');
+        const badgesContainer = document.getElementById('fm-preview-badges');
+        
+        if (!imgPreview || !titleElement || !badgesContainer) return;
+        
+        const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
+        
+        imgPreview.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+        imgPreview.alt = image.name;
+        
+        titleElement.textContent = image.name;
+        
+        // Update badges
+        badgesContainer.innerHTML = '';
+        if (image.featured_type === 'featured') {
+            badgesContainer.innerHTML += '<span class="badge featured">⭐ Featured</span>';
+        }
+        if (image.featured_type === 'portrait') {
+            badgesContainer.innerHTML += '<span class="badge portrait">👤 Portrait</span>';
+        }
+        
+        // Update navigation buttons
+        const prevBtn = document.querySelector('.fm-preview-nav-btn.prev');
+        const nextBtn = document.querySelector('.fm-preview-nav-btn.next');
+        
+        if (prevBtn) {
+            prevBtn.disabled = this.currentPreviewIndex === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
+        }
+    }
+
+    renderThumbnailFilmstrip(images, currentIndex) {
+        const filmstripContainer = document.getElementById('fm-preview-filmstrip');
+        if (!filmstripContainer) return;
+
+        filmstripContainer.innerHTML = '';
+
+        images.forEach((image, index) => {
+            const thumbContainer = document.createElement('div');
+            thumbContainer.className = 'fm-filmstrip-thumb';
+            thumbContainer.dataset.index = index;
+            
+            if (index === currentIndex) {
+                thumbContainer.classList.add('active');
+            }
+
+            const thumbImg = document.createElement('img');
+            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
+            
+            // Lazy loading for filmstrip
+            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 2;
+            
+            if (shouldLoadImmediately) {
+                thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
+            } else {
+                thumbImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiMyMTI2MkQiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iIzMwMzYzRCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjEwIiBmaWxsPSIjNThhNmZmIiBvcGFjaXR5PSIwLjMiLz48L3N2Zz4=';
+                thumbImg.dataset.lazySrc = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
+                thumbImg.classList.add('lazy-load');
+            }
+            
+            thumbImg.alt = image.name;
+
+            // Add featured badges to filmstrip
+            if (image.featured_type) {
+                const badge = document.createElement('span');
+                badge.className = `featured-badge ${image.featured_type}`;
+                badge.textContent = image.featured_type === 'featured' ? '⭐' : '👤';
+                thumbContainer.appendChild(badge);
+            }
+
+            thumbContainer.appendChild(thumbImg);
+            
+            thumbContainer.addEventListener('click', () => {
+                this.navigateToImage(index);
+            });
+
+            filmstripContainer.appendChild(thumbContainer);
+        });
+    }
+
+    bindPreviewEvents() {
+        // Remove any existing listeners first
+        document.removeEventListener('keydown', this.boundHandlePreviewKeypress);
+        
+        // Bind and store the reference
+        this.boundHandlePreviewKeypress = this.handlePreviewKeypress.bind(this);
+        document.addEventListener('keydown', this.boundHandlePreviewKeypress);
+    }
+
+    handlePreviewKeypress(e) {
+        if (!this.previewOpen) return;
+
+        // Prevent default behavior for navigation keys to avoid conflicts
+        if (['Escape', 'ArrowLeft', 'ArrowRight', '1', '2'].includes(e.key)) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+
+        if (e.key === 'Escape') {
+            this.closePreview();
+            return;
+        }
+        if (e.key === 'ArrowLeft') {
+            this.navigatePreview(-1);
+            return;
+        }
+        if (e.key === 'ArrowRight') {
+            this.navigatePreview(1);
+            return;
+        }
+        
+        // Featured marking hotkeys - only trigger on keydown, not repeat
+        if (!e.repeat) {
+            switch (e.key) {
+                case '1':
+                    this.toggleFeatured('featured');
+                    break;
+                case '2':
+                    this.toggleFeatured('portrait');
+                    break;
+            }
+        }
+    }
+
+    navigatePreview(direction) {
+        const newIndex = this.currentPreviewIndex + direction;
+        if (newIndex >= 0 && newIndex < this.images.length) {
+            this.navigateToImage(newIndex);
+        }
+    }
+
+    navigateToImage(index) {
+        if (index < 0 || index >= this.images.length) return;
+        
+        this.currentPreviewIndex = index;
+        this.updatePreviewImage(this.images[index]);
+        this.updateFilmstripActiveThumbnail(index);
+        this.loadNearbyThumbnails(index);
+    }
+
+    updateFilmstripActiveThumbnail(newIndex) {
+        const filmstripContainer = document.getElementById('fm-preview-filmstrip');
+        if (!filmstripContainer) return;
+
+        // Remove active class from all thumbnails
+        filmstripContainer.querySelectorAll('.fm-filmstrip-thumb').forEach(thumb => {
+            thumb.classList.remove('active');
+        });
+
+        // Add active class to current thumbnail
+        const currentThumb = filmstripContainer.querySelector(`[data-index="${newIndex}"]`);
+        if (currentThumb) {
+            currentThumb.classList.add('active');
+            
+            // Scroll to current thumbnail
+            currentThumb.scrollIntoView({
+                behavior: 'smooth',
+                block: 'nearest',
+                inline: 'center'
+            });
+        }
+    }
+
+    loadNearbyThumbnails(centerIndex) {
+        const filmstripContainer = document.getElementById('fm-preview-filmstrip');
+        if (!filmstripContainer) return;
+
+        // Load thumbnails around the current index
+        for (let i = Math.max(0, centerIndex - 3); i <= Math.min(this.images.length - 1, centerIndex + 3); i++) {
+            const thumbImg = filmstripContainer.querySelector(`[data-index="${i}"] img`);
+            if (thumbImg && thumbImg.classList.contains('lazy-load') && thumbImg.dataset.lazySrc) {
+                thumbImg.src = thumbImg.dataset.lazySrc;
+                thumbImg.classList.remove('lazy-load');
+                delete thumbImg.dataset.lazySrc;
+            }
+        }
+    }
+
+    closePreview() {
+        this.previewOpen = false;
+        this.currentPreviewIndex = -1;
+        
+        // Remove event listeners
+        if (this.boundHandlePreviewKeypress) {
+            document.removeEventListener('keydown', this.boundHandlePreviewKeypress);
+            this.boundHandlePreviewKeypress = null;
+        }
+        
+        // Remove overlay
+        const overlay = document.getElementById('fm-preview-overlay');
+        if (overlay) {
+            overlay.remove();
+        }
+    }
+
+    async toggleFeatured(type) {
+        const currentImage = this.images[this.currentPreviewIndex];
+        if (!currentImage) return;
+        
+        console.log('Toggling featured:', type, 'for image:', currentImage.name);
+        
+        const imagePath = this.currentPath ? `${this.currentPath}/${currentImage.name}` : currentImage.name;
+        
+        try {
+            const formData = new FormData();
+            formData.append('action', 'toggle_featured_image');
+            formData.append('source_key', this.currentSource);
+            formData.append('image_path', imagePath);
+            formData.append('featured_type', type);
+            
+            const response = await fetch('/api.php', {
+                method: 'POST',
+                body: formData
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                // Update image data
+                if (result.featured_status) {
+                    currentImage.is_featured = true;
+                    currentImage.featured_type = result.featured_status;
+                } else {
+                    currentImage.is_featured = false;
+                    currentImage.featured_type = null;
+                }
+                
+                // Update preview UI
+                this.navigateToImage(this.currentPreviewIndex);
+                
+                // Update grid if visible
+                if (this.currentView === 'grid') {
+                    this.renderDirectory(this.currentItems);
+                }
+                
+                this.showMessage(`Đã ${result.featured_status ? 'đánh dấu' : 'bỏ đánh dấu'} ảnh`, 'success');
+            }
+        } catch (error) {
+            this.error('Error toggling featured status:', error);
+            this.showMessage('Lỗi khi cập nhật featured status', 'error');
+        }
+    }
+
+    async setFolderCategory() {
+        const categories = await this.loadCategories();
+        if (!categories) return;
+        
+        const options = categories.map(cat => 
+            `<option value="${cat.id}" style="color: ${cat.color_code}">${cat.category_name}</option>`
+        ).join('');
+        
+        const dialog = this.createDialog('Set Category cho Folder', `
+            <div class="category-dialog">
+                <p>Chọn category cho folder: <strong>${this.currentPath || 'Root'}</strong></p>
+                <select id="category-select" class="form-control">
+                    <option value="">-- Chọn category --</option>
+                    ${options}
+                </select>
+            </div>
+        `, [
+            { text: 'Set Category', action: () => this.performSetCategory(), primary: true },
+            { text: 'Hủy', action: () => this.closeDialog() }
+        ]);
+    }
+
+    async loadCategories() {
+        try {
+            const response = await fetch('/api.php?action=get_categories');
+            const result = await response.json();
+            if (result.success) {
+                return result.categories;
+            }
+        } catch (error) {
+            this.error('Error loading categories:', error);
+            this.showMessage('Lỗi khi tải categories', 'error');
+        }
+        return null;
+    }
+
+    async performSetCategory() {
+        const categoryId = document.getElementById('category-select')?.value;
+        if (!categoryId) {
+            this.showMessage('Vui lòng chọn category', 'warning');
+            return;
+        }
+        
+        try {
+            const response = await fetch('/api.php?action=set_folder_category', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    source_key: this.currentSource,
+                    folder_path: this.currentPath,
+                    category_id: categoryId
+                })
+            });
+            
+            const result = await response.json();
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+                this.closeDialog();
+                this.refreshCurrentDirectory();
+            }
+        } catch (error) {
+            this.error('Error setting category:', error);
+            this.showMessage('Lỗi khi set category', 'error');
+        }
     }
 
     bindItemEvents() {
@@ -2519,6 +3225,81 @@ class AdminFileManager {
     async refreshCurrentDirectory() {
         if (this.currentSource && this.currentPath !== undefined) {
             await this.loadDirectory(this.currentPath);
+        }
+    }
+
+    showCategoryDropdown(event, folderPath) {
+        event.stopPropagation();
+        // Remove any existing dropdown
+        document.querySelectorAll('.fm-category-dropdown-menu').forEach(el => el.remove());
+        
+        const btn = event.currentTarget;
+        const dropdown = document.createElement('div');
+        dropdown.className = 'fm-category-dropdown-menu';
+        dropdown.style.position = 'absolute';
+        dropdown.style.zIndex = 10000;
+        dropdown.style.minWidth = '180px';
+        dropdown.style.background = '#232930';
+        dropdown.style.border = '1px solid #444c56';
+        dropdown.style.borderRadius = '6px';
+        dropdown.style.boxShadow = '0 2px 8px rgba(0,0,0,0.15)';
+        dropdown.style.padding = '8px 0';
+        dropdown.style.top = (btn.getBoundingClientRect().bottom + window.scrollY + 4) + 'px';
+        dropdown.style.left = (btn.getBoundingClientRect().left + window.scrollX) + 'px';
+        dropdown.innerHTML = '<div style="padding:8px 16px">Đang tải...</div>';
+        document.body.appendChild(dropdown);
+
+        // Load categories
+        this.loadCategories().then(categories => {
+            if (!categories) {
+                dropdown.innerHTML = '<div style="padding:8px 16px">Không có category</div>';
+                return;
+            }
+            dropdown.innerHTML = categories.map(cat => `
+                <div class="fm-category-option" style="padding:6px 16px; cursor:pointer; color:${cat.color_code}" data-id="${cat.id}">
+                    <i class="${cat.icon_class || 'fas fa-folder'}"></i> ${cat.category_name}
+                </div>
+            `).join('');
+            // Click handler
+            dropdown.querySelectorAll('.fm-category-option').forEach(opt => {
+                opt.addEventListener('click', (e) => {
+                    const catId = opt.dataset.id;
+                    this.setCategoryForFolder(folderPath, catId);
+                    dropdown.remove();
+                });
+            });
+        });
+        // Click outside to close
+        const closeDropdown = (e) => {
+            if (!dropdown.contains(e.target)) {
+                dropdown.remove();
+                document.removeEventListener('mousedown', closeDropdown);
+            }
+        };
+        setTimeout(() => document.addEventListener('mousedown', closeDropdown), 10);
+    }
+
+    async setCategoryForFolder(folderPath, categoryId) {
+        try {
+            const response = await fetch('/api.php?action=set_folder_category', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: new URLSearchParams({
+                    source_key: this.currentSource,
+                    folder_path: folderPath,
+                    category_id: categoryId
+                })
+            });
+            const result = await response.json();
+            if (result.success) {
+                this.showMessage(result.message, 'success');
+                this.refreshCurrentDirectory();
+            } else {
+                this.showMessage(result.message || 'Lỗi khi set category', 'error');
+            }
+        } catch (error) {
+            this.error('Error setCategoryForFolder:', error);
+            this.showMessage('Lỗi khi set category', 'error');
         }
     }
 }
