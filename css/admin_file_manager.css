@@ -1923,6 +1923,8 @@
     padding: 16px;
     border-bottom: 1px solid #30363d;
     background: #21262d;
+    flex-wrap: wrap;
+    gap: 16px;
 }
 
 .fm-filters {
@@ -2463,4 +2465,31 @@
 .category-dropdown-btn i:last-child {
     font-size: 10px;
     opacity: 0.7;
+}
+
+/* New Category Controls in Toolbar */
+.fm-category-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.category-badge {
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.category-badge.no-category {
+    background: #6b7280;
+    color: #e6edf3;
+}
+
+.category-badge i {
+    font-size: 10px;
 } 

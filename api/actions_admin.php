@@ -937,12 +937,22 @@ switch ($action) {
                     $item['extension'] = $extension;
                     $item['is_image'] = in_array($extension, ALLOWED_EXTENSIONS);
                     $item['is_video'] = in_array($extension, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
-                } else {
-                    // For directories, don't count files at root level for performance
-                    // Only count when we're already inside a specific directory
-                    if (!empty($path)) {
-                        $item['file_count'] = count_files_recursive($fileinfo->getPathname());
+                    
+                    // Check featured status for images
+                    if ($item['is_image']) {
+                        $featured_status = getFeaturedStatus($source_key, $item_relative_path);
+                        $item['is_featured'] = !empty($featured_status);
+                        $item['featured_type'] = $featured_status['featured_type'] ?? null;
+                        $item['priority_order'] = $featured_status['priority_order'] ?? 999;
+                        $item['alt_text'] = $featured_status['alt_text'] ?? null;
                     }
+                } else {
+                    // For directories, use cached file count for performance
+                    $relative_dir_path = empty($path) ? $fileinfo->getFilename() : ltrim($path, '/') . '/' . $fileinfo->getFilename();
+                    $item['file_count'] = get_directory_file_count($source_key, $relative_dir_path);
+                    
+                    // Get inherited category for directory
+                    $item['category'] = getCategoryForPath($source_key, $item_relative_path);
                 }
 
                 $items[] = $item;
@@ -959,12 +969,19 @@ switch ($action) {
                 return strcmp($a['name'], $b['name']);
             });
 
+            // Get current folder category
+            $current_folder_category = null;
+            if (!empty($path)) {
+                $current_folder_category = getCategoryForPath($source_key, $path);
+            }
+
             $response_data = [
                 'items' => $items,
                 'current_path' => $path,
                 'source_key' => $source_key,
                 'source_name' => IMAGE_SOURCES[$source_key]['name'],
-                'absolute_path' => $directory
+                'absolute_path' => $directory,
+                'current_folder_category' => $current_folder_category
             ];
 
             error_log("[file_manager_browse] Success - returning " . count($items) . " items");
@@ -1251,8 +1268,6 @@ switch ($action) {
         json_response($response_data);
         break;
 
-
-
     case 'file_manager_create_folder':
         if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
             json_error("Chỉ admin mới có quyền tạo thư mục.", 403);
@@ -1516,12 +1531,321 @@ switch ($action) {
         }
         break;
 
+    case 'get_file_count_stats':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền xem thống kê.", 403);
+        }
+
+        try {
+            $stats = get_file_count_statistics();
+            if ($stats) {
+                json_response([
+                    'stats' => $stats,
+                    'cache_status' => 'active'
+                ]);
+            } else {
+                json_response([
+                    'stats' => null,
+                    'cache_status' => 'error'
+                ]);
+            }
+        } catch (Exception $e) {
+            error_log("[get_file_count_stats] Error: " . $e->getMessage());
+            json_error("Không thể lấy thống kê file count.", 500);
+        }
+        break;
+
+    case 'refresh_file_counts':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền refresh file counts.", 403);
+        }
+
+        try {
+            $source_key = $_POST['source_key'] ?? null;
+            $directory_path = $_POST['directory_path'] ?? '';
+            $batch_mode = isset($_POST['batch_mode']) && $_POST['batch_mode'] === 'true';
+
+            if ($batch_mode) {
+                // Batch refresh for multiple directories
+                $directories = [];
+                
+                if ($source_key) {
+                    // Refresh specific source
+                    $source_config = IMAGE_SOURCES[$source_key] ?? null;
+                    if (!$source_config) {
+                        json_error("Source không hợp lệ.", 400);
+                    }
+                    
+                    $source_path = $source_config['path'];
+                    if (is_dir($source_path)) {
+                        $iterator = new DirectoryIterator($source_path);
+                        foreach ($iterator as $fileinfo) {
+                            if ($fileinfo->isDot() || !$fileinfo->isDir()) continue;
+                            $directories[] = [
+                                'source_key' => $source_key,
+                                'directory_path' => $fileinfo->getFilename()
+                            ];
+                        }
+                    }
+                } else {
+                    // Refresh all sources
+                    foreach (IMAGE_SOURCES as $src_key => $src_config) {
+                        if (!is_array($src_config) || !isset($src_config['path'])) continue;
+                        $src_path = $src_config['path'];
+                        if (is_dir($src_path)) {
+                            $iterator = new DirectoryIterator($src_path);
+                            foreach ($iterator as $fileinfo) {
+                                if ($fileinfo->isDot() || !$fileinfo->isDir()) continue;
+                                $directories[] = [
+                                    'source_key' => $src_key,
+                                    'directory_path' => $fileinfo->getFilename()
+                                ];
+                            }
+                        }
+                    }
+                }
+
+                $results = batch_update_file_counts($directories, 30); // 30 second limit
+                json_response([
+                    'message' => 'Batch refresh completed',
+                    'processed' => count($results),
+                    'total_requested' => count($directories),
+                    'results' => $results
+                ]);
+
+            } else {
+                // Single directory refresh
+                if (!$source_key) {
+                    json_error("Source key là bắt buộc cho single refresh.", 400);
+                }
+
+                $file_count = get_directory_file_count($source_key, $directory_path, true);
+                json_response([
+                    'message' => 'File count refreshed',
+                    'source_key' => $source_key,
+                    'directory_path' => $directory_path,
+                    'file_count' => $file_count
+                ]);
+            }
+
+        } catch (Exception $e) {
+            error_log("[refresh_file_counts] Error: " . $e->getMessage());
+            json_error("Không thể refresh file counts: " . $e->getMessage(), 500);
+        }
+        break;
+
+    case 'cleanup_file_count_cache':
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền cleanup cache.", 403);
+        }
+
+        try {
+            $days_old = isset($_POST['days_old']) ? max(1, (int)$_POST['days_old']) : 30;
+            $deleted = cleanup_file_count_cache($days_old);
+            
+            json_response([
+                'message' => 'Cache cleanup completed',
+                'deleted_entries' => $deleted,
+                'days_old' => $days_old
+            ]);
+
+        } catch (Exception $e) {
+            error_log("[cleanup_file_count_cache] Error: " . $e->getMessage());
+            json_error("Không thể cleanup cache: " . $e->getMessage(), 500);
+        }
+        break;
+
+    // --- NEW CATEGORY AND FEATURED IMAGE ACTIONS ---
+    
+    case 'get_categories':
+        error_log("[ADMIN_ACTION] Getting categories list");
+        
+        try {
+            $stmt = $pdo->query("
+                SELECT fc.*, 
+                    (SELECT COUNT(*) FROM folder_category_mapping WHERE category_id = fc.id) as folder_count
+                FROM folder_categories fc
+                ORDER BY fc.sort_order ASC, fc.category_name ASC
+            ");
+            
+            $categories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            json_response([
+                'success' => true,
+                'categories' => $categories
+            ]);
+        } catch (PDOException $e) {
+            error_log("[ADMIN_ACTION] Error getting categories: " . $e->getMessage());
+            json_error("Lỗi khi lấy danh sách categories: " . $e->getMessage());
+        }
+        break;
+        
+    case 'set_folder_category':
+        error_log("[ADMIN_ACTION] Setting folder category");
+        
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền set category", 403);
+        }
+        
+        $source_key = $_POST['source_key'] ?? '';
+        $folder_path = $_POST['folder_path'] ?? '';
+        $category_id = $_POST['category_id'] ?? null;
+        
+        if (!$source_key || !isset($folder_path)) {
+            json_error("Thiếu thông tin source_key hoặc folder_path", 400);
+        }
+        
+        try {
+            if ($category_id) {
+                // Set or update category
+                $stmt = $pdo->prepare("
+                    INSERT INTO folder_category_mapping 
+                    (source_key, folder_path, category_id, created_by) 
+                    VALUES (?, ?, ?, ?)
+                    ON DUPLICATE KEY UPDATE 
+                    category_id = VALUES(category_id),
+                    created_by = VALUES(created_by)
+                ");
+                $stmt->execute([$source_key, $folder_path, $category_id, $_SESSION['user_id']]);
+                
+                $message = "Đã set category cho folder";
+            } else {
+                // Remove category
+                $stmt = $pdo->prepare("
+                    DELETE FROM folder_category_mapping 
+                    WHERE source_key = ? AND folder_path = ?
+                ");
+                $stmt->execute([$source_key, $folder_path]);
+                
+                $message = "Đã xóa category khỏi folder";
+            }
+            
+            json_response([
+                'success' => true,
+                'message' => $message
+            ]);
+        } catch (PDOException $e) {
+            error_log("[ADMIN_ACTION] Error setting folder category: " . $e->getMessage());
+            json_error("Lỗi khi set category: " . $e->getMessage());
+        }
+        break;
+        
+    case 'toggle_featured_image':
+        error_log("[ADMIN_ACTION] Toggling featured image status");
+        
+        if ($_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền đánh dấu featured", 403);
+        }
+        
+        $source_key = $_POST['source_key'] ?? '';
+        $image_path = $_POST['image_path'] ?? '';
+        $featured_type = $_POST['featured_type'] ?? 'featured';
+        
+        if (!$source_key || !$image_path) {
+            json_error("Thiếu thông tin ảnh", 400);
+        }
+        
+        if (!in_array($featured_type, ['featured', 'portrait'])) {
+            json_error("Featured type không hợp lệ", 400);
+        }
+        
+        try {
+            // Check if record exists
+            $check_stmt = $pdo->prepare("
+                SELECT id, featured_type FROM featured_images 
+                WHERE source_key = ? AND image_relative_path = ?
+            ");
+            $check_stmt->execute([$source_key, $image_path]);
+            $existing = $check_stmt->fetch();
+            
+            $folder_path = dirname($image_path);
+            
+            if ($existing) {
+                if ($existing['featured_type'] === $featured_type) {
+                    // Remove featured status
+                    $stmt = $pdo->prepare("
+                        DELETE FROM featured_images 
+                        WHERE source_key = ? AND image_relative_path = ?
+                    ");
+                    $stmt->execute([$source_key, $image_path]);
+                    $new_status = null;
+                } else {
+                    // Change featured type
+                    $stmt = $pdo->prepare("
+                        UPDATE featured_images 
+                        SET featured_type = ?, updated_at = NOW()
+                        WHERE source_key = ? AND image_relative_path = ?
+                    ");
+                    $stmt->execute([$featured_type, $source_key, $image_path]);
+                    $new_status = $featured_type;
+                }
+            } else {
+                // Add new featured image
+                $stmt = $pdo->prepare("
+                    INSERT INTO featured_images 
+                    (source_key, image_relative_path, folder_path, featured_type, featured_by)
+                    VALUES (?, ?, ?, ?, ?)
+                ");
+                $stmt->execute([$source_key, $image_path, $folder_path, $featured_type, $_SESSION['user_id']]);
+                $new_status = $featured_type;
+            }
+            
+            json_response([
+                'success' => true,
+                'featured_status' => $new_status
+            ]);
+        } catch (PDOException $e) {
+            error_log("[ADMIN_ACTION] Error toggling featured image: " . $e->getMessage());
+            json_error("Lỗi khi toggle featured: " . $e->getMessage());
+        }
+        break;
+        
+    case 'get_featured_images_stats':
+        error_log("[ADMIN_ACTION] Getting featured images statistics");
+        
+        $source_key = $_GET['source_key'] ?? '';
+        $folder_path = $_GET['folder_path'] ?? '';
+        
+        try {
+            $where_conditions = ["1=1"];
+            $params = [];
+            
+            if ($source_key) {
+                $where_conditions[] = "source_key = ?";
+                $params[] = $source_key;
+            }
+            
+            if ($folder_path) {
+                $where_conditions[] = "folder_path = ?";
+                $params[] = $folder_path;
+            }
+            
+            $where_sql = implode(" AND ", $where_conditions);
+            
+            $stmt = $pdo->prepare("
+                SELECT 
+                    COUNT(*) as total_featured,
+                    SUM(CASE WHEN featured_type = 'featured' THEN 1 ELSE 0 END) as featured_count,
+                    SUM(CASE WHEN featured_type = 'portrait' THEN 1 ELSE 0 END) as portrait_count
+                FROM featured_images
+                WHERE {$where_sql} AND is_featured = TRUE
+            ");
+            $stmt->execute($params);
+            
+            $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            json_response([
+                'success' => true,
+                'stats' => $stats
+            ]);
+        } catch (PDOException $e) {
+            error_log("[ADMIN_ACTION] Error getting featured stats: " . $e->getMessage());
+            json_error("Lỗi khi lấy thống kê featured: " . $e->getMessage());
+        }
+        break;
+        
     // Default case for unknown admin actions
     default:
-        // If the action starts with 'admin_' or 'file_manager_' but isn't handled above
-        if (strpos($action, 'admin_') === 0 || strpos($action, 'file_manager_') === 0) {
-            json_error("Hành động admin không xác định: " . htmlspecialchars($action), 400);
-        }
-        // Otherwise, fall through (handled by api.php main or actions_public.php default)
+        json_error("Hành động không hợp lệ", 400);
         break;
 } 

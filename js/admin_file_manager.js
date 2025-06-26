@@ -226,6 +226,10 @@ class AdminFileManager {
             }
             
             this.currentPath = data.current_path || '';
+            
+            // Store current folder category from API response
+            this.currentFolderCategory = data.current_folder_category;
+            
             this.renderDirectory(data.items || []);
             this.updateBreadcrumb();
             this.updateUI(); // Update UI state after loading directory
@@ -247,15 +251,12 @@ class AdminFileManager {
     }
 
     renderDirectory(items) {
-        // Store items for grid/list view and preview
+        // Store items for preview
         this.currentItems = items || [];
         this.images = this.currentItems.filter(item => item.is_image);
         
-        if (this.currentView === 'grid') {
-            this.renderGridView(items);
-        } else {
-            this.renderListView(items);
-        }
+        // Always render list view (grid view removed)
+        this.renderListView(items);
     }
 
     renderListView(items) {
@@ -275,6 +276,7 @@ class AdminFileManager {
         const totalItems = items.length;
         const directories = items.filter(item => item.type === 'directory').length;
         const files = items.filter(item => item.type === 'file').length;
+        const featuredCount = items.filter(item => item.is_featured).length;
         const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
 
         const itemsHtml = items.map(item => this.renderItem(item)).join('');
@@ -308,14 +310,6 @@ class AdminFileManager {
                 </div>
             ` : ''}
             <div class="fm-toolbar">
-                <div class="fm-view-toggle">
-                    <button class="${this.currentView === 'list' ? 'active' : ''}" onclick="fileManager.toggleView('list')">
-                        <i class="fas fa-list"></i>
-                    </button>
-                    <button class="${this.currentView === 'grid' ? 'active' : ''}" onclick="fileManager.toggleView('grid')">
-                        <i class="fas fa-th"></i>
-                    </button>
-                </div>
                 <div class="fm-stats">
                     <span class="fm-stat-item">
                         <i class="fas fa-folder"></i> ${directories} thư mục
@@ -324,12 +318,36 @@ class AdminFileManager {
                         <i class="fas fa-file"></i> ${files} file
                     </span>
                     <span class="fm-stat-item">
+                        <i class="fas fa-star"></i> ${featuredCount} featured
+                    </span>
+                    <span class="fm-stat-item">
                         <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
                     </span>
                     <span class="fm-stat-item">
                         <i class="fas fa-list"></i> Tổng: ${totalItems} mục
                     </span>
                 </div>
+                ${!this.isRootDirectory() ? `
+                    <div class="fm-category-controls">
+                        <div class="fm-category-current">
+                            ${currentCategory ? `
+                                <span class="category-badge" style="background: ${currentCategory.color_code}">
+                                    <i class="${currentCategory.icon_class || 'fas fa-tag'}"></i>
+                                    ${currentCategory.category_name}
+                                </span>
+                            ` : `
+                                <span class="category-badge no-category">
+                                    <i class="fas fa-tag"></i>
+                                    Chưa phân loại
+                                </span>
+                            `}
+                        </div>
+                        <button class="category-dropdown-btn" onclick="fileManager.showCategoryDropdown(event, '${this.currentPath}')">
+                            <i class="fas fa-tag"></i>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                ` : ''}
             </div>
             <div class="fm-controls">
                 <div class="selection-controls">
@@ -349,74 +367,7 @@ class AdminFileManager {
         this.bindItemEvents();
     }
 
-    renderGridView(items) {
-        const content = document.getElementById('file-manager-content');
-        
-        if (!items || items.length === 0) {
-            content.innerHTML = `
-                <div class="fm-empty">
-                    <i class="fas fa-folder-open"></i>
-                    <p>Thư mục trống</p>
-                </div>
-            `;
-            return;
-        }
 
-        // Calculate statistics
-        const totalItems = items.length;
-        const featuredCount = items.filter(item => item.is_featured).length;
-        const portraitCount = items.filter(item => item.featured_type === 'portrait').length;
-
-        // Check if current folder has category
-        const currentCategory = this.getCurrentFolderCategory(items);
-        
-        content.innerHTML = `
-            ${currentCategory ? `
-                <div class="fm-category-section">
-                    <div class="fm-category-info">
-                        <i class="${currentCategory.icon_class || 'fas fa-folder'}"></i>
-                        Category: <strong style="color: ${currentCategory.color_code}">${currentCategory.category_name}</strong>
-                        ${currentCategory.inherited ? '<span class="fm-category-inherited">(Inherited from parent)</span>' : ''}
-                    </div>
-                    ${!currentCategory.inherited ? `
-                        <button onclick="fileManager.editFolderCategory()" class="button small">
-                            <i class="fas fa-edit"></i> Thay đổi
-                        </button>
-                    ` : ''}
-                </div>
-            ` : !this.isRootDirectory() ? `
-                <div class="fm-category-section">
-                    <div class="fm-category-info">
-                        <i class="fas fa-tag"></i>
-                        Chưa có category
-                    </div>
-                    <button onclick="fileManager.setFolderCategory()" class="button small primary">
-                        <i class="fas fa-plus"></i> Set Category
-                    </button>
-                </div>
-            ` : ''}
-            <div class="fm-toolbar">
-                <div class="fm-view-toggle">
-                    <button class="${this.currentView === 'list' ? 'active' : ''}" onclick="fileManager.toggleView('list')">
-                        <i class="fas fa-list"></i>
-                    </button>
-                    <button class="${this.currentView === 'grid' ? 'active' : ''}" onclick="fileManager.toggleView('grid')">
-                        <i class="fas fa-th"></i>
-                    </button>
-                </div>
-                <div class="fm-filters">
-                    <button class="filter-btn active" data-filter="all">All (${totalItems})</button>
-                    <button class="filter-btn" data-filter="featured">Featured ⭐ (${featuredCount})</button>
-                    <button class="filter-btn" data-filter="portrait">Portrait 👤 (${portraitCount})</button>
-                </div>
-            </div>
-            <div class="fm-grid-view">
-                ${items.map((item, index) => this.renderGridItem(item, index)).join('')}
-            </div>
-        `;
-
-        this.bindGridEvents();
-    }
 
     renderItem(item) {
         const isDirectory = item.type === 'directory';
@@ -463,7 +414,7 @@ class AdminFileManager {
                     ${isDirectory && item.category ? `<span class="fm-category-indicator" style="background: ${item.category.color_code}"></span>` : ''}
                     ${featuredBadge}
                 </div>
-                <div class="fm-item-details">
+                <div class="fm-item-details" ${item.is_image ? 'data-action="preview"' : ''}>
                     <div class="fm-item-name" ${isDirectory ? 'data-action="open"' : ''}>${item.name}</div>
                     <div class="fm-item-meta">
                         ${size}${size && fileCount ? ' • ' : ''}${fileCount}${(size || fileCount) && modified ? ' • ' : ''}${modified}
@@ -496,68 +447,21 @@ class AdminFileManager {
         `;
     }
 
-    renderGridItem(item, index) {
-        const isDirectory = item.type === 'directory';
-        
-        if (isDirectory) {
-            return `
-                <div class="fm-grid-item folder" data-path="${item.path}" data-type="directory" data-index="${index}">
-                    ${item.category ? `
-                        <div class="fm-category-badge" style="background: ${item.category.color_code}">
-                            ${item.category.category_name}
-                        </div>
-                    ` : ''}
-                    <div class="folder-icon">
-                        <i class="fas fa-folder"></i>
-                    </div>
-                    <div class="folder-name">${item.name}</div>
-                    <div class="folder-meta">${item.file_count || 0} items</div>
-                </div>
-            `;
-        } else if (item.is_image) {
-            const badge = item.featured_type === 'featured' ? '⭐' : 
-                         item.featured_type === 'portrait' ? '👤' : '';
 
-            // Build proper source-prefixed path
-            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
-            
-            return `
-                <div class="fm-grid-item image" data-index="${index}" data-path="${item.path}" data-type="file">
-                    <img src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750" 
-                         loading="lazy" alt="${item.name}" />
-                    ${badge ? `<span class="featured-badge ${item.featured_type}">${badge}</span>` : ''}
-                    <div class="fm-grid-item-name">${item.name}</div>
-                </div>
-            `;
-        } else {
-            // Non-image files
-            const icon = this.getFileIcon(item.extension);
-            return `
-                <div class="fm-grid-item file" data-index="${index}" data-path="${item.path}" data-type="file">
-                    <div class="file-icon">
-                        <i class="${icon}"></i>
-                    </div>
-                    <div class="file-name">${item.name}</div>
-                    <div class="file-meta">${this.formatFileSize(item.size)}</div>
-                </div>
-            `;
-        }
-    }
-
-    toggleView(view) {
-        this.currentView = view;
-        this.renderDirectory(this.currentItems);
-    }
 
     isRootDirectory() {
         return !this.currentPath || this.currentPath.trim() === '' || this.currentPath === '/' || this.currentPath === '.';
     }
 
     getCurrentFolderCategory(items) {
-        // Check if any directory has a category (indicating inheritance)
+        // First check if current folder itself has a category (from API)
+        if (this.currentFolderCategory) {
+            return this.currentFolderCategory;
+        }
+
+        // Check inheritance from child directories (old logic)
         for (const item of items) {
             if (item.type === 'directory' && item.category) {
-                // This means parent folder has category
                 return {
                     ...item.category,
                     inherited: true
@@ -567,58 +471,9 @@ class AdminFileManager {
         return null;
     }
 
-    bindGridEvents() {
-        const content = document.getElementById('file-manager-content');
-        
-        // Grid item clicks
-        content.addEventListener('click', (e) => {
-            const gridItem = e.target.closest('.fm-grid-item');
-            if (!gridItem) return;
-            
-            const type = gridItem.dataset.type;
-            const path = gridItem.dataset.path;
-            const index = parseInt(gridItem.dataset.index);
-            
-            if (type === 'directory') {
-                this.openDirectory(path);
-            } else if (type === 'file') {
-                const item = this.currentItems[index];
-                if (item && item.is_image) {
-                    this.openPreview(index);
-                }
-            }
-        });
-        
-        // Filter buttons
-        const filterBtns = content.querySelectorAll('.filter-btn');
-        filterBtns.forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                filterBtns.forEach(b => b.classList.remove('active'));
-                btn.classList.add('active');
-                this.applyFilter(btn.dataset.filter);
-            });
-        });
-    }
 
-    applyFilter(filter) {
-        let filteredItems = [...this.currentItems];
-        
-        switch (filter) {
-            case 'featured':
-                filteredItems = filteredItems.filter(item => item.featured_type === 'featured');
-                break;
-            case 'portrait':
-                filteredItems = filteredItems.filter(item => item.featured_type === 'portrait');
-                break;
-        }
-        
-        const gridView = document.querySelector('.fm-grid-view');
-        if (gridView) {
-            gridView.innerHTML = filteredItems.map((item, index) => 
-                this.renderGridItem(item, index)
-            ).join('');
-        }
-    }
+
+
 
     openPreview(index) {
         if (!this.currentItems[index] || !this.currentItems[index].is_image) {
@@ -1095,6 +950,18 @@ class AdminFileManager {
                         this.openDirectory(itemPath).finally(() => {
                             this.isNavigating = false;
                         });
+                    }
+                    break;
+                case 'preview':
+                    if (itemType === 'file') {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        // Find index of this image in current items
+                        const imageIndex = this.currentItems.findIndex(i => i.path === itemPath && i.is_image);
+                        if (imageIndex >= 0) {
+                            this.openPreview(imageIndex);
+                        }
                     }
                     break;
                 case 'rename':
