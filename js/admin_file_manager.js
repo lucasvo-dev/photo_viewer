@@ -974,6 +974,20 @@ class AdminFileManager {
         });
     }
 
+    updateUI() {
+        const sourceSelected = !!this.currentSource;
+        document.getElementById('fm-upload-btn').disabled = !sourceSelected;
+        document.getElementById('fm-create-folder-btn').disabled = !sourceSelected;
+    }
+
+    refreshCurrentDirectory() {
+        if (this.isNavigating) {
+            this.log('Navigation in progress, skipping refresh');
+            return;
+        }
+        this.loadDirectory();
+    }
+
     // ... (rest of the existing methods)
 }
 
