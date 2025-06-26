@@ -2494,48 +2494,85 @@
     font-size: 10px;
 }
 
-/* Featured Status Dropdown */
-.fm-featured-dropdown {
-    position: relative;
-}
-
-.fm-featured-dropdown.open .featured-dropdown-menu {
-    display: block;
-}
-
-.featured-dropdown-menu {
-    display: none;
-    position: absolute;
-    right: 0;
-    top: 100%;
-    margin-top: 4px;
-    background: #30363d;
-    border: 1px solid #484f58;
-    border-radius: 6px;
-    padding: 4px;
-    z-index: 10;
-    width: max-content;
-    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
-}
-
-.featured-dropdown-menu .featured-option {
+.fm-item-name-wrapper {
     display: flex;
     align-items: center;
     gap: 8px;
-    padding: 6px 10px;
-    color: #e6edf3;
-    text-decoration: none;
-    font-size: 13px;
-    border-radius: 4px;
-    cursor: pointer;
 }
 
-.featured-dropdown-menu .featured-option:hover {
-    background: #58a6ff;
+/* === Featured Dropdown in Actions === */
+.fm-item-actions {
+    position: relative; /* For dropdown positioning */
+}
+
+.fm-featured-dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.fm-featured-dropdown .dropdown-content {
+    display: none;
+    position: absolute;
+    right: 0;
+    top: calc(100% + 5px);
+    background-color: #30363d;
+    min-width: 140px;
+    box-shadow: 0px 8px 16px 0px rgba(0,0,0,0.5);
+    z-index: 10;
+    border-radius: 6px;
+    overflow: hidden;
+    border: 1px solid #484f58;
+}
+
+.fm-featured-dropdown .dropdown-content.show {
+    display: block;
+}
+
+.fm-featured-dropdown .dropdown-content a {
+    color: #e6edf3;
+    padding: 8px 12px;
+    text-decoration: none;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    transition: background-color 0.2s;
+}
+
+.fm-featured-dropdown .dropdown-content a:hover {
+    background-color: #58a6ff;
     color: white;
 }
 
-.featured-dropdown-menu .featured-option i {
-    width: 16px;
-    text-align: center;
+.fm-featured-dropdown .dropdown-content a .fa-star { color: #ffc107; }
+.fm-featured-dropdown .dropdown-content a .fa-user-circle { color: #adb5bd; }
+.fm-featured-dropdown .dropdown-content a .fa-ban { color: #f85149; }
+
+
+.fm-featured-dropdown .featured-status-btn .fa-star {
+    color: #ffc107; /* gold */
+}
+.fm-featured-dropdown .featured-status-btn .fa-user-circle {
+    color: #adb5bd; /* gray */
+}
+
+/* Always show featured status button for images */
+.fm-featured-dropdown .featured-status-btn {
+    opacity: 0.6;
+    transition: opacity 0.2s;
+}
+
+.fm-featured-dropdown .featured-status-btn.is-featured,
+.fm-featured-dropdown .featured-status-btn:hover {
+    opacity: 1;
+}
+
+.fm-featured-dropdown .featured-status-btn .far {
+    color: #6b7280; /* gray for unfeatured */
+}
+
+.fm-item-category {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
 } 
