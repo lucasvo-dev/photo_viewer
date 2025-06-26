@@ -100,11 +100,6 @@ export function createDirectoryListItem(dirData, itemClickHandler) {
     const span = document.createElement('span');
     span.textContent = dirData.name;
 
-    // Add file count if available
-    if (dirData.file_count !== undefined && dirData.file_count > 0) {
-        span.innerHTML += `<small>${dirData.file_count} ảnh</small>`;
-    }
-
     if (dirData.protected) {
         span.innerHTML += dirData.authorized
             ? ' <span class="lock-icon unlocked" title="Đã mở khóa">🔓</span>'
