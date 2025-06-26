@@ -32,20 +32,11 @@ switch ($action) {
         break;
         
     case 'file_manager_get_sources':
-        // Get available image sources for file manager
-        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
-            json_error("Chỉ admin mới có quyền truy cập.", 403);
-        }
+        $sources = array_map(function($key, $value) {
+            return ['key' => $key, 'name' => $value['name']];
+        }, array_keys(IMAGE_SOURCES), array_values(IMAGE_SOURCES));
         
-        $sources = [];
-        foreach (IMAGE_SOURCES as $key => $config) {
-            $sources[] = [
-                'key' => $key,
-                'name' => $config['name']
-            ];
-        }
-        
-        json_response(['sources' => $sources]);
+        json_response(['success' => true, 'sources' => $sources]);
         break;
 
     case 'admin_login':
@@ -1731,75 +1722,47 @@ switch ($action) {
         break;
         
     case 'toggle_featured_image':
-        error_log("[ADMIN_ACTION] Toggling featured image status");
-        
-        if ($_SESSION['user_role'] !== 'admin') {
-            json_error("Chỉ admin mới có quyền đánh dấu featured", 403);
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền.", 403);
         }
         
-        $source_key = $_POST['source_key'] ?? '';
-        $image_path = $_POST['image_path'] ?? '';
-        $featured_type = $_POST['featured_type'] ?? 'featured';
-        
-        if (!$source_key || !$image_path) {
-            json_error("Thiếu thông tin ảnh", 400);
+        $source_key = $_POST['source'] ?? null;
+        $path = $_POST['path'] ?? null;
+        $type = $_POST['type'] ?? null;
+
+        if (!$source_key || !$path || !$type) {
+            json_error("Thiếu thông tin source, path, hoặc type.", 400);
         }
-        
-        if (!in_array($featured_type, ['featured', 'portrait'])) {
-            json_error("Featured type không hợp lệ", 400);
-        }
-        
+
         try {
-            // Check if record exists
-            $check_stmt = $pdo->prepare("
-                SELECT id, featured_type FROM featured_images 
-                WHERE source_key = ? AND image_relative_path = ?
-            ");
-            $check_stmt->execute([$source_key, $image_path]);
-            $existing = $check_stmt->fetch();
-            
-            $folder_path = dirname($image_path);
-            
-            if ($existing) {
-                if ($existing['featured_type'] === $featured_type) {
-                    // Remove featured status
-                    $stmt = $pdo->prepare("
-                        DELETE FROM featured_images 
-                        WHERE source_key = ? AND image_relative_path = ?
-                    ");
-                    $stmt->execute([$source_key, $image_path]);
-                    $new_status = null;
-                } else {
-                    // Change featured type
-                    $stmt = $pdo->prepare("
-                        UPDATE featured_images 
-                        SET featured_type = ?, updated_at = NOW()
-                        WHERE source_key = ? AND image_relative_path = ?
-                    ");
-                    $stmt->execute([$featured_type, $source_key, $image_path]);
-                    $new_status = $featured_type;
-                }
+            if ($type === 'none') {
+                $stmt = $pdo->prepare("DELETE FROM featured_images WHERE source_key = ? AND image_relative_path = ?");
+                $stmt->execute([$source_key, $path]);
+                $message = "Đã bỏ đánh dấu ảnh.";
             } else {
-                // Add new featured image
+                $folder_path = dirname($path);
+                $user_id = $_SESSION['user_id'] ?? 1; // Default to 1 if not set
+                
                 $stmt = $pdo->prepare("
-                    INSERT INTO featured_images 
-                    (source_key, image_relative_path, folder_path, featured_type, featured_by)
-                    VALUES (?, ?, ?, ?, ?)
+                    INSERT INTO featured_images (source_key, image_relative_path, folder_path, featured_type, is_featured, featured_by)
+                    VALUES (?, ?, ?, ?, TRUE, ?)
+                    ON DUPLICATE KEY UPDATE 
+                        featured_type = VALUES(featured_type), 
+                        is_featured = TRUE, 
+                        updated_at = NOW()
                 ");
-                $stmt->execute([$source_key, $image_path, $folder_path, $featured_type, $_SESSION['user_id']]);
-                $new_status = $featured_type;
+                $stmt->execute([$source_key, $path, $folder_path, $type, $user_id]);
+                $message = "Đã cập nhật trạng thái ảnh.";
             }
             
-            json_response([
-                'success' => true,
-                'featured_status' => $new_status
-            ]);
-        } catch (PDOException $e) {
-            error_log("[ADMIN_ACTION] Error toggling featured image: " . $e->getMessage());
-            json_error("Lỗi khi toggle featured: " . $e->getMessage());
+            json_response(['success' => true, 'message' => $message]);
+
+        } catch (Exception $e) {
+            error_log("[toggle_featured_image] Error: " . $e->getMessage());
+            json_error("Lỗi server khi cập nhật trạng thái: " . $e->getMessage(), 500);
         }
         break;
-        
+
     case 'get_featured_images_stats':
         error_log("[ADMIN_ACTION] Getting featured images statistics");
         
