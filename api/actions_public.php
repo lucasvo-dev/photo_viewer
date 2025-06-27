@@ -1753,6 +1753,20 @@ switch ($action) {
                     continue; // Skip if file doesn't exist
                 }
                 
+                // ---- 750px CACHE CHECK ----
+                $extension = strtolower(pathinfo($path_info['absolute_path'], PATHINFO_EXTENSION));
+                $is_video = in_array($extension, ['mp4','mov','avi','mkv','webm'], true);
+
+                // For images only (not videos) – agent currently expects 750px thumb
+                $cache_path_750 = get_thumbnail_cache_path($full_path, 750, $is_video);
+
+                if (!file_exists($cache_path_750) || filesize($cache_path_750) === 0) {
+                    // Queue job for missing 750px cache
+                    add_thumbnail_job_to_queue($pdo, $full_path, 750, $is_video ? 'video' : 'image');
+                    // Skip this image for now – ensure API only returns ready-to-use thumbnails
+                    continue;
+                }
+
                 // Basic image data
                 $image_data = [
                     'id' => (int)$image['id'],
