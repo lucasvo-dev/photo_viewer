@@ -602,9 +602,18 @@ class AdminFileManager {
         
         const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
         
+        // Show loading state immediately
+        imgPreview.style.opacity = '0.7';
+        imgPreview.style.transition = 'opacity 0.3s ease';
+        
         // Use 750px thumbnail for preview instead of full image for better performance
         imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
         imgPreview.alt = image.name;
+        
+        // Handle successful load
+        imgPreview.onload = function() {
+            this.style.opacity = '1';
+        };
         
         // Fallback to full image if thumbnail fails
         imgPreview.onerror = function() {
@@ -633,6 +642,9 @@ class AdminFileManager {
         if (nextBtn) {
             nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
         }
+        
+        // Start intelligent preloading of nearby images
+        this.intelligentPreload750px(this.currentPreviewIndex);
     }
 
     renderThumbnailFilmstrip(images, currentIndex) {
@@ -653,8 +665,8 @@ class AdminFileManager {
             const thumbImg = document.createElement('img');
             const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
             
-            // Improved lazy loading strategy
-            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 3; // Load 3 images before/after current
+            // Improved lazy loading strategy - more aggressive initial loading
+            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 5; // Increased from 3 to 5
             
             if (shouldLoadImmediately) {
                 // Load immediately with loading placeholder
@@ -692,12 +704,23 @@ class AdminFileManager {
 
             thumbContainer.appendChild(thumbImg);
             
+            // Enhanced click handler
             thumbContainer.addEventListener('click', () => {
                 this.navigateToImage(index);
+            });
+            
+            // Add hover preloading for 750px thumbnails
+            thumbContainer.addEventListener('mouseenter', () => {
+                this.preload750px(image, fullPath);
             });
 
             filmstripContainer.appendChild(thumbContainer);
         });
+        
+        // Batch preload 750px for visible range after initial render
+        setTimeout(() => {
+            this.batchPreload750px(currentIndex);
+        }, 500);
     }
 
     bindPreviewEvents() {
@@ -758,6 +781,9 @@ class AdminFileManager {
         this.updatePreviewImage(this.images[index]);
         this.updateFilmstripActiveThumbnail(index);
         this.loadNearbyThumbnails(index);
+        
+        // Trigger intelligent preloading for new position
+        this.intelligentPreload750px(index);
     }
 
     updateFilmstripActiveThumbnail(newIndex) {
@@ -788,38 +814,167 @@ class AdminFileManager {
         if (!filmstripContainer) return;
 
         // Load thumbnails around the current index with improved range
-        const loadRange = 5; // Load 5 images before/after current
+        const loadRange = 7; // Increased from 5 to 7 for more aggressive loading
+        
+        // Batch load for better performance
+        const toLoad = [];
         
         for (let i = Math.max(0, centerIndex - loadRange); i <= Math.min(this.images.length - 1, centerIndex + loadRange); i++) {
             const thumbImg = filmstripContainer.querySelector(`[data-index="${i}"] img`);
             if (thumbImg && thumbImg.classList.contains('lazy-load') && thumbImg.dataset.lazySrc) {
-                // Add loading state
-                thumbImg.style.opacity = '0.6';
-                thumbImg.style.transition = 'opacity 0.3s ease';
-                
-                // Load the actual thumbnail
-                thumbImg.src = thumbImg.dataset.lazySrc;
-                
-                // Handle load success
-                thumbImg.onload = function() {
-                    this.style.opacity = '1';
-                    this.classList.remove('lazy-load');
-                    delete this.dataset.lazySrc;
-                };
-                
-                // Handle load error
-                thumbImg.onerror = function() {
-                    this.style.opacity = '0.3';
-                    this.style.background = '#30363d';
-                    this.classList.remove('lazy-load');
-                    delete this.dataset.lazySrc;
-                };
-                
-                // Remove lazy-load class immediately to prevent reloading
-                thumbImg.classList.remove('lazy-load');
-                delete thumbImg.dataset.lazySrc;
+                toLoad.push({ img: thumbImg, index: i });
             }
         }
+        
+        // Load in batches of 3 for better performance
+        const batchSize = 3;
+        for (let i = 0; i < toLoad.length; i += batchSize) {
+            const batch = toLoad.slice(i, i + batchSize);
+            
+            setTimeout(() => {
+                batch.forEach(({ img }) => {
+                    // Add loading state
+                    img.style.opacity = '0.6';
+                    img.style.transition = 'opacity 0.3s ease';
+                    
+                    // Load the actual thumbnail
+                    img.src = img.dataset.lazySrc;
+                    
+                    // Handle load success
+                    img.onload = function() {
+                        this.style.opacity = '1';
+                        this.classList.remove('lazy-load');
+                        delete this.dataset.lazySrc;
+                    };
+                    
+                    // Handle load error
+                    img.onerror = function() {
+                        this.style.opacity = '0.3';
+                        this.style.background = '#30363d';
+                        this.classList.remove('lazy-load');
+                        delete this.dataset.lazySrc;
+                    };
+                    
+                    // Remove lazy-load class immediately to prevent reloading
+                    img.classList.remove('lazy-load');
+                    delete img.dataset.lazySrc;
+                });
+            }, i * 50); // Stagger batch loading by 50ms
+        }
+    }
+    
+    // NEW: Intelligent 750px preloading system
+    intelligentPreload750px(currentIndex) {
+        if (!this.images || this.images.length === 0) return;
+        
+        // Initialize preload cache if not exists
+        if (!this.preload750Cache) {
+            this.preload750Cache = new Set();
+        }
+        
+        // Preload current and next 2 images in high priority
+        const highPriorityRange = 2;
+        const mediumPriorityRange = 5;
+        
+        // High priority: immediate preload
+        for (let i = Math.max(0, currentIndex - 1); i <= Math.min(this.images.length - 1, currentIndex + highPriorityRange); i++) {
+            if (i !== currentIndex) { // Current is already loading
+                setTimeout(() => {
+                    this.preload750px(this.images[i], this.getImageFullPath(this.images[i]), 'high');
+                }, (Math.abs(i - currentIndex)) * 100); // Stagger by proximity
+            }
+        }
+        
+        // Medium priority: background preload
+        setTimeout(() => {
+            for (let i = Math.max(0, currentIndex - mediumPriorityRange); i <= Math.min(this.images.length - 1, currentIndex + mediumPriorityRange); i++) {
+                if (Math.abs(i - currentIndex) > highPriorityRange) {
+                    this.preload750px(this.images[i], this.getImageFullPath(this.images[i]), 'medium');
+                }
+            }
+        }, 1000); // Delay medium priority preloading
+    }
+    
+    // NEW: Batch preload 750px thumbnails
+    batchPreload750px(centerIndex) {
+        if (!this.images || this.images.length === 0) return;
+        
+        const batchRange = 3; // Preload 3 images before/after current
+        const batch = [];
+        
+        for (let i = Math.max(0, centerIndex - batchRange); i <= Math.min(this.images.length - 1, centerIndex + batchRange); i++) {
+            if (i !== centerIndex) { // Skip current image
+                batch.push(this.images[i]);
+            }
+        }
+        
+        // Process batch in groups of 2 for optimal performance
+        const groupSize = 2;
+        for (let i = 0; i < batch.length; i += groupSize) {
+            const group = batch.slice(i, i + groupSize);
+            
+            setTimeout(() => {
+                group.forEach(image => {
+                    this.preload750px(image, this.getImageFullPath(image), 'batch');
+                });
+            }, i * 200); // Stagger group loading
+        }
+    }
+    
+    // NEW: Individual 750px preload with caching
+    preload750px(image, fullPath, priority = 'medium') {
+        if (!fullPath) {
+            fullPath = this.getImageFullPath(image);
+        }
+        
+        // Initialize cache if not exists
+        if (!this.preload750Cache) {
+            this.preload750Cache = new Set();
+        }
+        
+        // Skip if already cached
+        if (this.preload750Cache.has(fullPath)) {
+            return;
+        }
+        
+        // Mark as being cached
+        this.preload750Cache.add(fullPath);
+        
+        // Create preload image
+        const preloadImg = new Image();
+        
+        // Set appropriate timeout based on priority
+        const timeouts = {
+            'high': 5000,     // 5 seconds for high priority
+            'medium': 10000,  // 10 seconds for medium priority
+            'batch': 15000    // 15 seconds for batch loading
+        };
+        
+        const timeout = setTimeout(() => {
+            preloadImg.onload = null;
+            preloadImg.onerror = null;
+            preloadImg.src = '';
+            this.preload750Cache.delete(fullPath); // Remove from cache on timeout
+        }, timeouts[priority] || timeouts['medium']);
+        
+        preloadImg.onload = () => {
+            clearTimeout(timeout);
+            console.log(`[FM] Preloaded 750px: ${image.name} (${priority})`);
+        };
+        
+        preloadImg.onerror = () => {
+            clearTimeout(timeout);
+            this.preload750Cache.delete(fullPath); // Remove from cache on error
+            console.warn(`[FM] Failed to preload 750px: ${image.name}`);
+        };
+        
+        // Start preloading
+        preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+    }
+    
+    // NEW: Helper to get full image path
+    getImageFullPath(image) {
+        return this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
     }
 
     closePreview() {
@@ -830,6 +985,12 @@ class AdminFileManager {
         if (this.boundHandlePreviewKeypress) {
             document.removeEventListener('keydown', this.boundHandlePreviewKeypress);
             this.boundHandlePreviewKeypress = null;
+        }
+        
+        // Cleanup preload cache to free memory
+        if (this.preload750Cache) {
+            this.preload750Cache.clear();
+            console.log('[FM] Cleared 750px preload cache');
         }
         
         // Remove overlay
