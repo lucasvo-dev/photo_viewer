@@ -2431,23 +2431,25 @@
 .fm-preview-image {
     max-width: 100%;
     max-height: 100%;
-    width: auto;
-    height: auto;
     object-fit: contain;
-    border-radius: 0;
-    box-shadow: none;
-    transition: opacity 0.3s ease, filter 0.2s ease;
-    will-change: opacity, filter;
+    border-radius: 8px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: opacity 0.3s ease, filter 0.3s ease;
 }
 
-/* Loading state for main preview image */
 .fm-preview-image[style*="opacity: 0.5"] {
     filter: blur(2px) brightness(0.8);
+    animation: preview-loading 1.5s ease-in-out infinite alternate;
 }
 
-/* Loaded state for main preview image */
+@keyframes preview-loading {
+    0% { filter: blur(2px) brightness(0.8); }
+    100% { filter: blur(1px) brightness(0.9); }
+}
+
 .fm-preview-image[style*="opacity: 1"] {
     filter: none;
+    animation: none;
 }
 
 .fm-preview-controls {
@@ -2533,87 +2535,76 @@
 
 .fm-filmstrip-thumb {
     position: relative;
-    width: 100px;
-    height: 100px;
-    border: 3px solid transparent;
-    border-radius: 8px;
+    flex-shrink: 0;
+    width: 80px;
+    height: 60px;
+    margin-right: 8px;
+    border-radius: 6px;
+    overflow: hidden;
     cursor: pointer;
     transition: all 0.2s ease;
-    will-change: transform, border-color;
-    flex-shrink: 0;
+    border: 2px solid transparent;
 }
 
-.fm-filmstrip-thumb:hover {
-    border-color: rgba(88, 166, 255, 0.5);
-    transform: scale(1.05);
-}
-
-.fm-filmstrip-thumb.active {
-    border-color: #58a6ff;
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3);
-}
-
-.fm-filmstrip-thumb img {
+.fm-filmstrip-thumb-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
-    border-radius: 6px;
-    transition: opacity 0.2s ease;
-    will-change: opacity;
+    transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-/* Optimized loading states for filmstrip thumbnails */
-.fm-filmstrip-thumb img[style*="opacity: 0.7"] {
-    background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
-    background-size: 200% 100%;
-    animation: thumbnail-loading 1s infinite;
+.fm-filmstrip-thumb-img[data-src] {
+    opacity: 0.3;
+    background: linear-gradient(45deg, #30363d 25%, transparent 25%), 
+                linear-gradient(-45deg, #30363d 25%, transparent 25%), 
+                linear-gradient(45deg, transparent 75%, #30363d 75%), 
+                linear-gradient(-45deg, transparent 75%, #30363d 75%);
+    background-size: 8px 8px;
+    background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
 }
 
-.fm-filmstrip-thumb img[style*="opacity: 0.5"] {
-    background: #21262d;
-}
-
-.fm-filmstrip-thumb img[style*="opacity: 0.4"] {
-    background: #30363d;
-    border: 1px solid #484f58;
-}
-
-@keyframes thumbnail-loading {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-}
-
-/* Loading state for filmstrip thumbnails */
-.fm-filmstrip-thumb img[style*="opacity: 0.6"] {
-    filter: blur(0.5px) brightness(0.95);
-    transform: scale(0.98);
-}
-
-/* Loaded state for filmstrip thumbnails */
-.fm-filmstrip-thumb img[style*="opacity: 1"] {
-    filter: none;
-    transform: scale(1);
-}
-
-/* Enhanced hover states with performance optimization */
 .fm-filmstrip-thumb:hover {
-    border-color: rgba(255,255,255,0.4);
-    transform: translateY(-4px) scale(1.05);
-    box-shadow: 0 8px 25px rgba(0,0,0,0.4);
-}
-
-.fm-filmstrip-thumb:hover img {
     transform: scale(1.05);
+    border-color: #58a6ff;
+    box-shadow: 0 2px 8px rgba(88, 166, 255, 0.3);
 }
 
 .fm-filmstrip-thumb.active {
     border-color: #58a6ff;
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.4), 0 8px 25px rgba(88, 166, 255, 0.2);
-    transform: translateY(-4px) scale(1.1);
+    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.5);
 }
 
 .fm-filmstrip-thumb.active img {
-    transform: scale(1.1);
+    transform: scale(1.02);
+}
+
+/* Filmstrip Badge Container */
+.fm-filmstrip-badge-container {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    z-index: 2;
+}
+
+.fm-filmstrip-badge {
+    display: inline-block;
+    padding: 2px 4px;
+    border-radius: 3px;
+    font-size: 0.7rem;
+    line-height: 1;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    backdrop-filter: blur(4px);
+}
+
+.fm-filmstrip-badge.featured {
+    background: rgba(255, 193, 7, 0.9);
+    color: #000;
+}
+
+.fm-filmstrip-badge.portrait {
+    background: rgba(173, 181, 189, 0.9);
+    color: #000;
 }
 
 /* Preloading indicator (subtle) */

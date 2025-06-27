@@ -551,6 +551,9 @@ class AdminFileManager {
             this.renderPreviewOverlayStructure();
         }
         
+        // IMMEDIATE PRELOAD: Preload first 1-2 images for faster navigation
+        this.preloadFirstImages(imageIndex);
+        
         // Update the main image
         this.updatePreviewImage(this.images[this.currentPreviewIndex]);
         
@@ -660,30 +663,48 @@ class AdminFileManager {
         imgPreview.style.filter = 'blur(2px) brightness(0.8)';
         imgPreview.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
         
-        // Preload the image before setting src for faster display
-        const preloadImg = new Image();
+        // Check if image is already preloaded in cache
+        const cacheKey = `preload_${fullPath}`;
+        const cachedImage = this.preload750Cache?.get(cacheKey);
         
-        preloadImg.onload = () => {
-            // Image is ready, set it immediately
-            imgPreview.src = preloadImg.src;
+        if (cachedImage && cachedImage.complete) {
+            // Use cached image immediately
+            imgPreview.src = cachedImage.src;
             imgPreview.style.opacity = '1';
             imgPreview.style.filter = 'none';
+            console.log(`[FM] Using cached image: ${image.name}`);
+        } else {
+            // Preload the image before setting src for faster display
+            const preloadImg = new Image();
             
-            // Start intelligent preloading of nearby images
-            this.intelligentPreload750px(this.currentPreviewIndex);
-        };
-        
-        preloadImg.onerror = () => {
-            // Fallback to direct loading if preload fails
-            imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
-            imgPreview.onerror = function() {
-                this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
-                this.onerror = null; // Prevent infinite loop
+            preloadImg.onload = () => {
+                // Image is ready, set it immediately
+                imgPreview.src = preloadImg.src;
+                imgPreview.style.opacity = '1';
+                imgPreview.style.filter = 'none';
+                
+                // Cache the loaded image
+                if (!this.preload750Cache) {
+                    this.preload750Cache = new Map();
+                }
+                this.preload750Cache.set(cacheKey, preloadImg);
+                
+                console.log(`[FM] Image loaded: ${image.name}`);
             };
-        };
+            
+            preloadImg.onerror = () => {
+                // Fallback to direct loading if preload fails
+                imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+                imgPreview.onerror = function() {
+                    this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+                    this.onerror = null; // Prevent infinite loop
+                };
+            };
+            
+            // Start preloading
+            preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        }
         
-        // Start preloading
-        preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
         imgPreview.alt = image.name;
         
         // Update title and badges immediately (don't wait for image)
@@ -708,6 +729,11 @@ class AdminFileManager {
         if (nextBtn) {
             nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
         }
+        
+        // Start intelligent preloading of nearby images (but not immediately to avoid conflicts)
+        setTimeout(() => {
+            this.intelligentPreload750px(this.currentPreviewIndex);
+        }, 100);
     }
 
     renderThumbnailFilmstrip(images, currentIndex) {
@@ -726,77 +752,42 @@ class AdminFileManager {
             }
 
             const thumbImg = document.createElement('img');
-            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
-            
-            // Optimized loading strategy - load more aggressively for better UX
-            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 8; // Increased from 5 to 8
-            
-            if (shouldLoadImmediately) {
-                // Load immediately with optimized loading state
-                thumbImg.style.opacity = '0.7';
-                thumbImg.style.transition = 'opacity 0.2s ease';
-                thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
-                
-                // Show full opacity when loaded
-                thumbImg.onload = function() {
-                    this.style.opacity = '1';
-                };
-                
-                thumbImg.onerror = function() {
-                    // Better fallback on error
-                    this.style.opacity = '0.4';
-                    this.style.background = '#30363d';
-                    this.style.border = '1px solid #484f58';
-                };
-            } else {
-                // Use optimized placeholder with lazy loading
-                thumbImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiMyMTI2MkQiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIxNSIgZmlsbD0iIzMwMzYzRCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjgiIGZpbGw9IiM1OGE2ZmYiIG9wYWNpdHk9IjAuNCIvPjwvc3ZnPg==';
-                thumbImg.dataset.lazySrc = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
-                thumbImg.classList.add('lazy-load');
-                thumbImg.style.opacity = '0.5';
-            }
-            
+            thumbImg.className = 'fm-filmstrip-thumb-img';
             thumbImg.alt = image.name;
-
-            // Add featured badges to filmstrip
-            if (image.featured_type) {
-                const badge = document.createElement('span');
-                badge.className = `featured-badge ${image.featured_type}`;
-                badge.textContent = image.featured_type === 'featured' ? '⭐' : '👤';
-                thumbContainer.appendChild(badge);
+            
+            // Fast preload for visible thumbnails (first 10)
+            if (index < 10) {
+                const thumbPath = this.getImageFullPath(image);
+                thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(thumbPath)}&size=150`;
+            } else {
+                // Lazy load for others
+                thumbImg.dataset.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(this.getImageFullPath(image))}&size=150`;
+                thumbImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // 1x1 transparent pixel
             }
-
+            
+            // Add featured badge if needed
+            const badgeContainer = document.createElement('div');
+            badgeContainer.className = 'fm-filmstrip-badge-container';
+            
+            if (image.featured_type === 'featured') {
+                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge featured">⭐</span>';
+            } else if (image.featured_type === 'portrait') {
+                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
+            }
+            
             thumbContainer.appendChild(thumbImg);
+            thumbContainer.appendChild(badgeContainer);
             
-            // Enhanced click handler with immediate feedback
+            // Add click handler
             thumbContainer.addEventListener('click', () => {
-                // Add immediate visual feedback
-                thumbContainer.style.transform = 'scale(0.95)';
-                setTimeout(() => {
-                    thumbContainer.style.transform = '';
-                }, 150);
-                
                 this.navigateToImage(index);
-            });
-            
-            // Add hover preloading for 750px thumbnails with debouncing
-            let hoverTimeout;
-            thumbContainer.addEventListener('mouseenter', () => {
-                clearTimeout(hoverTimeout);
-                hoverTimeout = setTimeout(() => {
-                    this.preload750px(image, fullPath, 'hover');
-                }, 100); // Small delay to prevent excessive preloading
-            });
-            
-            thumbContainer.addEventListener('mouseleave', () => {
-                clearTimeout(hoverTimeout);
             });
             
             filmstripContainer.appendChild(thumbContainer);
         });
-
-        // Load nearby thumbnails immediately for better performance
-        this.loadNearbyThumbnails(currentIndex);
+        
+        // Start lazy loading for remaining thumbnails
+        this.lazyLoadFilmstripThumbnails();
     }
 
     bindPreviewEvents() {
@@ -1015,16 +1006,15 @@ class AdminFileManager {
         
         // Initialize cache if not exists
         if (!this.preload750Cache) {
-            this.preload750Cache = new Set();
+            this.preload750Cache = new Map();
         }
+        
+        const cacheKey = `preload_${fullPath}`;
         
         // Skip if already cached
-        if (this.preload750Cache.has(fullPath)) {
+        if (this.preload750Cache.has(cacheKey)) {
             return;
         }
-        
-        // Mark as being cached
-        this.preload750Cache.add(fullPath);
         
         // Create preload image
         const preloadImg = new Image();
@@ -1040,7 +1030,7 @@ class AdminFileManager {
             preloadImg.onload = null;
             preloadImg.onerror = null;
             preloadImg.src = '';
-            this.preload750Cache.delete(fullPath); // Remove from cache on timeout
+            this.preload750Cache.delete(cacheKey); // Remove from cache on timeout
         }, timeouts[priority] || timeouts['medium']);
         
         preloadImg.onload = () => {
@@ -1050,9 +1040,12 @@ class AdminFileManager {
         
         preloadImg.onerror = () => {
             clearTimeout(timeout);
-            this.preload750Cache.delete(fullPath); // Remove from cache on error
+            this.preload750Cache.delete(cacheKey); // Remove from cache on error
             console.warn(`[FM] Failed to preload 750px: ${image.name}`);
         };
+        
+        // Mark as being cached
+        this.preload750Cache.set(cacheKey, preloadImg);
         
         // Start preloading
         preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
@@ -1071,6 +1064,12 @@ class AdminFileManager {
         if (this.boundHandlePreviewKeypress) {
             document.removeEventListener('keydown', this.boundHandlePreviewKeypress);
             this.boundHandlePreviewKeypress = null;
+        }
+        
+        // Cleanup filmstrip observer
+        if (this.filmstripObserver) {
+            this.filmstripObserver.disconnect();
+            this.filmstripObserver = null;
         }
         
         // Cleanup preload cache to free memory
@@ -3994,6 +3993,80 @@ class AdminFileManager {
         this.updateBreadcrumb();
         
         console.log('[FM] Navigated to home');
+    }
+
+    // IMMEDIATE PRELOAD: Preload first 1-2 images for faster navigation
+    preloadFirstImages(currentIndex) {
+        if (!this.images || this.images.length === 0) return;
+        
+        console.log(`[FM] Preloading first images from index ${currentIndex}`);
+        
+        // Preload current image and next 1-2 images immediately
+        const imagesToPreload = [];
+        
+        // Always preload current image
+        imagesToPreload.push(currentIndex);
+        
+        // Preload next 1-2 images if available
+        for (let i = 1; i <= 2; i++) {
+            const nextIndex = currentIndex + i;
+            if (nextIndex < this.images.length) {
+                imagesToPreload.push(nextIndex);
+            }
+        }
+        
+        // Preload previous 1 image if available
+        const prevIndex = currentIndex - 1;
+        if (prevIndex >= 0) {
+            imagesToPreload.unshift(prevIndex);
+        }
+        
+        // Start preloading with high priority
+        imagesToPreload.forEach((index, priority) => {
+            const image = this.images[index];
+            if (image) {
+                const fullPath = this.getImageFullPath(image);
+                this.preload750px(image, fullPath, 'high');
+                console.log(`[FM] High priority preload: ${image.name} (priority: ${priority})`);
+            }
+        });
+    }
+
+    // Lazy load remaining filmstrip thumbnails
+    lazyLoadFilmstripThumbnails() {
+        const lazyThumbs = document.querySelectorAll('.fm-filmstrip-thumb-img[data-src]');
+        
+        if (lazyThumbs.length === 0) return;
+        
+        // Use Intersection Observer for efficient lazy loading
+        if (!this.filmstripObserver) {
+            this.filmstripObserver = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const img = entry.target;
+                        img.src = img.dataset.src;
+                        img.removeAttribute('data-src');
+                        img.style.opacity = '0.7';
+                        img.style.transition = 'opacity 0.2s ease';
+                        
+                        img.onload = function() {
+                            this.style.opacity = '1';
+                        };
+                        
+                        this.filmstripObserver.unobserve(img);
+                    }
+                });
+            }, {
+                root: document.getElementById('fm-preview-filmstrip'),
+                rootMargin: '50px',
+                threshold: 0.1
+            });
+        }
+        
+        // Observe all lazy thumbnails
+        lazyThumbs.forEach(thumb => {
+            this.filmstripObserver.observe(thumb);
+        });
     }
 }
 
