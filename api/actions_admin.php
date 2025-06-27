@@ -872,7 +872,7 @@ switch ($action) {
 
         $source_key = $_GET['source'] ?? null;
         $path = $_GET['path'] ?? '';
-        $sort_order = $_GET['sort'] ?? 'date'; // 'date' or 'name'
+        $sort_order = $_GET['sort'] ?? 'name'; // 'date' or 'name'
 
         error_log("[file_manager_browse] Request - Source: '{$source_key}', Path: '{$path}', Sort: '{$sort_order}'");
 

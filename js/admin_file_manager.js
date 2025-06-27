@@ -5,39 +5,24 @@
 
 class AdminFileManager {
     constructor() {
-        this.selectedItems = new Set();
+        // State variables
         this.currentSource = null;
         this.currentPath = '';
-        this.debug = true; // Enable debug mode
-        this.isInitialized = false;
-        this.isNavigating = false; // Prevent multiple simultaneous navigation
-        this.breadcrumbClickHandler = null; // Store bound event handler
-        this.currentLoadKey = null; // Track current load request
-        this.sourceChangeTimeout = null; // Debounce source changes
-        this.isDeletingItem = false; // Prevent multiple delete confirmations
-        this.isDeletingSelected = false; // Prevent multiple delete selected operations
-        
-        // Upload tracking
-        this.isUploading = false;
-        this.uploadAbortController = null;
-        this.uploadProgressModal = null;
-        this.activeUploadSessions = []; // Track active upload sessions
-        this.globalCancelFlag = false; // Global flag to stop all monitoring
-        
-        // New properties for grid view and preview
-        this.currentView = 'list'; // 'list' or 'grid'
+        this.currentItems = [];
+        this.images = [];
+        this.selectedItems = new Set();
         this.previewOpen = false;
         this.currentPreviewIndex = -1;
-        this.currentItems = []; // Store current directory items
-        this.images = []; // Store only image items for preview
-        
-        // Event handlers to prevent duplicates
-        this.itemClickHandler = null;
-        this.itemChangeHandler = null;
-        this.globalDropdownHandler = null;
+        this.preload750Cache = null;
+        this.currentLoadKey = null;
+        this.isNavigating = false;
         
         // Sorting preference
-        this.sortOrder = 'date'; // 'date' or 'name'
+        this.sortOrder = 'name'; // 'date' or 'name'
+        
+        // URL hash navigation support
+        this.hashChangeHandler = null;
+        this.popstateHandler = null;
         
         this.init();
     }
@@ -53,14 +38,28 @@ class AdminFileManager {
     }
 
     init() {
-        this.log('Initializing File Manager');
-        if (this.isInitialized) return;
+        this.log('Initializing File Manager...');
         
+        // Load image sources first
+        this.loadImageSources().then(() => {
+            // After sources are loaded, check URL hash
+            if (!this.handleUrlHash()) {
+                // No valid hash, load default state
+                this.log('No valid URL hash, loading default state');
+                // Select first available source if any
+                if (this.imageSources.length > 0) {
+                    this.selectSource(this.imageSources[0].key);
+                }
+            }
+        });
+        
+        // Bind event listeners
         this.bindEvents();
-        this.loadImageSources();
-        this.isInitialized = true;
         
-        console.log('Admin File Manager initialized');
+        // Set up hash change and popstate listeners
+        this.setupHashNavigation();
+        
+        this.log('File Manager initialized');
     }
 
     bindEvents() {
@@ -86,6 +85,18 @@ class AdminFileManager {
         const refreshBtn = document.getElementById('fm-refresh-btn');
         if (refreshBtn) {
             refreshBtn.addEventListener('click', () => this.refreshCurrentDirectory());
+        }
+        
+        // Logo click handler for home navigation
+        const logoLink = document.querySelector('.logo-link');
+        if (logoLink) {
+            logoLink.addEventListener('click', (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                
+                console.log('[FM] Logo clicked, navigating to home');
+                this.navigateToHome();
+            });
         }
     }
 
@@ -150,7 +161,13 @@ class AdminFileManager {
         this.currentPath = '';
         this.selectedItems.clear();
         
+        // Update UI
         this.updateUI();
+        
+        // Update URL hash to reflect current location
+        this.updateUrlHash();
+        
+        this.log('Source selected successfully', { source: sourceKey });
         
         if (sourceKey) {
             // Debounce the actual loading
@@ -241,6 +258,10 @@ class AdminFileManager {
             this.renderDirectory(data.items || []);
             this.updateBreadcrumb();
             this.updateUI(); // Update UI state after loading directory
+            
+            // Update URL hash to reflect current location
+            this.updateUrlHash();
+            
             this.log('Directory loaded successfully', { currentPath: this.currentPath });
             
         } catch (error) {
@@ -413,13 +434,24 @@ class AdminFileManager {
         if (!isDirectory && item.is_image) {
             // Use thumbnail for image files
             const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
+            
+            // Add featured badge if image is featured
+            const featuredBadge = (item.is_featured && item.featured_type) ? `
+                <span class="fm-item-featured-badge ${item.featured_type}">
+                    ${item.featured_type === 'portrait' ? '👤' : '⭐'}
+                </span>
+            ` : '';
+            
             iconContent = `
-                <img class="fm-item-thumbnail" 
-                     src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
-                     alt="${item.name}"
-                     onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
-                     onload="this.style.opacity='1';">
-                <i class="fas fa-image fm-item-fallback-icon" style="display: none;"></i>
+                <div class="fm-item-thumbnail-container">
+                    <img class="fm-item-thumbnail" 
+                         src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
+                         alt="${item.name}"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+                         onload="this.style.opacity='1';">
+                    <i class="fas fa-image fm-item-fallback-icon" style="display: none;"></i>
+                    ${featuredBadge}
+                </div>
             `;
         } else {
             // Use icon for directories and non-image files
@@ -623,25 +655,38 @@ class AdminFileManager {
         
         const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
         
-        // Show loading state immediately
-        imgPreview.style.opacity = '0.7';
-        imgPreview.style.transition = 'opacity 0.3s ease';
+        // Show loading state immediately with better visual feedback
+        imgPreview.style.opacity = '0.5';
+        imgPreview.style.filter = 'blur(2px) brightness(0.8)';
+        imgPreview.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
         
-        // Use 750px thumbnail for preview instead of full image for better performance
-        imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        // Preload the image before setting src for faster display
+        const preloadImg = new Image();
+        
+        preloadImg.onload = () => {
+            // Image is ready, set it immediately
+            imgPreview.src = preloadImg.src;
+            imgPreview.style.opacity = '1';
+            imgPreview.style.filter = 'none';
+            
+            // Start intelligent preloading of nearby images
+            this.intelligentPreload750px(this.currentPreviewIndex);
+        };
+        
+        preloadImg.onerror = () => {
+            // Fallback to direct loading if preload fails
+            imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+            imgPreview.onerror = function() {
+                this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+                this.onerror = null; // Prevent infinite loop
+            };
+        };
+        
+        // Start preloading
+        preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
         imgPreview.alt = image.name;
         
-        // Handle successful load
-        imgPreview.onload = function() {
-            this.style.opacity = '1';
-        };
-        
-        // Fallback to full image if thumbnail fails
-        imgPreview.onerror = function() {
-            this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
-            this.onerror = null; // Prevent infinite loop
-        };
-        
+        // Update title and badges immediately (don't wait for image)
         titleElement.textContent = image.name;
         
         // Update badges
@@ -663,9 +708,6 @@ class AdminFileManager {
         if (nextBtn) {
             nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
         }
-        
-        // Start intelligent preloading of nearby images
-        this.intelligentPreload750px(this.currentPreviewIndex);
     }
 
     renderThumbnailFilmstrip(images, currentIndex) {
@@ -686,31 +728,32 @@ class AdminFileManager {
             const thumbImg = document.createElement('img');
             const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
             
-            // Improved lazy loading strategy - more aggressive initial loading
-            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 5; // Increased from 3 to 5
+            // Optimized loading strategy - load more aggressively for better UX
+            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 8; // Increased from 5 to 8
             
             if (shouldLoadImmediately) {
-                // Load immediately with loading placeholder
-                thumbImg.style.opacity = '0.6';
+                // Load immediately with optimized loading state
+                thumbImg.style.opacity = '0.7';
+                thumbImg.style.transition = 'opacity 0.2s ease';
                 thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
                 
                 // Show full opacity when loaded
                 thumbImg.onload = function() {
                     this.style.opacity = '1';
-                    this.style.transition = 'opacity 0.3s ease';
                 };
                 
                 thumbImg.onerror = function() {
-                    // Fallback to a simple placeholder on error
-                    this.style.opacity = '0.3';
+                    // Better fallback on error
+                    this.style.opacity = '0.4';
                     this.style.background = '#30363d';
+                    this.style.border = '1px solid #484f58';
                 };
             } else {
-                // Use optimized placeholder
+                // Use optimized placeholder with lazy loading
                 thumbImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiMyMTI2MkQiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIxNSIgZmlsbD0iIzMwMzYzRCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjgiIGZpbGw9IiM1OGE2ZmYiIG9wYWNpdHk9IjAuNCIvPjwvc3ZnPg==';
                 thumbImg.dataset.lazySrc = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
                 thumbImg.classList.add('lazy-load');
-                thumbImg.style.opacity = '0.4';
+                thumbImg.style.opacity = '0.5';
             }
             
             thumbImg.alt = image.name;
@@ -725,23 +768,35 @@ class AdminFileManager {
 
             thumbContainer.appendChild(thumbImg);
             
-            // Enhanced click handler
+            // Enhanced click handler with immediate feedback
             thumbContainer.addEventListener('click', () => {
+                // Add immediate visual feedback
+                thumbContainer.style.transform = 'scale(0.95)';
+                setTimeout(() => {
+                    thumbContainer.style.transform = '';
+                }, 150);
+                
                 this.navigateToImage(index);
             });
             
-            // Add hover preloading for 750px thumbnails
+            // Add hover preloading for 750px thumbnails with debouncing
+            let hoverTimeout;
             thumbContainer.addEventListener('mouseenter', () => {
-                this.preload750px(image, fullPath);
+                clearTimeout(hoverTimeout);
+                hoverTimeout = setTimeout(() => {
+                    this.preload750px(image, fullPath, 'hover');
+                }, 100); // Small delay to prevent excessive preloading
             });
-
+            
+            thumbContainer.addEventListener('mouseleave', () => {
+                clearTimeout(hoverTimeout);
+            });
+            
             filmstripContainer.appendChild(thumbContainer);
         });
-        
-        // Batch preload 750px for visible range after initial render
-        setTimeout(() => {
-            this.batchPreload750px(currentIndex);
-        }, 500);
+
+        // Load nearby thumbnails immediately for better performance
+        this.loadNearbyThumbnails(currentIndex);
     }
 
     bindPreviewEvents() {
@@ -766,6 +821,9 @@ class AdminFileManager {
             this.closePreview();
             return;
         }
+        
+        // Remove event.repeat check to allow continuous navigation
+        // This allows holding down arrow keys to navigate quickly
         if (e.key === 'ArrowLeft') {
             this.navigatePreview(-1);
             return;
@@ -775,7 +833,7 @@ class AdminFileManager {
             return;
         }
         
-        // Featured marking hotkeys - only trigger on keydown, not repeat
+        // Featured toggle hotkeys - only trigger on keydown, not repeat
         if (!e.repeat) {
             switch (e.key) {
                 case '1':
@@ -791,7 +849,14 @@ class AdminFileManager {
     navigatePreview(direction) {
         const newIndex = this.currentPreviewIndex + direction;
         if (newIndex >= 0 && newIndex < this.images.length) {
-            this.navigateToImage(newIndex);
+            // Update state immediately for faster response
+            this.currentPreviewIndex = newIndex;
+            
+            // Update the main image immediately
+            this.updatePreviewImage(this.images[this.currentPreviewIndex]);
+            
+            // Update filmstrip active state
+            this.updateFilmstripActiveThumbnail(this.currentPreviewIndex);
         }
     }
 
@@ -1223,10 +1288,8 @@ class AdminFileManager {
                             return;
                         }
                         
-                        this.isNavigating = true;
-                        this.openDirectory(itemPath).finally(() => {
-                            this.isNavigating = false;
-                        });
+                        // Use URL hash navigation
+                        this.navigateToLocation(this.currentSource, itemPath);
                     }
                     break;
                 case 'preview':
@@ -1357,6 +1420,7 @@ class AdminFileManager {
 
     async openDirectory(path) {
         await this.loadDirectory(path);
+        // URL hash will be updated by loadDirectory
     }
 
     updateBreadcrumb() {
@@ -1407,10 +1471,8 @@ class AdminFileManager {
                         return;
                     }
                     
-                    this.isNavigating = true;
-                    this.loadDirectory(path).finally(() => {
-                        this.isNavigating = false;
-                    });
+                    // Navigate using URL hash
+                    this.navigateToLocation(this.currentSource, path);
                 }
             };
         }
@@ -3590,6 +3652,13 @@ class AdminFileManager {
                 // Update UI without full refresh
                 this.updateListViewItem(imageName, imageData);
                 
+                // Debug: Log the update
+                console.log(`[FM] Updated featured status for ${imageName}:`, {
+                    is_featured: imageData.is_featured,
+                    featured_type: imageData.featured_type,
+                    shouldShowBadge: imageData.is_featured && imageData.featured_type
+                });
+                
                 // If this image exists in the images array (for preview), update it too
                 const previewImageIndex = this.images.findIndex(img => img.name === imageName);
                 if (previewImageIndex >= 0) {
@@ -3662,27 +3731,75 @@ class AdminFileManager {
     }
 
     updateListViewItem(imageName, imageData) {
-        // Find the item in the list view
+        // Find the item in the list view by multiple criteria
         const items = document.querySelectorAll('.fm-item');
+        let targetItem = null;
+        
+        console.log(`[FM] Looking for item: ${imageName} in ${items.length} items`);
+        
         for (const item of items) {
             const itemName = item.querySelector('.fm-item-name')?.textContent;
+            const itemPath = item.dataset.path;
+            
+            // Try to match by name first, then by path
             if (itemName === imageName) {
-                // Update the featured dropdown button
-                const featuredBtn = item.querySelector('.featured-status-btn');
-                if (featuredBtn) {
-                    // Update button state
-                    if (imageData.is_featured) {
-                        featuredBtn.classList.add('is-featured');
-                        featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
-                            ? '<i class="fas fa-user-circle"></i>' 
-                            : '<i class="fas fa-star"></i>';
-                    } else {
-                        featuredBtn.classList.remove('is-featured');
-                        featuredBtn.innerHTML = '<i class="far fa-star"></i>';
-                    }
-                }
+                targetItem = item;
+                console.log(`[FM] Found item by name: ${imageName}`);
+                break;
+            } else if (itemPath && itemPath.endsWith(imageName)) {
+                targetItem = item;
+                console.log(`[FM] Found item by path: ${itemPath}`);
                 break;
             }
+        }
+        
+        if (!targetItem) {
+            console.warn(`[FM] Could not find list item for image: ${imageName}`);
+            return;
+        }
+        
+        console.log(`[FM] Updating item for ${imageName}:`, {
+            is_featured: imageData.is_featured,
+            featured_type: imageData.featured_type
+        });
+        
+        // Update the featured dropdown button
+        const featuredBtn = targetItem.querySelector('.featured-status-btn');
+        if (featuredBtn) {
+            // Update button state
+            if (imageData.is_featured) {
+                featuredBtn.classList.add('is-featured');
+                featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
+                    ? '<i class="fas fa-user-circle"></i>' 
+                    : '<i class="fas fa-star"></i>';
+            } else {
+                featuredBtn.classList.remove('is-featured');
+                featuredBtn.innerHTML = '<i class="far fa-star"></i>';
+            }
+        }
+        
+        // Update featured badge next to thumbnail
+        const thumbnailContainer = targetItem.querySelector('.fm-item-thumbnail-container');
+        if (thumbnailContainer) {
+            // Remove existing badge
+            const existingBadge = thumbnailContainer.querySelector('.fm-item-featured-badge');
+            if (existingBadge) {
+                existingBadge.remove();
+                console.log(`[FM] Removed existing badge for ${imageName}`);
+            }
+            
+            // Add new badge if featured
+            if (imageData.is_featured && imageData.featured_type) {
+                const badge = document.createElement('span');
+                badge.className = `fm-item-featured-badge ${imageData.featured_type}`;
+                badge.textContent = imageData.featured_type === 'portrait' ? '👤' : '⭐';
+                thumbnailContainer.appendChild(badge);
+                console.log(`[FM] Added new badge for ${imageName}: ${imageData.featured_type}`);
+            } else {
+                console.log(`[FM] No badge needed for ${imageName}: not featured or no type`);
+            }
+        } else {
+            console.warn(`[FM] No thumbnail container found for ${imageName}`);
         }
     }
 
@@ -3723,6 +3840,161 @@ class AdminFileManager {
             }, 300);
         }, 3000);
     }
+
+    refreshAllListViewBadges() {
+        // Update all list view badges based on current items data
+        this.currentItems.forEach((itemData) => {
+            if (itemData.is_image) {
+                this.updateListViewItem(itemData.name, itemData);
+            }
+        });
+    }
+
+    // URL hash navigation support
+    updateUrlHash() {
+        if (!this.currentSource) return;
+        
+        let hash = `#fm/${encodeURIComponent(this.currentSource)}`;
+        if (this.currentPath) {
+            hash += `/${encodeURIComponent(this.currentPath)}`;
+        }
+        
+        // Update URL without triggering navigation
+        if (location.hash !== hash) {
+            history.pushState(null, '', hash);
+            console.log(`[FM] Updated URL hash: ${hash}`);
+        }
+    }
+    
+    handleUrlHash() {
+        const hash = location.hash;
+        if (!hash || !hash.startsWith('#fm/')) {
+            return false; // No valid file manager hash
+        }
+        
+        try {
+            const hashContent = hash.substring(4); // Remove '#fm/'
+            const parts = hashContent.split('/').map(part => decodeURIComponent(part));
+            
+            if (parts.length >= 1) {
+                const sourceKey = parts[0];
+                const path = parts.length > 1 ? parts.slice(1).join('/') : '';
+                
+                console.log(`[FM] Navigating to hash URL: source=${sourceKey}, path=${path}`);
+                
+                // Navigate to the specified location
+                this.navigateToLocation(sourceKey, path);
+                return true;
+            }
+        } catch (error) {
+            console.error('[FM] Error parsing URL hash:', error);
+        }
+        
+        return false;
+    }
+    
+    async navigateToLocation(sourceKey, path = '') {
+        if (this.isNavigating) {
+            console.log('[FM] Navigation already in progress, skipping');
+            return;
+        }
+        
+        this.isNavigating = true;
+        
+        try {
+            // Select source if different
+            if (this.currentSource !== sourceKey) {
+                await this.selectSource(sourceKey);
+            }
+            
+            // Load directory
+            await this.loadDirectory(path);
+            
+        } catch (error) {
+            console.error('[FM] Error navigating to location:', error);
+            this.showMessage('Lỗi khi điều hướng: ' + error.message, 'error');
+        } finally {
+            this.isNavigating = false;
+        }
+    }
+
+    setupHashNavigation() {
+        // Remove existing listeners to prevent duplicates
+        if (this.hashChangeHandler) {
+            window.removeEventListener('hashchange', this.hashChangeHandler);
+        }
+        if (this.popstateHandler) {
+            window.removeEventListener('popstate', this.popstateHandler);
+        }
+        
+        // Create bound handlers
+        this.hashChangeHandler = () => {
+            console.log('[FM] Hash change detected:', location.hash);
+            this.handleUrlHash();
+        };
+        
+        this.popstateHandler = (event) => {
+            console.log('[FM] Popstate event detected:', event.state, location.hash);
+            this.handleUrlHash();
+        };
+        
+        // Add listeners
+        window.addEventListener('hashchange', this.hashChangeHandler);
+        window.addEventListener('popstate', this.popstateHandler);
+        
+        console.log('[FM] Hash navigation listeners set up');
+    }
+
+    cleanup() {
+        // Remove hash navigation listeners
+        if (this.hashChangeHandler) {
+            window.removeEventListener('hashchange', this.hashChangeHandler);
+            this.hashChangeHandler = null;
+        }
+        if (this.popstateHandler) {
+            window.removeEventListener('popstate', this.popstateHandler);
+            this.popstateHandler = null;
+        }
+        
+        // Remove other event listeners
+        if (this.breadcrumbClickHandler) {
+            const breadcrumb = document.getElementById('fm-breadcrumb');
+            if (breadcrumb) {
+                breadcrumb.removeEventListener('click', this.breadcrumbClickHandler);
+            }
+            this.breadcrumbClickHandler = null;
+        }
+        
+        // Close preview if open
+        if (this.previewOpen) {
+            this.closePreview();
+        }
+        
+        console.log('[FM] File Manager cleanup completed');
+    }
+
+    navigateToHome() {
+        // Clear URL hash to go to home
+        if (location.hash) {
+            history.pushState("", document.title, window.location.pathname + window.location.search);
+        }
+        
+        // Reset to default state
+        this.currentSource = null;
+        this.currentPath = '';
+        this.selectedItems.clear();
+        
+        // Close preview if open
+        if (this.previewOpen) {
+            this.closePreview();
+        }
+        
+        // Update UI
+        this.updateUI();
+        this.updateBreadcrumb();
+        
+        console.log('[FM] Navigated to home');
+    }
 }
 
 // Initialize when DOM is ready
@@ -3731,6 +4003,12 @@ function initFileManager() {
     if (!document.getElementById('file-manager-tab')) {
         console.log('File Manager tab not found, skipping initialization');
         return;
+    }
+    
+    // Cleanup existing instance if any
+    if (window.fileManager) {
+        console.log('Cleaning up existing File Manager instance');
+        window.fileManager.cleanup();
     }
     
     try {
