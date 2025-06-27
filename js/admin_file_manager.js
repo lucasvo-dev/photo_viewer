@@ -262,6 +262,9 @@ class AdminFileManager {
             // Update URL hash to reflect current location
             this.updateUrlHash();
             
+            // Preload first few images for faster preview
+            this.preloadFirstImagesOnDirectoryLoad(data.items || []);
+            
             this.log('Directory loaded successfully', { currentPath: this.currentPath });
             
         } catch (error) {
@@ -448,7 +451,8 @@ class AdminFileManager {
                          src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
                          alt="${item.name}"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
-                         onload="this.style.opacity='1';">
+                         onload="this.style.opacity='1';"
+                         onmouseenter="fileManager.preload750pxOnHover('${item.name}', '${fullPath}');">
                     <i class="fas fa-image fm-item-fallback-icon" style="display: none;"></i>
                     ${featuredBadge}
                 </div>
@@ -551,11 +555,11 @@ class AdminFileManager {
             this.renderPreviewOverlayStructure();
         }
         
-        // IMMEDIATE PRELOAD: Preload first 1-2 images for faster navigation
-        this.preloadFirstImages(imageIndex);
+        // IMMEDIATE LOAD: Load first image immediately without preload delay
+        this.loadFirstImageImmediately(this.images[this.currentPreviewIndex]);
         
-        // Update the main image
-        this.updatePreviewImage(this.images[this.currentPreviewIndex]);
+        // IMMEDIATE PRELOAD: Preload next 1-2 images right away for faster navigation
+        this.preloadFirstImages(imageIndex);
         
         // Render filmstrip
         this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
@@ -774,7 +778,7 @@ class AdminFileManager {
             } else if (image.featured_type === 'portrait') {
                 badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
             }
-            
+
             thumbContainer.appendChild(thumbImg);
             thumbContainer.appendChild(badgeContainer);
             
@@ -782,7 +786,7 @@ class AdminFileManager {
             thumbContainer.addEventListener('click', () => {
                 this.navigateToImage(index);
             });
-            
+
             filmstripContainer.appendChild(thumbContainer);
         });
         
@@ -854,13 +858,25 @@ class AdminFileManager {
     navigateToImage(index) {
         if (index < 0 || index >= this.images.length) return;
         
+        // Update state immediately
         this.currentPreviewIndex = index;
-        this.updatePreviewImage(this.images[index]);
-        this.updateFilmstripActiveThumbnail(index);
-        this.loadNearbyThumbnails(index);
         
-        // Trigger intelligent preloading for new position
-        this.intelligentPreload750px(index);
+        // Check if image is already in cache
+        const image = this.images[index];
+        const fullPath = this.getImageFullPath(image);
+        const cacheKey = `preload_${fullPath}`;
+        const cachedImage = this.preload750Cache?.get(cacheKey);
+        
+        if (cachedImage && cachedImage.complete) {
+            // Use cached image immediately
+            this.updatePreviewImageFromCache(image, cachedImage);
+        } else {
+            // Load image normally
+            this.updatePreviewImage(image);
+        }
+        
+        // Update filmstrip active state
+        this.updateFilmstripActiveThumbnail(index);
     }
 
     updateFilmstripActiveThumbnail(newIndex) {
@@ -1023,7 +1039,8 @@ class AdminFileManager {
         const timeouts = {
             'high': 5000,     // 5 seconds for high priority
             'medium': 10000,  // 10 seconds for medium priority
-            'batch': 15000    // 15 seconds for batch loading
+            'batch': 15000,   // 15 seconds for batch loading
+            'low': 20000      // 20 seconds for background preloading
         };
         
         const timeout = setTimeout(() => {
@@ -1298,7 +1315,15 @@ class AdminFileManager {
                         
                         const imageIndex = this.currentItems.findIndex(i => i.path === itemPath && i.is_image);
                         if (imageIndex >= 0) {
-                            this.openPreview(imageIndex);
+                            // Preload the clicked image immediately before opening preview
+                            const image = this.currentItems[imageIndex];
+                            const fullPath = this.getImageFullPath(image);
+                            this.preload750pxOnHover(image.name, fullPath);
+                            
+                            // Small delay to allow preload to start
+                            setTimeout(() => {
+                                this.openPreview(imageIndex);
+                            }, 50);
                         }
                     }
                     break;
@@ -1365,6 +1390,19 @@ class AdminFileManager {
         // Add the new listeners
         content.addEventListener('click', this.itemClickHandler);
         content.addEventListener('change', this.itemChangeHandler);
+        
+        // Add hover preload for image items
+        content.addEventListener('mouseenter', (e) => {
+            const item = e.target.closest('.fm-item');
+            if (item && item.dataset.type === 'file') {
+                const itemPath = item.dataset.path;
+                const imageItem = this.currentItems.find(i => i.path === itemPath && i.is_image);
+                if (imageItem) {
+                    const fullPath = this.getImageFullPath(imageItem);
+                    this.preload750pxOnHover(imageItem.name, fullPath);
+                }
+            }
+        });
     }
     
     // NEW: Apply sorting to current items
@@ -3762,20 +3800,20 @@ class AdminFileManager {
             featured_type: imageData.featured_type
         });
         
-        // Update the featured dropdown button
+                // Update the featured dropdown button
         const featuredBtn = targetItem.querySelector('.featured-status-btn');
-        if (featuredBtn) {
-            // Update button state
-            if (imageData.is_featured) {
-                featuredBtn.classList.add('is-featured');
-                featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
-                    ? '<i class="fas fa-user-circle"></i>' 
-                    : '<i class="fas fa-star"></i>';
-            } else {
-                featuredBtn.classList.remove('is-featured');
-                featuredBtn.innerHTML = '<i class="far fa-star"></i>';
-            }
-        }
+                if (featuredBtn) {
+                    // Update button state
+                    if (imageData.is_featured) {
+                        featuredBtn.classList.add('is-featured');
+                        featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
+                            ? '<i class="fas fa-user-circle"></i>' 
+                            : '<i class="fas fa-star"></i>';
+                    } else {
+                        featuredBtn.classList.remove('is-featured');
+                        featuredBtn.innerHTML = '<i class="far fa-star"></i>';
+                    }
+                }
         
         // Update featured badge next to thumbnail
         const thumbnailContainer = targetItem.querySelector('.fm-item-thumbnail-container');
@@ -4066,6 +4104,152 @@ class AdminFileManager {
         // Observe all lazy thumbnails
         lazyThumbs.forEach(thumb => {
             this.filmstripObserver.observe(thumb);
+        });
+    }
+
+    // IMMEDIATE LOAD: Load first image immediately without preload delay
+    loadFirstImageImmediately(image) {
+        const imgPreview = document.getElementById('fm-preview-main-image');
+        const titleElement = document.getElementById('fm-preview-title');
+        const badgesContainer = document.getElementById('fm-preview-badges');
+        
+        if (!imgPreview || !titleElement || !badgesContainer) return;
+        
+        const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
+        
+        // Update title and badges immediately (don't wait for image)
+        titleElement.textContent = image.name;
+        imgPreview.alt = image.name;
+        
+        // Update badges
+        badgesContainer.innerHTML = '';
+        if (image.featured_type === 'featured') {
+            badgesContainer.innerHTML += '<span class="badge featured">⭐ Featured</span>';
+        }
+        if (image.featured_type === 'portrait') {
+            badgesContainer.innerHTML += '<span class="badge portrait">👤 Portrait</span>';
+        }
+        
+        // Update navigation buttons
+        const prevBtn = document.querySelector('.fm-preview-nav-btn.prev');
+        const nextBtn = document.querySelector('.fm-preview-nav-btn.next');
+        
+        if (prevBtn) {
+            prevBtn.disabled = this.currentPreviewIndex === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
+        }
+        
+        // Show loading state
+        imgPreview.style.opacity = '0.5';
+        imgPreview.style.filter = 'blur(2px) brightness(0.8)';
+        imgPreview.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
+        
+        // Load image directly without preload delay
+        imgPreview.onload = () => {
+            imgPreview.style.opacity = '1';
+            imgPreview.style.filter = 'none';
+            console.log(`[FM] First image loaded immediately: ${image.name}`);
+        };
+        
+        imgPreview.onerror = () => {
+            // Fallback to original image if thumbnail fails
+            imgPreview.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+            imgPreview.onerror = function() {
+                this.style.opacity = '0.3';
+                this.style.filter = 'grayscale(1) brightness(0.5)';
+                console.error(`[FM] Failed to load image: ${image.name}`);
+            };
+        };
+        
+        // Start loading immediately
+        imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        
+        console.log(`[FM] Loading first image immediately: ${image.name}`);
+    }
+
+    // Update preview image from cache (instant display)
+    updatePreviewImageFromCache(image, cachedImage) {
+        const imgPreview = document.getElementById('fm-preview-main-image');
+        const titleElement = document.getElementById('fm-preview-title');
+        const badgesContainer = document.getElementById('fm-preview-badges');
+        
+        if (!imgPreview || !titleElement || !badgesContainer) return;
+        
+        // Update title and badges immediately
+        titleElement.textContent = image.name;
+        imgPreview.alt = image.name;
+        
+        // Update badges
+        badgesContainer.innerHTML = '';
+        if (image.featured_type === 'featured') {
+            badgesContainer.innerHTML += '<span class="badge featured">⭐ Featured</span>';
+        }
+        if (image.featured_type === 'portrait') {
+            badgesContainer.innerHTML += '<span class="badge portrait">👤 Portrait</span>';
+        }
+        
+        // Update navigation buttons
+        const prevBtn = document.querySelector('.fm-preview-nav-btn.prev');
+        const nextBtn = document.querySelector('.fm-preview-nav-btn.next');
+        
+        if (prevBtn) {
+            prevBtn.disabled = this.currentPreviewIndex === 0;
+        }
+        if (nextBtn) {
+            nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
+        }
+        
+        // Display cached image instantly
+        imgPreview.src = cachedImage.src;
+        imgPreview.style.opacity = '1';
+        imgPreview.style.filter = 'none';
+        
+        console.log(`[FM] Displayed cached image instantly: ${image.name}`);
+    }
+
+    // Preload 750px thumbnail on hover
+    preload750pxOnHover(imageName, fullPath) {
+        // Create a temporary image object to preload
+        const preloadImg = new Image();
+        
+        preloadImg.onload = () => {
+            // Store in cache for instant access
+            if (!this.preload750Cache) {
+                this.preload750Cache = new Map();
+            }
+            
+            const cacheKey = `preload_${fullPath}`;
+            this.preload750Cache.set(cacheKey, preloadImg);
+            
+            console.log(`[FM] Hover preloaded: ${imageName}`);
+        };
+        
+        preloadImg.onerror = () => {
+            console.warn(`[FM] Failed to hover preload: ${imageName}`);
+        };
+        
+        // Start preloading
+        preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+    }
+
+    // Preload first few images when directory loads
+    preloadFirstImagesOnDirectoryLoad(items) {
+        const imageItems = items.filter(item => item.is_image);
+        
+        if (imageItems.length === 0) return;
+        
+        console.log(`[FM] Preloading first ${Math.min(3, imageItems.length)} images from directory`);
+        
+        // Preload first 3 images with low priority
+        imageItems.slice(0, 3).forEach((image, index) => {
+            const fullPath = this.getImageFullPath(image);
+            
+            // Use setTimeout to stagger the preloads
+            setTimeout(() => {
+                this.preload750px(image, fullPath, 'low');
+            }, index * 200); // 200ms delay between each preload
         });
     }
 }
