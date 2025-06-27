@@ -24,6 +24,14 @@ class AdminFileManager {
         this.hashChangeHandler = null;
         this.popstateHandler = null;
         
+        // Performance monitoring
+        this.performanceStats = {
+            cacheHits: 0,
+            cacheMisses: 0,
+            totalLoads: 0,
+            averageLoadTime: 0
+        };
+        
         this.init();
     }
 
@@ -532,7 +540,6 @@ class AdminFileManager {
 
     openPreview(index) {
         if (!this.currentItems[index] || !this.currentItems[index].is_image) {
-            console.error('[FileManager] Attempted to open preview with invalid image.');
             return;
         }
         
@@ -544,7 +551,6 @@ class AdminFileManager {
         const imageIndex = this.images.findIndex(img => img.name === this.currentItems[index].name);
         
         if (imageIndex === -1) {
-            console.error('[FileManager] Could not find image in filtered list.');
             return;
         }
         
@@ -555,25 +561,27 @@ class AdminFileManager {
             this.renderPreviewOverlayStructure();
         }
         
-        // IMMEDIATE LOAD: Load first image immediately without preload delay
+        // PRIORITY 1: Load main image immediately (most important for UX)
         this.loadFirstImageImmediately(this.images[this.currentPreviewIndex]);
         
-        // IMMEDIATE PRELOAD: Preload next 1-2 images right away for faster navigation
-        this.preloadFirstImages(imageIndex);
-        
-        // Render filmstrip
-        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
-        
-        // Add keyboard listeners
+        // PRIORITY 2: Set up keyboard navigation immediately  
         this.bindPreviewEvents();
         
-        // Focus overlay for keyboard navigation
+        // PRIORITY 3: Focus overlay for immediate keyboard control
         const overlay = document.getElementById('fm-preview-overlay');
         if (overlay) {
             overlay.tabIndex = -1;
             overlay.style.outline = 'none';
-            setTimeout(() => overlay.focus(), 50);
+            overlay.focus();
         }
+        
+        // DEFERRED: Render filmstrip immediately (no delay)
+        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
+        
+        // DEFERRED: Background preload of nearby images (minimal delay)
+        setTimeout(() => {
+            this.preloadFirstImages(imageIndex);
+        }, 10);
     }
 
     renderPreviewOverlayStructure() {
@@ -662,51 +670,49 @@ class AdminFileManager {
         
         const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
         
-        // Show loading state immediately with better visual feedback
-        imgPreview.style.opacity = '0.5';
-        imgPreview.style.filter = 'blur(2px) brightness(0.8)';
-        imgPreview.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
-        
         // Check if image is already preloaded in cache
         const cacheKey = `preload_${fullPath}`;
         const cachedImage = this.preload750Cache?.get(cacheKey);
         
-        if (cachedImage && cachedImage.complete) {
-            // Use cached image immediately
+        if (cachedImage && cachedImage.complete && cachedImage.src) {
+            // Use cached image immediately - NO LOADING STATE
             imgPreview.src = cachedImage.src;
             imgPreview.style.opacity = '1';
             imgPreview.style.filter = 'none';
-            console.log(`[FM] Using cached image: ${image.name}`);
+            imgPreview.style.transition = 'none';
         } else {
-            // Preload the image before setting src for faster display
-            const preloadImg = new Image();
+            // Show minimal loading state
+            imgPreview.style.opacity = '0.7';
+            imgPreview.style.filter = 'blur(1px)';
+            imgPreview.style.transition = 'opacity 0.1s ease, filter 0.1s ease';
             
-            preloadImg.onload = () => {
-                // Image is ready, set it immediately
-                imgPreview.src = preloadImg.src;
+            // Load image directly
+            imgPreview.onload = () => {
                 imgPreview.style.opacity = '1';
                 imgPreview.style.filter = 'none';
                 
-                // Cache the loaded image
+                // Cache for future use
                 if (!this.preload750Cache) {
                     this.preload750Cache = new Map();
                 }
-                this.preload750Cache.set(cacheKey, preloadImg);
                 
-                console.log(`[FM] Image loaded: ${image.name}`);
+                // Create cache entry
+                const cacheImg = new Image();
+                cacheImg.src = imgPreview.src;
+                this.preload750Cache.set(cacheKey, cacheImg);
             };
             
-            preloadImg.onerror = () => {
-                // Fallback to direct loading if preload fails
-                imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+            imgPreview.onerror = () => {
+                // Fallback to original image if thumbnail fails
+                imgPreview.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
                 imgPreview.onerror = function() {
-                    this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
-                    this.onerror = null; // Prevent infinite loop
+                    this.style.opacity = '0.3';
+                    this.style.filter = 'grayscale(1) brightness(0.5)';
                 };
             };
             
-            // Start preloading
-            preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+            // Start loading immediately
+            imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
         }
         
         imgPreview.alt = image.name;
@@ -746,6 +752,11 @@ class AdminFileManager {
 
         filmstripContainer.innerHTML = '';
 
+        // Only render thumbnails around current index for performance
+        const visibleRange = 5; // Show 5 thumbnails before and after current
+        const startIndex = Math.max(0, currentIndex - visibleRange);
+        const endIndex = Math.min(images.length - 1, currentIndex + visibleRange);
+
         images.forEach((image, index) => {
             const thumbContainer = document.createElement('div');
             thumbContainer.className = 'fm-filmstrip-thumb';
@@ -759,12 +770,12 @@ class AdminFileManager {
             thumbImg.className = 'fm-filmstrip-thumb-img';
             thumbImg.alt = image.name;
             
-            // Fast preload for visible thumbnails (first 10)
-            if (index < 10) {
+            // Only load images in visible range initially
+            if (index >= startIndex && index <= endIndex) {
                 const thumbPath = this.getImageFullPath(image);
                 thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(thumbPath)}&size=150`;
             } else {
-                // Lazy load for others
+                // Use placeholder for out-of-range thumbnails
                 thumbImg.dataset.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(this.getImageFullPath(image))}&size=150`;
                 thumbImg.src = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'; // 1x1 transparent pixel
             }
@@ -792,6 +803,8 @@ class AdminFileManager {
         
         // Start lazy loading for remaining thumbnails
         this.lazyLoadFilmstripThumbnails();
+        
+        console.log(`[FM] Filmstrip rendered: ${endIndex - startIndex + 1}/${images.length} thumbnails loaded initially`);
     }
 
     bindPreviewEvents() {
@@ -1052,7 +1065,6 @@ class AdminFileManager {
         
         preloadImg.onload = () => {
             clearTimeout(timeout);
-            console.log(`[FM] Preloaded 750px: ${image.name} (${priority})`);
         };
         
         preloadImg.onerror = () => {
@@ -1320,10 +1332,8 @@ class AdminFileManager {
                             const fullPath = this.getImageFullPath(image);
                             this.preload750pxOnHover(image.name, fullPath);
                             
-                            // Small delay to allow preload to start
-                            setTimeout(() => {
-                                this.openPreview(imageIndex);
-                            }, 50);
+                            // Open preview immediately - no delay needed
+                            this.openPreview(imageIndex);
                         }
                     }
                     break;
@@ -4107,7 +4117,7 @@ class AdminFileManager {
         });
     }
 
-    // IMMEDIATE LOAD: Load first image immediately without preload delay
+    // IMMEDIATE LOAD: Load first image immediately with smart cache check
     loadFirstImageImmediately(image) {
         const imgPreview = document.getElementById('fm-preview-main-image');
         const titleElement = document.getElementById('fm-preview-title');
@@ -4141,16 +4151,46 @@ class AdminFileManager {
             nextBtn.disabled = this.currentPreviewIndex === this.images.length - 1;
         }
         
-        // Show loading state
-        imgPreview.style.opacity = '0.5';
-        imgPreview.style.filter = 'blur(2px) brightness(0.8)';
-        imgPreview.style.transition = 'opacity 0.2s ease, filter 0.2s ease';
+        // CRITICAL: Check cache first!
+        const cacheKey = `preload_${fullPath}`;
+        const cachedImage = this.preload750Cache?.get(cacheKey);
         
-        // Load image directly without preload delay
+        if (cachedImage && cachedImage.complete && cachedImage.src) {
+            // Use cached image instantly - NO LOADING STATE
+            imgPreview.src = cachedImage.src;
+            imgPreview.style.opacity = '1';
+            imgPreview.style.filter = 'none';
+            imgPreview.style.transition = 'none';
+            
+            // Track performance
+            this.performanceStats.cacheHits++;
+            this.performanceStats.totalLoads++;
+            return;
+        }
+        
+        // Track cache miss
+        this.performanceStats.cacheMisses++;
+        this.performanceStats.totalLoads++;
+        
+        // If not cached, show minimal loading state and load
+        imgPreview.style.opacity = '0.7';
+        imgPreview.style.filter = 'blur(1px)';
+        imgPreview.style.transition = 'opacity 0.1s ease, filter 0.1s ease';
+        
+        // Load image directly
         imgPreview.onload = () => {
             imgPreview.style.opacity = '1';
             imgPreview.style.filter = 'none';
-            console.log(`[FM] First image loaded immediately: ${image.name}`);
+            
+            // Cache for future use
+            if (!this.preload750Cache) {
+                this.preload750Cache = new Map();
+            }
+            
+            // Create cache entry
+            const cacheImg = new Image();
+            cacheImg.src = imgPreview.src;
+            this.preload750Cache.set(cacheKey, cacheImg);
         };
         
         imgPreview.onerror = () => {
@@ -4159,14 +4199,11 @@ class AdminFileManager {
             imgPreview.onerror = function() {
                 this.style.opacity = '0.3';
                 this.style.filter = 'grayscale(1) brightness(0.5)';
-                console.error(`[FM] Failed to load image: ${image.name}`);
             };
         };
         
         // Start loading immediately
         imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
-        
-        console.log(`[FM] Loading first image immediately: ${image.name}`);
     }
 
     // Update preview image from cache (instant display)
@@ -4206,29 +4243,40 @@ class AdminFileManager {
         imgPreview.style.opacity = '1';
         imgPreview.style.filter = 'none';
         
-        console.log(`[FM] Displayed cached image instantly: ${image.name}`);
+
     }
 
     // Preload 750px thumbnail on hover
     preload750pxOnHover(imageName, fullPath) {
+        // Initialize cache if needed
+        if (!this.preload750Cache) {
+            this.preload750Cache = new Map();
+        }
+        
+        const cacheKey = `preload_${fullPath}`;
+        
+        // Skip if already cached or being loaded
+        if (this.preload750Cache.has(cacheKey)) {
+            return;
+        }
+        
         // Create a temporary image object to preload
         const preloadImg = new Image();
         
         preloadImg.onload = () => {
             // Store in cache for instant access
-            if (!this.preload750Cache) {
-                this.preload750Cache = new Map();
-            }
-            
-            const cacheKey = `preload_${fullPath}`;
             this.preload750Cache.set(cacheKey, preloadImg);
-            
-            console.log(`[FM] Hover preloaded: ${imageName}`);
         };
         
         preloadImg.onerror = () => {
-            console.warn(`[FM] Failed to hover preload: ${imageName}`);
+            // Remove from cache on error so it can be retried
+            this.preload750Cache.delete(cacheKey);
         };
+        
+        // Mark as being loaded to prevent duplicates
+        const loadingPlaceholder = new Image();
+        loadingPlaceholder.src = '';
+        this.preload750Cache.set(cacheKey, loadingPlaceholder);
         
         // Start preloading
         preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
@@ -4239,8 +4287,6 @@ class AdminFileManager {
         const imageItems = items.filter(item => item.is_image);
         
         if (imageItems.length === 0) return;
-        
-        console.log(`[FM] Preloading first ${Math.min(3, imageItems.length)} images from directory`);
         
         // Preload first 3 images with low priority
         imageItems.slice(0, 3).forEach((image, index) => {
@@ -4258,19 +4304,16 @@ class AdminFileManager {
 function initFileManager() {
     // Only initialize if we're on the admin page and the tab exists
     if (!document.getElementById('file-manager-tab')) {
-        console.log('File Manager tab not found, skipping initialization');
         return;
     }
     
     // Cleanup existing instance if any
     if (window.fileManager) {
-        console.log('Cleaning up existing File Manager instance');
         window.fileManager.cleanup();
     }
     
     try {
         window.fileManager = new AdminFileManager();
-        console.log('File Manager initialized successfully');
     } catch (error) {
         console.error('Failed to initialize File Manager:', error);
     }
@@ -4278,12 +4321,10 @@ function initFileManager() {
 
 // Global function for cancel cache (accessible from onclick)
 window.cancelCacheGeneration = async function() {
-    console.log('[Global] Cancel cache generation called');
     if (window.fileManager && typeof window.fileManager.cancelCacheGeneration === 'function') {
         // Call the class method which contains the full logic
         await window.fileManager.cancelCacheGeneration();
     } else {
-        console.error('[Global] FileManager not initialized or method not found');
         alert('Lỗi: Trình quản lý file chưa sẵn sàng hoặc có lỗi logic.');
     }
 };
