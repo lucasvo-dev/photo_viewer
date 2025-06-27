@@ -36,6 +36,9 @@ class AdminFileManager {
         this.itemChangeHandler = null;
         this.globalDropdownHandler = null;
         
+        // Sorting preference
+        this.sortOrder = 'date'; // 'date' or 'name'
+        
         this.init();
     }
 
@@ -185,7 +188,7 @@ class AdminFileManager {
         this.showLoading(true);
         
         try {
-            const url = `api.php?action=file_manager_browse&source=${encodeURIComponent(this.currentSource)}&path=${encodeURIComponent(path)}`;
+            const url = `api.php?action=file_manager_browse&source=${encodeURIComponent(this.currentSource)}&path=${encodeURIComponent(path)}&sort=${this.sortOrder}`;
             this.log('API call URL:', url);
             
             const response = await fetch(url);
@@ -357,6 +360,15 @@ class AdminFileManager {
                     <button id="fm-delete-selected" class="button danger" disabled>
                         <i class="fas fa-trash"></i> Xóa đã chọn
                     </button>
+                </div>
+                <div class="fm-sort-controls">
+                    <label class="fm-sort-label">
+                        <i class="fas fa-sort"></i> Sắp xếp:
+                    </label>
+                    <select id="fm-sort-order" class="fm-sort-select">
+                        <option value="date" ${this.sortOrder === 'date' ? 'selected' : ''}>Ngày (mới nhất)</option>
+                        <option value="name" ${this.sortOrder === 'name' ? 'selected' : ''}>Tên (A-Z)</option>
+                    </select>
                 </div>
             </div>
             <div class="fm-items">
@@ -1149,6 +1161,15 @@ class AdminFileManager {
                 this.deleteSelected();
             });
         }
+        
+        // Sort order select
+        const sortOrderSelect = content.querySelector('#fm-sort-order');
+        if (sortOrderSelect) {
+            sortOrderSelect.addEventListener('change', (e) => {
+                this.sortOrder = e.target.value;
+                this.applySorting();
+            });
+        }
 
         // Remove any existing global dropdown handler to prevent duplicates
         if (this.globalDropdownHandler) {
@@ -1273,6 +1294,48 @@ class AdminFileManager {
         // Add the new listeners
         content.addEventListener('click', this.itemClickHandler);
         content.addEventListener('change', this.itemChangeHandler);
+    }
+    
+    // NEW: Apply sorting to current items
+    applySorting() {
+        if (!this.currentItems || this.currentItems.length === 0) return;
+        
+        // Sort items based on current sort order
+        const sortedItems = [...this.currentItems].sort((a, b) => {
+            // First: separate directories and files
+            if (a.type !== b.type) {
+                return a.type === 'directory' ? -1 : 1;
+            }
+            
+                            // For directories: always sort by name
+                if (a.type === 'directory') {
+                    return this.strnatcasecmp(a.name, b.name);
+                }
+            
+            // For files: sort based on current sort order
+            if (this.sortOrder === 'date') {
+                // Sort by modification time (newest first)
+                const timeDiff = b.modified - a.modified;
+                if (timeDiff !== 0) {
+                    return timeDiff;
+                }
+                                    // If same time, sort by name
+                    return this.strnatcasecmp(a.name, b.name);
+                } else {
+                    // Sort by name
+                    return this.strnatcasecmp(a.name, b.name);
+                }
+        });
+        
+        // Re-render with sorted items
+        this.currentItems = sortedItems;
+        this.images = this.currentItems.filter(item => item.is_image);
+        this.renderListView(sortedItems);
+    }
+    
+    // Helper function for natural string comparison
+    strnatcasecmp(a, b) {
+        return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
     }
 
     async openDirectory(path) {

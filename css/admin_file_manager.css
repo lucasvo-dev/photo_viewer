@@ -187,25 +187,31 @@
 
 /* Content Controls */
 .fm-controls {
-    padding: 12px 16px;
-    border-bottom: 1px solid #30363d;
-    background: #0d1117;
-    border-radius: 6px 6px 0 0;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 16px;
+    background: #161b22;
+    border: 1px solid #30363d;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    gap: 16px;
+    flex-wrap: wrap;
 }
 
 .selection-controls {
     display: flex;
     align-items: center;
-    gap: 15px;
+    gap: 16px;
 }
 
 .selection-controls label {
     display: flex;
     align-items: center;
-    gap: 6px;
-    color: #e6edf3;
-    font-size: 0.9rem;
+    gap: 8px;
     cursor: pointer;
+    color: #c9d1d9;
+    font-size: 0.9rem;
 }
 
 .selection-controls input[type="checkbox"] {
@@ -216,6 +222,72 @@
 .selection-controls .button {
     padding: 6px 12px;
     font-size: 0.85rem;
+}
+
+/* Sort Controls */
+.fm-sort-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.fm-sort-label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: #8b949e;
+    font-size: 0.9rem;
+}
+
+.fm-sort-label i {
+    color: #58a6ff;
+}
+
+.fm-sort-select {
+    background: #21262d;
+    border: 1px solid #30363d;
+    color: #c9d1d9;
+    padding: 6px 12px;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.fm-sort-select:hover {
+    background: #30363d;
+    border-color: #58a6ff;
+}
+
+.fm-sort-select:focus {
+    outline: none;
+    border-color: #58a6ff;
+    box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .fm-controls {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 12px;
+    }
+    
+    .selection-controls {
+        flex-direction: column;
+        align-items: flex-start;
+        width: 100%;
+    }
+    
+    .fm-sort-controls {
+        width: 100%;
+        justify-content: flex-start;
+    }
+    
+    .fm-sort-select {
+        flex: 1;
+        max-width: 200px;
+    }
 }
 
 /* File Manager Stats */

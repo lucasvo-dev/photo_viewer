@@ -872,8 +872,9 @@ switch ($action) {
 
         $source_key = $_GET['source'] ?? null;
         $path = $_GET['path'] ?? '';
+        $sort_order = $_GET['sort'] ?? 'date'; // 'date' or 'name'
 
-        error_log("[file_manager_browse] Request - Source: '{$source_key}', Path: '{$path}'");
+        error_log("[file_manager_browse] Request - Source: '{$source_key}', Path: '{$path}', Sort: '{$sort_order}'");
 
         if (!$source_key || !isset(IMAGE_SOURCES[$source_key])) {
             error_log("[file_manager_browse] Invalid source key: " . ($source_key ?: 'null'));
@@ -961,12 +962,31 @@ switch ($action) {
 
             error_log("[file_manager_browse] Found {$item_count} items in directory");
 
-            // Sort: directories first, then by name
-            usort($items, function($a, $b) {
+            // Enhanced sorting based on user preference
+            usort($items, function($a, $b) use ($sort_order) {
+                // First: separate directories and files
                 if ($a['type'] !== $b['type']) {
                     return $a['type'] === 'directory' ? -1 : 1;
                 }
-                return strcmp($a['name'], $b['name']);
+                
+                // For directories: always sort by name
+                if ($a['type'] === 'directory') {
+                    return strnatcasecmp($a['name'], $b['name']);
+                }
+                
+                // For files: sort based on user preference
+                if ($sort_order === 'date') {
+                    // Sort by modification time (newest first)
+                    $time_diff = $b['modified'] - $a['modified'];
+                    if ($time_diff !== 0) {
+                        return $time_diff;
+                    }
+                    // If same time, sort by name
+                    return strnatcasecmp($a['name'], $b['name']);
+                } else {
+                    // Sort by name
+                    return strnatcasecmp($a['name'], $b['name']);
+                }
             });
 
             // Get current folder category
