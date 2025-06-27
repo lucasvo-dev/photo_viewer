@@ -371,7 +371,6 @@ class AdminFileManager {
 
     renderItem(item) {
         const isDirectory = item.type === 'directory';
-        const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
         const size = isDirectory ? '' : this.formatFileSize(item.size);
         const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
         
@@ -388,13 +387,32 @@ class AdminFileManager {
             </span>`;
         }
 
+        // Generate icon content - use thumbnail for images, icon for others
+        let iconContent;
+        if (!isDirectory && item.is_image) {
+            // Use thumbnail for image files
+            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
+            iconContent = `
+                <img class="fm-item-thumbnail" 
+                     src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
+                     alt="${item.name}"
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+                     onload="this.style.opacity='1';">
+                <i class="fas fa-image fm-item-fallback-icon" style="display: none;"></i>
+            `;
+        } else {
+            // Use icon for directories and non-image files
+            const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
+            iconContent = `<i class="${icon}"></i>`;
+        }
+
         return `
             <div class="fm-item" data-path="${item.path}" data-type="${item.type}">
                 <div class="fm-item-checkbox">
                     <input type="checkbox" class="item-checkbox">
                 </div>
                 <div class="fm-item-icon">
-                    <i class="${icon}"></i>
+                    ${iconContent}
                     ${isDirectory && item.category ? `<span class="fm-category-indicator" style="background: ${item.category.color_code}"></span>` : ''}
                 </div>
                 <div class="fm-item-details" ${item.is_image ? 'data-action="preview"' : ''}>
@@ -584,8 +602,15 @@ class AdminFileManager {
         
         const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
         
-        imgPreview.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+        // Use 750px thumbnail for preview instead of full image for better performance
+        imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
         imgPreview.alt = image.name;
+        
+        // Fallback to full image if thumbnail fails
+        imgPreview.onerror = function() {
+            this.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+            this.onerror = null; // Prevent infinite loop
+        };
         
         titleElement.textContent = image.name;
         
@@ -628,15 +653,31 @@ class AdminFileManager {
             const thumbImg = document.createElement('img');
             const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${image.name}` : `${this.currentSource}/${image.name}`;
             
-            // Lazy loading for filmstrip
-            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 2;
+            // Improved lazy loading strategy
+            const shouldLoadImmediately = Math.abs(index - currentIndex) <= 3; // Load 3 images before/after current
             
             if (shouldLoadImmediately) {
+                // Load immediately with loading placeholder
+                thumbImg.style.opacity = '0.6';
                 thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
+                
+                // Show full opacity when loaded
+                thumbImg.onload = function() {
+                    this.style.opacity = '1';
+                    this.style.transition = 'opacity 0.3s ease';
+                };
+                
+                thumbImg.onerror = function() {
+                    // Fallback to a simple placeholder on error
+                    this.style.opacity = '0.3';
+                    this.style.background = '#30363d';
+                };
             } else {
-                thumbImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiMyMTI2MkQiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIyMCIgZmlsbD0iIzMwMzYzRCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjEwIiBmaWxsPSIjNThhNmZmIiBvcGFjaXR5PSIwLjMiLz48L3N2Zz4=';
+                // Use optimized placeholder
+                thumbImg.src = 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDEwMCAxMDAiIGZpbGw9Im5vbmUiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PHJlY3Qgd2lkdGg9IjEwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IiMyMTI2MkQiLz48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSIxNSIgZmlsbD0iIzMwMzYzRCIvPjxjaXJjbGUgY3g9IjUwIiBjeT0iNTAiIHI9IjgiIGZpbGw9IiM1OGE2ZmYiIG9wYWNpdHk9IjAuNCIvPjwvc3ZnPg==';
                 thumbImg.dataset.lazySrc = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150`;
                 thumbImg.classList.add('lazy-load');
+                thumbImg.style.opacity = '0.4';
             }
             
             thumbImg.alt = image.name;
@@ -746,11 +787,35 @@ class AdminFileManager {
         const filmstripContainer = document.getElementById('fm-preview-filmstrip');
         if (!filmstripContainer) return;
 
-        // Load thumbnails around the current index
-        for (let i = Math.max(0, centerIndex - 3); i <= Math.min(this.images.length - 1, centerIndex + 3); i++) {
+        // Load thumbnails around the current index with improved range
+        const loadRange = 5; // Load 5 images before/after current
+        
+        for (let i = Math.max(0, centerIndex - loadRange); i <= Math.min(this.images.length - 1, centerIndex + loadRange); i++) {
             const thumbImg = filmstripContainer.querySelector(`[data-index="${i}"] img`);
             if (thumbImg && thumbImg.classList.contains('lazy-load') && thumbImg.dataset.lazySrc) {
+                // Add loading state
+                thumbImg.style.opacity = '0.6';
+                thumbImg.style.transition = 'opacity 0.3s ease';
+                
+                // Load the actual thumbnail
                 thumbImg.src = thumbImg.dataset.lazySrc;
+                
+                // Handle load success
+                thumbImg.onload = function() {
+                    this.style.opacity = '1';
+                    this.classList.remove('lazy-load');
+                    delete this.dataset.lazySrc;
+                };
+                
+                // Handle load error
+                thumbImg.onerror = function() {
+                    this.style.opacity = '0.3';
+                    this.style.background = '#30363d';
+                    this.classList.remove('lazy-load');
+                    delete this.dataset.lazySrc;
+                };
+                
+                // Remove lazy-load class immediately to prevent reloading
                 thumbImg.classList.remove('lazy-load');
                 delete thumbImg.dataset.lazySrc;
             }
@@ -2008,13 +2073,13 @@ class AdminFileManager {
         let previewContent;
         
         if (['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp'].includes(extension)) {
-            // Image preview
+            // Image preview using 750px thumbnail for better performance
             previewContent = `
                 <div class="file-preview-container">
                     <img src="api.php?action=get_thumbnail&path=${encodeURIComponent(sourcePrefixedPath)}&size=750" 
                          alt="${fileName}"
                          class="preview-image"
-                         onerror="this.src='api.php?action=get_file&path=${encodeURIComponent(sourcePrefixedPath)}'"
+                         onerror="this.src='api.php?action=get_image&path=${encodeURIComponent(sourcePrefixedPath)}'"
                          onload="this.style.opacity='1'">
                     <div class="preview-info">
                         <h4>${fileName}</h4>

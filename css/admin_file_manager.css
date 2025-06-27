@@ -261,10 +261,11 @@
 .fm-item {
     display: flex;
     align-items: center;
-    padding: 12px 16px;
+    padding: 16px;
     border-bottom: 1px solid #30363d;
     transition: background-color 0.2s ease;
     cursor: pointer;
+    min-height: 80px;
 }
 
 .fm-item:last-child {
@@ -291,10 +292,49 @@
 
 .fm-item-icon {
     margin-right: 12px;
-    width: 20px;
+    width: 60px;
+    height: 60px;
     text-align: center;
     color: #8b949e;
     position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+/* Thumbnail image for list view */
+.fm-item-thumbnail {
+    width: 60px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    opacity: 0;
+    transition: opacity 0.3s ease;
+    background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
+    background-size: 200% 100%;
+    animation: thumbnail-loading 1.5s infinite;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.fm-item-thumbnail[style*="opacity: 1"] {
+    animation: none;
+    background: none;
+}
+
+@keyframes thumbnail-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Fallback icon when thumbnail fails */
+.fm-item-fallback-icon {
+    width: 60px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
 }
 
 /* Category indicator for directories */
@@ -310,14 +350,32 @@
 
 .fm-item-icon .fa-folder {
     color: #58a6ff;
+    font-size: 32px;
 }
 
 .fm-item-icon .fa-file-image {
     color: #3fb950;
+    font-size: 24px;
 }
 
 .fm-item-icon .fa-file-video {
     color: #d29922;
+    font-size: 24px;
+}
+
+.fm-item-icon .fa-video {
+    color: #d29922;
+    font-size: 24px;
+}
+
+.fm-item-icon .fa-file {
+    color: #8b949e;
+    font-size: 24px;
+}
+
+.fm-item-icon .fa-image {
+    color: #3fb950;
+    font-size: 24px;
 }
 
 .fm-item-details {
@@ -2359,6 +2417,27 @@
 .fm-filmstrip-thumb.lazy-load img {
     opacity: 0.4;
     filter: blur(1px);
+}
+
+/* Loading state for filmstrip thumbnails */
+.fm-filmstrip-thumb img[style*="opacity: 0.6"] {
+    background: linear-gradient(90deg, #21262d 25%, #30363d 50%, #21262d 75%);
+    background-size: 200% 100%;
+    animation: filmstrip-loading 1.5s infinite;
+}
+
+@keyframes filmstrip-loading {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* Improved hover states for filmstrip */
+.fm-filmstrip-thumb:hover img {
+    transform: scale(1.05);
+}
+
+.fm-filmstrip-thumb.active img {
+    transform: scale(1.1);
 }
 
 .fm-filmstrip-thumb:hover {
