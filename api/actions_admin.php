@@ -969,8 +969,16 @@ switch ($action) {
                     return $a['type'] === 'directory' ? -1 : 1;
                 }
                 
-                // For directories: always sort by name
+                // For directories: sort based on preference too
                 if ($a['type'] === 'directory') {
+                    if ($sort_order === 'date') {
+                        // Sort directories by modification time (newest first)
+                        $time_diff = $b['modified'] - $a['modified'];
+                        if ($time_diff !== 0) {
+                            return $time_diff;
+                        }
+                    }
+                    // If same time or sorting by name, sort alphabetically
                     return strnatcasecmp($a['name'], $b['name']);
                 }
                 

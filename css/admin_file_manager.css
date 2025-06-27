@@ -229,6 +229,7 @@
     display: flex;
     align-items: center;
     gap: 8px;
+    flex-wrap: wrap;
 }
 
 .fm-sort-label {
@@ -263,6 +264,13 @@
     outline: none;
     border-color: #58a6ff;
     box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+}
+
+.fm-sort-note {
+    color: #8b949e;
+    font-size: 0.75rem;
+    font-style: italic;
+    margin-left: 4px;
 }
 
 /* Responsive adjustments */

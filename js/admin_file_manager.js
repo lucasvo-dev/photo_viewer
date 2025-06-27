@@ -286,6 +286,9 @@ class AdminFileManager {
         const files = items.filter(item => item.type === 'file').length;
         const featuredCount = items.filter(item => item.is_featured).length;
         const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
+        
+        // Always show sort control if there are items
+        const showSortControl = totalItems > 0;
 
         const itemsHtml = items.map(item => this.renderItem(item)).join('');
         
@@ -361,15 +364,18 @@ class AdminFileManager {
                         <i class="fas fa-trash"></i> Xóa đã chọn
                     </button>
                 </div>
-                <div class="fm-sort-controls">
-                    <label class="fm-sort-label">
-                        <i class="fas fa-sort"></i> Sắp xếp:
-                    </label>
-                    <select id="fm-sort-order" class="fm-sort-select">
-                        <option value="date" ${this.sortOrder === 'date' ? 'selected' : ''}>Ngày (mới nhất)</option>
-                        <option value="name" ${this.sortOrder === 'name' ? 'selected' : ''}>Tên (A-Z)</option>
-                    </select>
-                </div>
+                ${showSortControl ? `
+                    <div class="fm-sort-controls">
+                        <label class="fm-sort-label">
+                            <i class="fas fa-sort"></i> Sắp xếp:
+                        </label>
+                        <select id="fm-sort-order" class="fm-sort-select">
+                            <option value="date" ${this.sortOrder === 'date' ? 'selected' : ''}>Ngày (mới nhất)</option>
+                            <option value="name" ${this.sortOrder === 'name' ? 'selected' : ''}>Tên (A-Z)</option>
+                        </select>
+                        ${directories > 0 && files === 0 ? '<small class="fm-sort-note">Áp dụng cho folders</small>' : ''}
+                    </div>
+                ` : ''}
             </div>
             <div class="fm-items">
                 ${itemsHtml}
@@ -385,6 +391,9 @@ class AdminFileManager {
         const isDirectory = item.type === 'directory';
         const size = isDirectory ? '' : this.formatFileSize(item.size);
         const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
+        
+        // Use full datetime display
+        const displayTime = modified;
         
         // File count for directories
         const fileCount = isDirectory && item.file_count !== undefined ? 
@@ -430,7 +439,7 @@ class AdminFileManager {
                 <div class="fm-item-details" ${item.is_image ? 'data-action="preview"' : ''}>
                     <div class="fm-item-name" ${isDirectory ? 'data-action="open"' : ''}>${item.name}</div>
                     <div class="fm-item-meta">
-                        ${size}${size && fileCount ? ' • ' : ''}${fileCount}${(size || fileCount) && modified ? ' • ' : ''}${modified}
+                        ${size}${size && fileCount ? ' • ' : ''}${fileCount}${(size || fileCount) && displayTime ? ' • ' : ''}${displayTime}
                         ${categoryInfo}
                     </div>
                 </div>
@@ -1307,10 +1316,18 @@ class AdminFileManager {
                 return a.type === 'directory' ? -1 : 1;
             }
             
-                            // For directories: always sort by name
-                if (a.type === 'directory') {
-                    return this.strnatcasecmp(a.name, b.name);
+                                        // For directories: sort based on preference too
+            if (a.type === 'directory') {
+                if (this.sortOrder === 'date') {
+                    // Sort directories by modification time (newest first)
+                    const timeDiff = b.modified - a.modified;
+                    if (timeDiff !== 0) {
+                        return timeDiff;
+                    }
                 }
+                // If same time or sorting by name, sort alphabetically
+                return this.strnatcasecmp(a.name, b.name);
+            }
             
             // For files: sort based on current sort order
             if (this.sortOrder === 'date') {
@@ -1431,10 +1448,38 @@ class AdminFileManager {
     }
 
     formatFileSize(bytes) {
-        if (!bytes) return '';
+        if (bytes === 0) return '0 B';
+        const k = 1024;
         const sizes = ['B', 'KB', 'MB', 'GB'];
-        const i = Math.floor(Math.log(bytes) / Math.log(1024));
-        return Math.round(bytes / Math.pow(1024, i) * 100) / 100 + ' ' + sizes[i];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    }
+    
+    formatRelativeTime(timestamp) {
+        const now = Date.now() / 1000; // Convert to seconds
+        const diff = now - timestamp;
+        
+        if (diff < 60) {
+            return 'vừa xong';
+        } else if (diff < 3600) {
+            const minutes = Math.floor(diff / 60);
+            return `${minutes} phút trước`;
+        } else if (diff < 86400) {
+            const hours = Math.floor(diff / 3600);
+            return `${hours} giờ trước`;
+        } else if (diff < 604800) {
+            const days = Math.floor(diff / 86400);
+            return `${days} ngày trước`;
+        } else if (diff < 2592000) {
+            const weeks = Math.floor(diff / 604800);
+            return `${weeks} tuần trước`;
+        } else if (diff < 31536000) {
+            const months = Math.floor(diff / 2592000);
+            return `${months} tháng trước`;
+        } else {
+            const years = Math.floor(diff / 31536000);
+            return `${years} năm trước`;
+        }
     }
 
     updateSelection() {
