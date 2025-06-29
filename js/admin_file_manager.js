@@ -564,71 +564,234 @@ class AdminFileManager {
         overlay.tabIndex = -1;
         overlay.focus();
 
-        // Chỉ load ảnh chính trước, các tác vụ khác sẽ deferred sau khi ảnh chính đã load xong
+        // OPTIMIZED: Start aggressive preload immediately for instant navigation
+        this.preloadNearbyImages(this.currentPreviewIndex);
+        
+        // Load main image
         this.loadMainPreviewImage(image, () => {
-            // Sau khi ảnh chính đã load xong, mới preload ảnh lân cận và render filmstrip
-            this.preloadNearbyImages(this.currentPreviewIndex);
-            setTimeout(() => {
-        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
-            }, 50);
+            console.log(`[FM] 🎯 Main image loaded: ${image.name}`);
         });
+        
+        // Render filmstrip with minimal delay
+        setTimeout(() => {
+            this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
+        }, 10);
     }
 
-    // Sửa loadMainPreviewImage để nhận callback khi ảnh chính đã load xong
+    // Load main preview image với optimized strategy
     loadMainPreviewImage(image, onLoaded) {
         const imgPreview = document.getElementById('fm-preview-main-image');
         if (!imgPreview) return;
+
         const fullPath = this.getImageFullPath(image);
-        const cacheKey = `preload_${fullPath}`;
-        const cachedImage = this.preload750Cache?.get(cacheKey);
-        if (cachedImage && cachedImage.complete && cachedImage.src) {
-            imgPreview.src = cachedImage.src;
-            imgPreview.style.opacity = '1';
-            imgPreview.style.filter = 'none';
-            imgPreview.style.transition = 'none';
-            if (onLoaded) onLoaded();
-            return;
+        
+        // Check fast cache first for instant loading
+        const fastCacheKey = `fast_${fullPath}`;
+        if (this.fastPreloadCache && this.fastPreloadCache.has(fastCacheKey)) {
+            const cachedImg = this.fastPreloadCache.get(fastCacheKey);
+            if (cachedImg && cachedImg.complete && cachedImg.src && !cachedImg.loading) {
+                imgPreview.src = cachedImg.src;
+                imgPreview.style.opacity = '1';
+                imgPreview.style.filter = 'none';
+                console.log(`[FM] 🚀 INSTANT load from fast cache: ${image.name}`);
+                if (onLoaded) onLoaded();
+                return;
+            }
         }
+        
+        // Fallback to old cache
+        const cacheKey = `preload_${fullPath}`;
+        if (this.preload750Cache && this.preload750Cache.has(cacheKey)) {
+            const cachedImg = this.preload750Cache.get(cacheKey);
+            if (cachedImg && cachedImg.complete && cachedImg.src) {
+                imgPreview.src = cachedImg.src;
+                imgPreview.style.opacity = '1';
+                imgPreview.style.filter = 'none';
+                console.log(`[FM] ⚡ Load from old cache: ${image.name}`);
+                if (onLoaded) onLoaded();
+                return;
+            }
+        }
+
+        // Show loading state
         imgPreview.style.opacity = '0.7';
-        imgPreview.style.filter = 'blur(1px)';
-        imgPreview.style.transition = 'opacity 0.1s ease, filter 0.1s ease';
+        imgPreview.style.filter = 'blur(2px)';
+        
+        // Strategy: Try thumbnail first, fallback to full image
         let retryCount = 0;
-        const placeholder = '/theme/placeholder.png';
         const handleError = () => {
             retryCount++;
             if (retryCount === 1) {
+                // Retry with cache buster
                 imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750&_retry=${Date.now()}`;
             } else if (retryCount === 2) {
+                // Fallback to full image
                 imgPreview.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
             } else {
-                imgPreview.src = placeholder;
+                // Final fallback
                 imgPreview.style.opacity = '0.3';
                 imgPreview.style.filter = 'grayscale(1)';
                 if (onLoaded) onLoaded();
             }
         };
+        
         imgPreview.onload = () => {
             imgPreview.style.opacity = '1';
             imgPreview.style.filter = 'none';
+            
+            // Cache successful load
             if (!this.preload750Cache) this.preload750Cache = new Map();
             const cacheImg = new Image();
             cacheImg.src = imgPreview.src;
             this.preload750Cache.set(cacheKey, cacheImg);
+            
             if (onLoaded) onLoaded();
         };
+        
         imgPreview.onerror = handleError;
+        
+        // Start with 750px thumbnail
         imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
     }
 
-    // Preload tối đa 2 ảnh trước và 2 ảnh sau khi ảnh chính đã load xong
+    // OPTIMIZED PRELOAD: Học tập từ photo gallery với instant loading
     preloadNearbyImages(centerIndex) {
         if (!this.images || this.images.length === 0) return;
-        const range = 2;
-        for (let i = Math.max(0, centerIndex - range); i <= Math.min(this.images.length - 1, centerIndex + range); i++) {
+        
+        console.log(`[FM] 🚀 Optimized preload from center index ${centerIndex}`);
+        
+        // Initialize preload tracking if not exists
+        if (!this.preloadRequests) {
+            this.preloadRequests = new Set();
+        }
+        
+        // Strategy 1: INSTANT preload next/prev (±1) for immediate navigation
+        const instantRange = 1;
+        for (let i = Math.max(0, centerIndex - instantRange); i <= Math.min(this.images.length - 1, centerIndex + instantRange); i++) {
             if (i !== centerIndex) {
-                this.preload750px(this.images[i], 'low');
+                this.fastPreload750px(this.images[i], 'instant');
             }
         }
+        
+        // Strategy 2: HIGH priority preload (±3) với minimal delay
+        setTimeout(() => {
+            const highPriorityRange = 3;
+            for (let i = Math.max(0, centerIndex - highPriorityRange); i <= Math.min(this.images.length - 1, centerIndex + highPriorityRange); i++) {
+                if (Math.abs(i - centerIndex) > instantRange) {
+                    this.fastPreload750px(this.images[i], 'high');
+                }
+            }
+        }, 50);
+        
+        // Strategy 3: BACKGROUND preload (±8) với staggered loading
+        setTimeout(() => {
+            const backgroundRange = 8;
+            for (let i = Math.max(0, centerIndex - backgroundRange); i <= Math.min(this.images.length - 1, centerIndex + backgroundRange); i++) {
+                if (Math.abs(i - centerIndex) > 3) {
+                    // Stagger background preloads to avoid network congestion
+                    setTimeout(() => {
+                        this.fastPreload750px(this.images[i], 'background');
+                    }, Math.abs(i - centerIndex) * 100);
+                }
+            }
+        }, 200);
+    }
+
+    // NEW: Fast preload 750px với optimized caching strategy
+    fastPreload750px(image, priority = 'high') {
+        if (!image) return;
+        
+        const fullPath = this.getImageFullPath(image);
+        if (!fullPath) return;
+        
+        // Initialize optimized cache
+        if (!this.fastPreloadCache) {
+            this.fastPreloadCache = new Map();
+        }
+        
+        const cacheKey = `fast_${fullPath}`;
+        
+        // Skip if already cached or loading
+        if (this.fastPreloadCache.has(cacheKey)) {
+            return;
+        }
+        
+        // Track this request
+        if (!this.preloadRequests) {
+            this.preloadRequests = new Set();
+        }
+        
+        if (this.preloadRequests.has(cacheKey)) {
+            return;
+        }
+        
+        this.preloadRequests.add(cacheKey);
+        
+        // Create preload image with priority-based loading
+        const preloadImg = new Image();
+        
+        // Priority-based timeout and retry strategy
+        const priorityConfig = {
+            'instant': { timeout: 3000, retry: true },
+            'high': { timeout: 5000, retry: true },
+            'background': { timeout: 10000, retry: false }
+        };
+        
+        const config = priorityConfig[priority] || priorityConfig['high'];
+        
+        const cleanup = () => {
+            this.preloadRequests.delete(cacheKey);
+            preloadImg.onload = null;
+            preloadImg.onerror = null;
+        };
+        
+        // Set timeout based on priority
+        const timeoutId = setTimeout(() => {
+            cleanup();
+            this.fastPreloadCache.delete(cacheKey);
+            console.warn(`[FM] ⏰ Preload timeout (${priority}): ${image.name}`);
+        }, config.timeout);
+        
+        preloadImg.onload = () => {
+            clearTimeout(timeoutId);
+            cleanup();
+            
+            // Store successful preload
+            this.fastPreloadCache.set(cacheKey, preloadImg);
+            console.log(`[FM] ✅ Fast preload success (${priority}): ${image.name}`);
+        };
+        
+        preloadImg.onerror = () => {
+            clearTimeout(timeoutId);
+            cleanup();
+            
+            // Retry with fallback for high priority images
+            if (config.retry && priority !== 'background') {
+                console.log(`[FM] 🔄 Retrying preload with fallback: ${image.name}`);
+                setTimeout(() => {
+                    const fallbackImg = new Image();
+                    fallbackImg.onload = () => {
+                        this.fastPreloadCache.set(cacheKey, fallbackImg);
+                        console.log(`[FM] ✅ Fallback preload success: ${image.name}`);
+                    };
+                    fallbackImg.onerror = () => {
+                        console.warn(`[FM] ❌ Fallback preload failed: ${image.name}`);
+                    };
+                    fallbackImg.src = `/api.php?action=get_image&path=${encodeURIComponent(fullPath)}`;
+                }, 100);
+            } else {
+                console.warn(`[FM] ❌ Preload failed (${priority}): ${image.name}`);
+            }
+        };
+        
+        // Mark as loading
+        this.fastPreloadCache.set(cacheKey, { loading: true });
+        
+        // Start preload with priority-based delay
+        const delay = priority === 'instant' ? 0 : (priority === 'high' ? 10 : 50);
+        setTimeout(() => {
+            preloadImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        }, delay);
     }
 
     renderPreviewOverlayStructure() {
@@ -1125,10 +1288,20 @@ class AdminFileManager {
             this.filmstripObserver = null;
         }
         
-        // Cleanup preload cache to free memory
+        // Cleanup preload caches to free memory
         if (this.preload750Cache) {
             this.preload750Cache.clear();
             console.log('[FM] Cleared 750px preload cache');
+        }
+        
+        if (this.fastPreloadCache) {
+            this.fastPreloadCache.clear();
+            console.log('[FM] Cleared fast preload cache');
+        }
+        
+        if (this.preloadRequests) {
+            this.preloadRequests.clear();
+            console.log('[FM] Cleared preload requests tracking');
         }
         
         // Remove overlay
@@ -4105,19 +4278,32 @@ class AdminFileManager {
         });
     }
 
-    // Preload first few images when directory loads for faster first-click
+    // OPTIMIZED: Preload first few images when directory loads for instant first-click
     preloadFirstImagesOnDirectoryLoad(items) {
         if (!items) return;
         const imageItems = items.filter(item => item.is_image);
         
         if (imageItems.length === 0) return;
         
-        // Preload first 3 images with low priority
-        imageItems.slice(0, 3).forEach((image, index) => {
-            // Stagger the preloads to avoid network congestion
+        console.log(`[FM] 🎬 Starting directory preload for ${imageItems.length} images`);
+        
+        // Preload first image immediately for instant first-click
+        if (imageItems[0]) {
+            this.fastPreload750px(imageItems[0], 'instant');
+        }
+        
+        // Preload next 2 images with high priority
+        imageItems.slice(1, 3).forEach((image, index) => {
             setTimeout(() => {
-                this.preload750px(image, 'low');
-            }, index * 250); // 250ms delay between each preload
+                this.fastPreload750px(image, 'high');
+            }, (index + 1) * 100); // 100ms stagger
+        });
+        
+        // Preload next 3 images with background priority
+        imageItems.slice(3, 6).forEach((image, index) => {
+            setTimeout(() => {
+                this.fastPreload750px(image, 'background');
+            }, (index + 3) * 300); // 300ms stagger for background
         });
     }
 
