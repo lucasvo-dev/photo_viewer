@@ -574,7 +574,7 @@ class AdminFileManager {
         
         // Render filmstrip with minimal delay
         setTimeout(() => {
-            this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
+        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
         }, 10);
     }
 
@@ -925,7 +925,8 @@ class AdminFileManager {
         images.forEach((image, index) => {
             const thumbContainer = document.createElement('div');
             thumbContainer.className = 'fm-filmstrip-thumb';
-            thumbContainer.dataset.lazyLoadIndex = index; 
+            thumbContainer.dataset.lazyLoadIndex = index;
+            thumbContainer.dataset.index = index; // Add data-index for active thumbnail tracking
             
             if (index === currentIndex) {
                 thumbContainer.classList.add('active');
@@ -969,23 +970,25 @@ class AdminFileManager {
                     if (image && thumbContainer.childElementCount === 0) {
                         const thumbImg = document.createElement('img');
                         thumbImg.className = 'fm-filmstrip-thumb-img';
-            thumbImg.alt = image.name;
+                        thumbImg.alt = image.name;
                         thumbImg.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(this.getImageFullPath(image))}&size=150`;
                         
                         thumbImg.onload = () => thumbImg.style.opacity = 1;
                         thumbImg.onerror = () => thumbImg.style.opacity = 0.3;
 
-                        const badgeContainer = document.createElement('div');
-                        badgeContainer.className = 'fm-filmstrip-badge-container';
-                        if (image.featured_type === 'featured') {
-                            badgeContainer.innerHTML = '<span class="fm-filmstrip-badge featured">⭐</span>';
-                        } else if (image.featured_type === 'portrait') {
-                             badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
-            }
+                        // Add badge if featured - use consistent fm-filmstrip-badge class
+                        if (image.featured_type && image.is_featured) {
+                            const badgeContainer = document.createElement('div');
+                            badgeContainer.className = 'fm-filmstrip-badge-container';
+                            if (image.featured_type === 'featured') {
+                                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge featured">⭐</span>';
+                            } else if (image.featured_type === 'portrait') {
+                                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
+                            }
+                            thumbContainer.appendChild(badgeContainer);
+                        }
 
-            thumbContainer.appendChild(thumbImg);
-                        thumbContainer.appendChild(badgeContainer);
-            
+                        thumbContainer.appendChild(thumbImg);
                         thumbContainer.addEventListener('click', () => this.navigateToImage(index));
                     }
                 }
@@ -1081,7 +1084,12 @@ class AdminFileManager {
 
     updateFilmstripActiveThumbnail(newIndex) {
         const filmstripContainer = document.getElementById('fm-preview-filmstrip');
-        if (!filmstripContainer) return;
+        if (!filmstripContainer) {
+            console.warn('[FM] Filmstrip container not found');
+            return;
+        }
+
+        console.log(`[FM] 🎯 Updating filmstrip active thumbnail to index: ${newIndex}`);
 
         // Remove active class from all thumbnails
         filmstripContainer.querySelectorAll('.fm-filmstrip-thumb').forEach(thumb => {
@@ -1092,6 +1100,7 @@ class AdminFileManager {
         const currentThumb = filmstripContainer.querySelector(`[data-index="${newIndex}"]`);
         if (currentThumb) {
             currentThumb.classList.add('active');
+            console.log(`[FM] ✅ Active thumbnail set for index ${newIndex}`);
             
             // Scroll to current thumbnail
             currentThumb.scrollIntoView({
@@ -1099,6 +1108,21 @@ class AdminFileManager {
                 block: 'nearest',
                 inline: 'center'
             });
+        } else {
+            console.warn(`[FM] ❌ Thumbnail with data-index="${newIndex}" not found`);
+            // Fallback: try to find by lazy-load-index
+            const fallbackThumb = filmstripContainer.querySelector(`[data-lazy-load-index="${newIndex}"]`);
+            if (fallbackThumb) {
+                fallbackThumb.classList.add('active');
+                console.log(`[FM] 🔄 Fallback: Active thumbnail set using lazy-load-index for index ${newIndex}`);
+                fallbackThumb.scrollIntoView({
+                    behavior: 'smooth',
+                    block: 'nearest',
+                    inline: 'center'
+                });
+            } else {
+                console.error(`[FM] ❌ No thumbnail found for index ${newIndex} (both data-index and data-lazy-load-index failed)`);
+            }
         }
     }
 
@@ -3928,23 +3952,44 @@ class AdminFileManager {
 
     updateFilmstripBadge(imageIndex, imageData) {
         const filmstripContainer = document.getElementById('fm-preview-filmstrip');
-        if (!filmstripContainer) return;
+        if (!filmstripContainer) {
+            console.warn('[FM] Filmstrip container not found for badge update');
+            return;
+        }
         
         const thumbContainer = filmstripContainer.querySelector(`[data-index="${imageIndex}"]`);
-        if (!thumbContainer) return;
+        if (!thumbContainer) {
+            console.warn(`[FM] Thumbnail container not found for index ${imageIndex}`);
+            return;
+        }
         
-        // Remove existing badge
-        const existingBadge = thumbContainer.querySelector('.featured-badge');
-        if (existingBadge) {
-            existingBadge.remove();
+        console.log(`[FM] 🏷️ Updating filmstrip badge for index ${imageIndex}:`, {
+            featured_type: imageData.featured_type,
+            is_featured: imageData.is_featured
+        });
+        
+        // Remove existing badge container
+        const existingBadgeContainer = thumbContainer.querySelector('.fm-filmstrip-badge-container');
+        if (existingBadgeContainer) {
+            console.log(`[FM] 🗑️ Removing existing badge container`);
+            existingBadgeContainer.remove();
         }
         
         // Add new badge if featured
-        if (imageData.featured_type) {
-            const badge = document.createElement('span');
-            badge.className = `featured-badge ${imageData.featured_type}`;
-            badge.textContent = imageData.featured_type === 'featured' ? '⭐' : '👤';
-            thumbContainer.appendChild(badge);
+        if (imageData.featured_type && imageData.is_featured) {
+            const badgeContainer = document.createElement('div');
+            badgeContainer.className = 'fm-filmstrip-badge-container';
+            
+            if (imageData.featured_type === 'featured') {
+                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge featured">⭐</span>';
+            } else if (imageData.featured_type === 'portrait') {
+                badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
+            }
+            
+            thumbContainer.appendChild(badgeContainer);
+            console.log(`[FM] ✅ Added new badge: ${imageData.featured_type}`);
+        } else {
+            console.log(`[FM] ℹ️ No badge needed: not featured or no type`);
         }
     }
 
@@ -3954,22 +3999,30 @@ class AdminFileManager {
         const filmstripContainer = document.getElementById('fm-preview-filmstrip');
         if (!filmstripContainer) return;
         
+        console.log(`[FM] 🔄 Refreshing all filmstrip badges for ${this.images.length} images`);
+        
         // Update all filmstrip badges based on current image data
         this.images.forEach((imageData, index) => {
             const thumbContainer = filmstripContainer.querySelector(`[data-index="${index}"]`);
             if (thumbContainer) {
-                // Remove existing badge
-                const existingBadge = thumbContainer.querySelector('.featured-badge');
-                if (existingBadge) {
-                    existingBadge.remove();
+                // Remove existing badge container
+                const existingBadgeContainer = thumbContainer.querySelector('.fm-filmstrip-badge-container');
+                if (existingBadgeContainer) {
+                    existingBadgeContainer.remove();
                 }
                 
                 // Add new badge if featured
-                if (imageData.featured_type) {
-                    const badge = document.createElement('span');
-                    badge.className = `featured-badge ${imageData.featured_type}`;
-                    badge.textContent = imageData.featured_type === 'featured' ? '⭐' : '👤';
-                    thumbContainer.appendChild(badge);
+                if (imageData.featured_type && imageData.is_featured) {
+                    const badgeContainer = document.createElement('div');
+                    badgeContainer.className = 'fm-filmstrip-badge-container';
+                    
+                    if (imageData.featured_type === 'featured') {
+                        badgeContainer.innerHTML = '<span class="fm-filmstrip-badge featured">⭐</span>';
+                    } else if (imageData.featured_type === 'portrait') {
+                        badgeContainer.innerHTML = '<span class="fm-filmstrip-badge portrait">👤</span>';
+                    }
+                    
+                    thumbContainer.appendChild(badgeContainer);
                 }
             }
         });
@@ -4008,20 +4061,20 @@ class AdminFileManager {
             featured_type: imageData.featured_type
         });
         
-                // Update the featured dropdown button
+        // Update the featured dropdown button
         const featuredBtn = targetItem.querySelector('.featured-status-btn');
-                if (featuredBtn) {
-                    // Update button state
-                    if (imageData.is_featured) {
-                        featuredBtn.classList.add('is-featured');
-                        featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
-                            ? '<i class="fas fa-user-circle"></i>' 
-                            : '<i class="fas fa-star"></i>';
-                    } else {
-                        featuredBtn.classList.remove('is-featured');
-                        featuredBtn.innerHTML = '<i class="far fa-star"></i>';
-                    }
-                }
+        if (featuredBtn) {
+            // Update button state
+            if (imageData.is_featured) {
+                featuredBtn.classList.add('is-featured');
+                featuredBtn.innerHTML = imageData.featured_type === 'portrait' 
+                    ? '<i class="fas fa-user-circle"></i>' 
+                    : '<i class="fas fa-star"></i>';
+            } else {
+                featuredBtn.classList.remove('is-featured');
+                featuredBtn.innerHTML = '<i class="far fa-star"></i>';
+            }
+        }
         
         // Update featured badge next to thumbnail
         const thumbnailContainer = targetItem.querySelector('.fm-item-thumbnail-container');
@@ -4152,12 +4205,16 @@ class AdminFileManager {
                 await this.selectSource(sourceKey);
             }
             
-            // Load directory
-            await this.loadDirectory(path);
+            // Load directory if path is different
+            if (this.currentPath !== path) {
+                await this.loadDirectory(path);
+            }
+            
+            // Update URL hash
+            this.updateUrlHash();
             
         } catch (error) {
             console.error('[FM] Error navigating to location:', error);
-            this.showMessage('Lỗi khi điều hướng: ' + error.message, 'error');
         } finally {
             this.isNavigating = false;
         }
