@@ -471,8 +471,11 @@ class AdminFileManager {
             iconContent = `<i class="${icon}"></i>`;
         }
 
+        // Determine the main action for the entire item
+        const mainAction = isDirectory ? 'open' : (item.is_image ? 'preview' : 'view');
+
         return `
-            <div class="fm-item" data-path="${item.path}" data-type="${item.type}">
+            <div class="fm-item" data-path="${item.path}" data-type="${item.type}" data-action="${mainAction}">
                 <div class="fm-item-checkbox">
                     <input type="checkbox" class="item-checkbox">
                 </div>
@@ -480,8 +483,8 @@ class AdminFileManager {
                     ${iconContent}
                     ${isDirectory && item.category ? `<span class="fm-category-indicator" style="background: ${item.category.color_code}"></span>` : ''}
                 </div>
-                <div class="fm-item-details" ${item.is_image ? 'data-action="preview"' : ''}>
-                    <div class="fm-item-name" ${isDirectory ? 'data-action="open"' : ''}>${item.name}</div>
+                <div class="fm-item-details">
+                    <div class="fm-item-name">${item.name}</div>
                     <div class="fm-item-meta">
                         ${size}${size && fileCount ? ' • ' : ''}${fileCount}${(size || fileCount) && displayTime ? ' • ' : ''}${displayTime}
                         ${categoryInfo}
@@ -1522,9 +1525,19 @@ class AdminFileManager {
             const item = e.target.closest('.fm-item');
             if (!item) return;
 
+            // Check if click is on action buttons - don't trigger main action
+            if (e.target.closest('.fm-item-actions') || 
+                e.target.closest('.fm-item-checkbox') ||
+                e.target.closest('.fm-category-dropdown') ||
+                e.target.closest('.fm-featured-dropdown')) {
+                return;
+            }
+
             const action = e.target.dataset.action || e.target.closest('[data-action]')?.dataset.action;
             const itemPath = item.dataset.path;
             const itemType = item.dataset.type;
+
+            console.log(`[FM] Item click: action=${action}, path=${itemPath}, type=${itemType}`);
 
             switch (action) {
                 case 'open':
@@ -1556,6 +1569,12 @@ class AdminFileManager {
                             this.openPreview(imageIndex);
                         }
                     }
+                    break;
+                case 'view':
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.log(`View action triggered for: ${itemPath}`);
+                    this.viewFile(itemPath);
                     break;
                 case 'toggle-featured-dropdown':
                     e.preventDefault();
@@ -1591,10 +1610,6 @@ class AdminFileManager {
                     break;
                 case 'delete':
                     this.deleteItem(itemPath);
-                    break;
-                case 'view':
-                    this.log(`View action triggered for: ${itemPath}`);
-                    this.viewFile(itemPath);
                     break;
             }
         };

@@ -346,6 +346,7 @@
     transition: background-color 0.2s ease;
     cursor: pointer;
     min-height: 80px;
+    position: relative;
 }
 
 .fm-item:last-child {
@@ -358,6 +359,19 @@
 
 .fm-item.selected {
     background: rgba(88, 166, 255, 0.1);
+}
+
+/* Ensure all child elements inherit cursor except action buttons */
+.fm-item * {
+    cursor: inherit;
+}
+
+/* Reset cursor for action buttons and checkboxes */
+.fm-item-actions *,
+.fm-item-checkbox *,
+.fm-category-dropdown *,
+.fm-featured-dropdown * {
+    cursor: pointer;
 }
 
 /* Item Components */
@@ -510,7 +524,6 @@
     color: #e6edf3;
     font-weight: 500;
     margin-bottom: 2px;
-    cursor: pointer;
     word-break: break-word;
 }
 
