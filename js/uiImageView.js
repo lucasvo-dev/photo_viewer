@@ -615,8 +615,25 @@ export function createImageGroupIfNeeded(){
 }
 
 export function toggleInfiniteScrollSpinner(show) {
+    // Check for album view spinner
     if (loadMoreContainerEl) {
         loadMoreContainerEl.style.display = show ? 'block' : 'none';
+    }
+    
+    // Check for homepage mode spinner
+    const homepageSpinner = document.getElementById('homepage-load-more-container');
+    if (homepageSpinner) {
+        // Only show homepage spinner if homepage grid is visible
+        const homepageGrid = document.getElementById('homepage-featured-grid');
+        const directoryView = document.getElementById('directory-view');
+        const isHomepageMode = directoryView && directoryView.style.display === 'block' &&
+                               homepageGrid && homepageGrid.style.display === 'block';
+        
+        if (isHomepageMode) {
+            homepageSpinner.style.display = show ? 'block' : 'none';
+        } else {
+            homepageSpinner.style.display = 'none';
+        }
     }
 }
 

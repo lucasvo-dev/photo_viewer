@@ -2,7 +2,10 @@ import { fetchDataApi } from './apiService.js';
 import { API_BASE_URL } from './config.js';
 import { 
     searchAbortController, setSearchAbortController,
-    isHomepageMode, setIsHomepageMode 
+    isHomepageMode, setIsHomepageMode,
+    setCurrentPage,
+    homepageFeaturedImages,
+    currentImageList, totalImages
 } from './state.js';
 import { showPasswordPrompt } from './uiModal.js';
 import { debounce } from './utils.js';
@@ -104,6 +107,8 @@ function setupSearchHandlers() {
 // Mode switching functions
 function switchToSearchMode() {
     console.log('[uiDirectoryView] Switching to search mode');
+    setIsHomepageMode(false);
+    setCurrentPage(1); // Reset page for search mode
     const homepageGrid = document.getElementById('homepage-featured-grid');
     if (homepageGrid) homepageGrid.style.display = 'none';
     if (directoryListEl) directoryListEl.style.display = 'block';
@@ -111,12 +116,33 @@ function switchToSearchMode() {
 
 function switchToHomepageMode() {
     console.log('[uiDirectoryView] Switching to homepage mode');
+    setIsHomepageMode(true);
+    setCurrentPage(1); // Reset page for homepage mode
     const homepageGrid = document.getElementById('homepage-featured-grid');
     if (homepageGrid) homepageGrid.style.display = 'block';
     if (directoryListEl) directoryListEl.style.display = 'none';
     
-    // Load homepage featured images
-    appLoadHomepageFeatured();
+    // Only load homepage featured images if not already loaded
+    // This prevents unnecessary reloads when switching from search back to homepage
+    // Featured images will only reload on actual page refresh or first load
+    const hasDataInMemory = homepageFeaturedImages.length > 0;
+    const hasContentInDOM = homepageGrid && homepageGrid.children.length > 0;
+    
+    if (!hasDataInMemory || !hasContentInDOM) {
+        console.log('[uiDirectoryView] Homepage featured images need loading. Data in memory:', hasDataInMemory, 'Content in DOM:', hasContentInDOM);
+        appLoadHomepageFeatured();
+    } else {
+        console.log('[uiDirectoryView] Homepage featured images already cached, skipping reload. Count:', homepageFeaturedImages.length);
+        
+        // Update search prompt for cached homepage data
+        const searchPromptEl = document.getElementById('search-prompt');
+        if (searchPromptEl) {
+            const currentCount = currentImageList.length;
+            const totalCount = totalImages || currentCount;
+            searchPromptEl.textContent = `Hiển thị ${currentCount}/${totalCount} ảnh nổi bật. Nhập từ khóa để tìm album.`;
+            searchPromptEl.style.visibility = 'visible';
+        }
+    }
 }
 
 export function showDirectoryViewOnly() {

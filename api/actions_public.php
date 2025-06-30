@@ -1670,12 +1670,23 @@ switch ($action) {
         }
         break;
 
-    // Homepage Featured Images - Random 50 images for main gallery
+    // Homepage Featured Images - Random 50 images for main gallery with pagination
     case 'get_homepage_featured':
         try {
+            $page = isset($_GET['page']) ? max(1, (int)$_GET['page']) : 1;
             $limit = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 50;
+            $offset = ($page - 1) * $limit;
             
-            // Get random featured images (both 'featured' and 'portrait' types)
+            // First get total count
+            $countSql = "SELECT COUNT(*) as total FROM featured_images WHERE is_featured = 1";
+            $countStmt = $pdo->query($countSql);
+            $totalCount = $countStmt->fetchColumn();
+            
+            // For pagination, we need consistent ordering instead of pure RAND()
+            // Use RAND() with seed based on daily timestamp to shuffle daily but keep consistent during pagination
+            $dailySeed = floor(time() / 86400); // Changes daily
+            
+            // Get featured images with consistent pagination
             $sql = "
                 SELECT 
                     fi.source_key,
@@ -1687,12 +1698,12 @@ switch ($action) {
                     fi.description
                 FROM featured_images fi
                 WHERE fi.is_featured = 1
-                ORDER BY RAND()
-                LIMIT ?
+                ORDER BY RAND(?) 
+                LIMIT ? OFFSET ?
             ";
             
             $stmt = $pdo->prepare($sql);
-            $stmt->execute([$limit]);
+            $stmt->execute([$dailySeed, $limit, $offset]);
             $featured_images = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
             // Process images and format like list_files response
@@ -1762,8 +1773,11 @@ switch ($action) {
                 $processed_images[] = $image_data;
             }
             
-            // Shuffle for additional randomness
-            shuffle($processed_images);
+            // Don't shuffle here since we want consistent pagination order
+            // shuffle($processed_images); // Removed for consistent pagination
+            
+            // Calculate pagination info
+            $total_pages = ceil($totalCount / $limit);
             
             json_response([
                 'files' => $processed_images,
@@ -1771,13 +1785,14 @@ switch ($action) {
                 'breadcrumb' => [],
                 'current_dir' => 'Homepage Featured',
                 'pagination' => [
-                    'current_page' => 1,
-                    'total_pages' => 1,
-                    'total_items' => count($processed_images)
+                    'current_page' => $page,
+                    'total_pages' => $total_pages,
+                    'total_items' => (int)$totalCount
                 ],
                 'is_root' => false,
                 'is_homepage_featured' => true,
-                'total_featured_available' => count($featured_images),
+                'total_featured_available' => (int)$totalCount,
+                'returned_count' => count($processed_images),
                 'timestamp' => date('Y-m-d H:i:s')
             ]);
             

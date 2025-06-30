@@ -154,6 +154,14 @@ if (isset($_GET['folder'])) {
             <div id="homepage-featured-grid" class="homepage-featured-grid">
                 <!-- Featured images masonry grid will be rendered here -->
             </div>
+            
+            <!-- Homepage Infinite Scroll Spinner -->
+            <div id="homepage-load-more-container" class="load-more-container-styling" style="display: none;">
+                <div class="loading-container">
+                    <div class="spinner"></div>
+                    <span>Đang tải thêm ảnh nổi bật...</span>
+                </div>
+            </div>
 
             <!-- Folder Search Results (hidden by default in homepage mode) -->
             <ul id="directory-list" class="directory-list-styling" style="display: none;">

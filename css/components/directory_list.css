@@ -15,6 +15,7 @@
     border: 1px solid #30363d;
     border-radius: 8px;
     padding: 16px; /* Tăng padding từ 14px lên 16px */
+    margin: 10px 0; /* Thêm margin top và bottom 10px */
     gap: 16px; /* Tăng gap từ 14px lên 16px */
     transition: background-color 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s;
     color: #c9d1d9;

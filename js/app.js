@@ -546,7 +546,7 @@ async function loadSubItems(folderPath) {
 
 // --- Load More Images ---
 async function loadMoreImages() {
-    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'totalImages:', totalImages, 'currentImageList.length:', currentImageList.length, 'preloadedImages.length:', preloadedImages.length);
+    console.log('[app.js] loadMoreImages: ENTRY, isLoadingMore:', isLoadingMore, 'currentPage:', currentPage, 'totalImages:', totalImages, 'currentImageList.length:', currentImageList.length, 'preloadedImages.length:', preloadedImages.length, 'isHomepageMode:', isHomepageMode);
 
     // Early exit checks
     if (isLoadingMore) {
@@ -558,6 +558,12 @@ async function loadMoreImages() {
         console.log('[app.js] loadMoreImages: All images loaded, skipping.');
         toggleInfiniteScrollSpinner(false);
         return;
+    }
+
+    // Handle homepage mode differently
+    if (isHomepageMode) {
+        console.log('[app.js] loadMoreImages: Homepage mode detected, loading more featured images');
+        return loadMoreHomepageFeaturedImages();
     }
 
     const pageToFetch = currentPage + 1;
@@ -1020,8 +1026,8 @@ async function initializeApp() {
 }
 
 // --- Load Homepage Featured Images ---
-async function loadHomepageFeaturedImages() {
-    console.log('[app.js] loadHomepageFeaturedImages called');
+async function loadHomepageFeaturedImages(page = 1, append = false) {
+    console.log('[app.js] loadHomepageFeaturedImages called, page:', page, 'append:', append);
     
     if (isLoadingHomepageFeatured) {
         console.log('[app.js] Already loading homepage featured images, skipping');
@@ -1031,29 +1037,45 @@ async function loadHomepageFeaturedImages() {
     setIsLoadingHomepageFeatured(true);
     
     try {
-        showLoadingIndicator('Đang tải ảnh nổi bật...');
+        if (!append) {
+            showLoadingIndicator('Đang tải ảnh nổi bật...');
+        }
         
-        const responseData = await fetchDataApi('get_homepage_featured', { limit: 50 });
+        const responseData = await fetchDataApi('get_homepage_featured', { limit: 50, page: page });
         
         if (responseData.status !== 'success') {
             throw new Error(responseData.message || 'Không thể tải ảnh featured');
         }
         
         const featuredImages = responseData.data.files || [];
-        console.log('[app.js] Loaded featured images:', featuredImages.length);
+        const pagination = responseData.data.pagination || {};
+        console.log('[app.js] Loaded featured images:', featuredImages.length, 'pagination:', pagination);
         
-        setHomepageFeaturedImages(featuredImages);
-        setCurrentImageList(featuredImages); // For PhotoSwipe compatibility
-        setTotalImages(featuredImages.length);
+        // Update state
+        if (append) {
+            // Append to existing list
+            const newImages = featuredImages.filter(newImg => 
+                !currentImageList.some(existing => existing.path === newImg.path));
+            setCurrentImageList([...currentImageList, ...newImages]);
+            setHomepageFeaturedImages([...homepageFeaturedImages, ...newImages]);
+        } else {
+            // Replace list (first load)
+            setHomepageFeaturedImages(featuredImages);
+            setCurrentImageList(featuredImages); // For PhotoSwipe compatibility
+        }
+        
+        setTotalImages(pagination.total_items || featuredImages.length);
         
         // Render images to homepage grid
         const homepageGrid = document.getElementById('homepage-featured-grid');
         if (homepageGrid && featuredImages.length > 0) {
-            // Clear previous content
-            homepageGrid.innerHTML = '';
+            if (!append) {
+                // Clear previous content on first load
+                homepageGrid.innerHTML = '';
+            }
             
             // Use the same masonry rendering as album view
-            renderImageItemsToGrid(featuredImages, false, homepageGrid);
+            renderImageItemsToGrid(featuredImages, append, homepageGrid);
             
             // Setup PhotoSwipe for homepage grid
             setupPhotoSwipeIfNeeded();
@@ -1061,10 +1083,12 @@ async function loadHomepageFeaturedImages() {
             // Update search prompt for homepage
             const searchPromptEl = document.getElementById('search-prompt');
             if (searchPromptEl) {
-                searchPromptEl.textContent = `Hiển thị ${featuredImages.length} ảnh nổi bật. Nhập từ khóa để tìm album.`;
+                const totalShown = currentImageList.length;
+                const totalAvailable = pagination.total_items || totalShown;
+                searchPromptEl.textContent = `Hiển thị ${totalShown}/${totalAvailable} ảnh nổi bật. Nhập từ khóa để tìm album.`;
                 searchPromptEl.style.visibility = 'visible';
             }
-        } else if (homepageGrid) {
+        } else if (homepageGrid && !append) {
             homepageGrid.innerHTML = '<div class="no-featured-message"><p>Chưa có ảnh nổi bật nào được đánh dấu.</p></div>';
             
             const searchPromptEl = document.getElementById('search-prompt');
@@ -1074,25 +1098,107 @@ async function loadHomepageFeaturedImages() {
             }
         }
         
-        hideLoadingIndicator();
+        if (!append) {
+            hideLoadingIndicator();
+        }
         console.log('[app.js] Homepage featured images loaded successfully');
         
     } catch (error) {
         console.error('[app.js] Error loading homepage featured images:', error);
-        hideLoadingIndicator();
-        
-        const homepageGrid = document.getElementById('homepage-featured-grid');
-        if (homepageGrid) {
-            homepageGrid.innerHTML = '<div class="error-message"><p>Không thể tải ảnh nổi bật. Vui lòng thử lại sau.</p></div>';
+        if (!append) {
+            hideLoadingIndicator();
         }
         
-        const searchPromptEl = document.getElementById('search-prompt');
-        if (searchPromptEl) {
-            searchPromptEl.textContent = 'Lỗi tải ảnh nổi bật. Nhập từ khóa để tìm album.';
-            searchPromptEl.style.visibility = 'visible';
+        if (!append) {
+            const homepageGrid = document.getElementById('homepage-featured-grid');
+            if (homepageGrid) {
+                homepageGrid.innerHTML = '<div class="error-message"><p>Không thể tải ảnh nổi bật. Vui lòng thử lại sau.</p></div>';
+            }
+            
+            const searchPromptEl = document.getElementById('search-prompt');
+            if (searchPromptEl) {
+                searchPromptEl.textContent = 'Lỗi tải ảnh nổi bật. Nhập từ khóa để tìm album.';
+                searchPromptEl.style.visibility = 'visible';
+            }
         }
     } finally {
         setIsLoadingHomepageFeatured(false);
+    }
+}
+
+// --- Load More Homepage Featured Images (for infinite scroll) ---
+async function loadMoreHomepageFeaturedImages() {
+    console.log('[app.js] loadMoreHomepageFeaturedImages called');
+    
+    // Set loading state immediately to prevent concurrent calls
+    setIsLoadingMore(true);
+    toggleInfiniteScrollSpinner(true);
+
+    const pageToFetch = currentPage + 1;
+    console.log(`[app.js] loadMoreHomepageFeaturedImages: Loading page ${pageToFetch}`);
+
+    try {
+        const responseData = await fetchDataApi('get_homepage_featured', { 
+            limit: 50, 
+            page: pageToFetch 
+        });
+
+        if (responseData.status === 'success' && responseData.data.files && responseData.data.files.length > 0) {
+            const newFeaturedImages = responseData.data.files;
+            const pagination = responseData.data.pagination || {};
+            
+            console.log(`[app.js] loadMoreHomepageFeaturedImages: Loaded ${newFeaturedImages.length} new images for page ${pageToFetch}`);
+            
+            // Filter out duplicates to handle race conditions
+            const currentPaths = new Set(currentImageList.map(item => item.path));
+            const trulyNewImages = newFeaturedImages.filter(item => !currentPaths.has(item.path));
+
+            if (trulyNewImages.length > 0) {
+                // Update state
+                setCurrentPage(pageToFetch);
+                setCurrentImageList([...currentImageList, ...trulyNewImages]);
+                setHomepageFeaturedImages([...homepageFeaturedImages, ...trulyNewImages]);
+                
+                // Update total if provided
+                if (pagination.total_items && pagination.total_items !== totalImages) {
+                    setTotalImages(pagination.total_items);
+                }
+
+                // Render new images to homepage grid
+                const homepageGrid = document.getElementById('homepage-featured-grid');
+                if (homepageGrid) {
+                    renderImageItemsToGrid(trulyNewImages, true, homepageGrid); // append=true, customContainer=homepageGrid
+                    setupPhotoSwipeIfNeeded();
+                }
+
+                // Update search prompt
+                const searchPromptEl = document.getElementById('search-prompt');
+                if (searchPromptEl) {
+                    const totalShown = currentImageList.length;
+                    const totalAvailable = pagination.total_items || totalShown;
+                    searchPromptEl.textContent = `Hiển thị ${totalShown}/${totalAvailable} ảnh nổi bật. Nhập từ khóa để tìm album.`;
+                }
+
+                console.log(`[app.js] loadMoreHomepageFeaturedImages: Successfully added ${trulyNewImages.length} new featured images. Total: ${currentImageList.length}`);
+            } else {
+                console.log(`[app.js] loadMoreHomepageFeaturedImages: Page ${pageToFetch} contained no new images (duplicates filtered).`);
+            }
+
+        } else if (responseData.status === 'success') {
+            console.log(`[app.js] loadMoreHomepageFeaturedImages: Page ${pageToFetch} returned no files, likely reached end.`);
+        } else {
+            console.error(`[app.js] loadMoreHomepageFeaturedImages: API error for page ${pageToFetch}:`, responseData.message);
+            showModalWithMessage('Lỗi tải thêm ảnh', `<p>Không thể tải thêm ảnh nổi bật: ${responseData.message}</p>`, true);
+        }
+
+    } catch (error) {
+        console.error('[app.js] loadMoreHomepageFeaturedImages: Network error:', error);
+        showModalWithMessage('Lỗi kết nối', `<p>Đã có lỗi xảy ra khi tải thêm ảnh nổi bật: ${error.message}</p>`, true);
+    } finally {
+        // Always clean up state
+        setIsLoadingMore(false);
+        toggleInfiniteScrollSpinner(false);
+        console.log('[app.js] loadMoreHomepageFeaturedImages: EXIT, currentPage:', currentPage, 'currentImageList.length:', currentImageList.length);
     }
 }
 
@@ -1102,6 +1208,7 @@ async function initializeHomePage() {
     try {
         showDirectoryView();
         setIsHomepageMode(true);
+        setCurrentPage(1); // Reset page for homepage
         await loadHomepageFeaturedImages();
         console.log('[app.js] Home page initialized successfully');
     } catch (error) {
@@ -1314,7 +1421,15 @@ function initializeAppEventListeners() {
         // globalScrollTracker.update(); // Removed - now handled globally
         
         const imageView = document.getElementById('image-view');
-        if (imageView && imageView.style.display === 'block' &&
+        const directoryView = document.getElementById('directory-view');
+        const homepageGrid = document.getElementById('homepage-featured-grid');
+        
+        // Check for infinite scroll in both album view and homepage mode
+        const isInAlbumView = imageView && imageView.style.display === 'block';
+        const isInHomepageMode = directoryView && directoryView.style.display === 'block' && 
+                                 isHomepageMode && homepageGrid && homepageGrid.style.display === 'block';
+        
+        if ((isInAlbumView || isInHomepageMode) && 
             !isLoadingMore && 
             currentImageList.length < totalImages && 
             totalImages > 0) {
@@ -1322,7 +1437,7 @@ function initializeAppEventListeners() {
             // Use a smaller threshold to prevent over-eager triggering
             const threshold = window.innerHeight * 1.5; 
             if ((window.innerHeight + window.scrollY) >= document.documentElement.scrollHeight - threshold) { 
-                console.log(`[app.js] Infinite scroll triggered with threshold: ${threshold}px (1.5x viewport)`);
+                console.log(`[app.js] Infinite scroll triggered (${isInHomepageMode ? 'homepage' : 'album'} mode) with threshold: ${threshold}px (1.5x viewport)`);
                 
                 // Start performance timing for infinite scroll load
                 const infiniteScrollStartTime = globalPerformanceMonitor.startTiming('infinite-scroll-load');
