@@ -396,17 +396,34 @@ export function clearImageGrid() {
     }
 }
 
-export function renderImageItems(imagesDataToRender, append = false) {
-    console.log('[uiImageView] renderImageItems called. Appending:', append, 'Data:', imagesDataToRender);
-    if (!imageGridEl) {
-        console.error('[uiImageView] imageGridEl NOT found in renderImageItems.');
+export function renderImageItems(imagesDataToRender, append = false, customContainer = null) {
+    console.log('[uiImageView] renderImageItems called. Appending:', append, 'CustomContainer:', !!customContainer, 'Data:', imagesDataToRender);
+    
+    // Use custom container if provided, otherwise use default imageGridEl
+    let targetContainer = customContainer || imageGridEl;
+    
+    if (!targetContainer) {
+        console.error('[uiImageView] No target container found in renderImageItems.');
         return;
     }
     
-    let imageGroupContainer = imageGridEl.querySelector('.image-group'); 
-    if (!imageGroupContainer) {
-        console.error('[uiImageView] .image-group container NOT found in renderImageItems. This should have been created by createImageGroupIfNeeded.');
-        return; // Cannot proceed without the group container
+    let imageGroupContainer;
+    
+    if (customContainer) {
+        // For custom containers (like homepage), use the container directly
+        imageGroupContainer = customContainer;
+        
+        // Add masonry class if not present
+        if (!imageGroupContainer.classList.contains('image-group')) {
+            imageGroupContainer.classList.add('image-group');
+        }
+    } else {
+        // For regular image grid, look for .image-group
+        imageGroupContainer = imageGridEl.querySelector('.image-group'); 
+        if (!imageGroupContainer) {
+            console.error('[uiImageView] .image-group container NOT found in renderImageItems. This should have been created by createImageGroupIfNeeded.');
+            return; // Cannot proceed without the group container
+        }
     }
 
     if (!imagesDataToRender || imagesDataToRender.length === 0) {

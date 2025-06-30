@@ -1,6 +1,9 @@
 import { fetchDataApi } from './apiService.js';
 import { API_BASE_URL } from './config.js';
-import { searchAbortController, setSearchAbortController } from './state.js';
+import { 
+    searchAbortController, setSearchAbortController,
+    isHomepageMode, setIsHomepageMode 
+} from './state.js';
 import { showPasswordPrompt } from './uiModal.js';
 import { debounce } from './utils.js';
 
@@ -11,6 +14,7 @@ let directoryViewEl, searchInputEl, directoryListEl, searchPromptEl, clearSearch
 let appNavigateToFolder = () => console.error('navigateToFolder not initialized in uiDirectoryView');
 let appShowLoadingIndicator = () => console.error('showLoadingIndicator not initialized');
 let appHideLoadingIndicator = () => console.error('hideLoadingIndicator not initialized');
+let appLoadHomepageFeatured = () => console.error('loadHomepageFeatured not initialized in uiDirectoryView');
 
 export function initializeDirectoryView(callbacks) {
     console.log('[uiDirectoryView] Initializing...');
@@ -34,6 +38,7 @@ export function initializeDirectoryView(callbacks) {
         if (callbacks.navigateToFolder) appNavigateToFolder = callbacks.navigateToFolder;
         if (callbacks.showLoadingIndicator) appShowLoadingIndicator = callbacks.showLoadingIndicator;
         if (callbacks.hideLoadingIndicator) appHideLoadingIndicator = callbacks.hideLoadingIndicator;
+        if (callbacks.loadHomepageFeatured) appLoadHomepageFeatured = callbacks.loadHomepageFeatured;
     }
     
     setupSearchHandlers();
@@ -52,13 +57,39 @@ function setupSearchHandlers() {
     const performSearch = debounce(async () => {
         console.log('[uiDirectoryView] performSearch triggered.');
         const term = searchInputEl.value.trim();
-        if (term.length > 0 && term.length < 2) {
+        
+        // Switch between homepage and search modes
+        const hasSearchTerm = term.length > 0;
+        const shouldShowSearch = hasSearchTerm && term.length >= 2;
+        
+        if (hasSearchTerm && term.length < 2) {
+            // Still in search mode but term too short
             if (searchAbortController) { searchAbortController.abort(); }
             if (searchPromptEl) searchPromptEl.textContent = 'Nhập ít nhất 2 ký tự để tìm kiếm.';
             if (directoryListEl) directoryListEl.innerHTML = '';
+            
+            // Switch to search mode but don't load yet
+            if (isHomepageMode) {
+                setIsHomepageMode(false);
+                switchToSearchMode();
+            }
             return;
         }
-        loadTopLevelDirectories(term || null, false);
+        
+        if (shouldShowSearch) {
+            // Switch to search mode and load results
+            if (isHomepageMode) {
+                setIsHomepageMode(false);
+                switchToSearchMode();
+            }
+            loadTopLevelDirectories(term, false);
+        } else {
+            // No search term - switch back to homepage mode
+            if (!isHomepageMode) {
+                setIsHomepageMode(true);
+                switchToHomepageMode();
+            }
+        }
     }, 350);
 
     searchInputEl.addEventListener('input', performSearch);
@@ -68,6 +99,24 @@ function setupSearchHandlers() {
         clearSearchBtnEl.style.visibility = 'hidden';
         performSearch(); 
     });
+}
+
+// Mode switching functions
+function switchToSearchMode() {
+    console.log('[uiDirectoryView] Switching to search mode');
+    const homepageGrid = document.getElementById('homepage-featured-grid');
+    if (homepageGrid) homepageGrid.style.display = 'none';
+    if (directoryListEl) directoryListEl.style.display = 'block';
+}
+
+function switchToHomepageMode() {
+    console.log('[uiDirectoryView] Switching to homepage mode');
+    const homepageGrid = document.getElementById('homepage-featured-grid');
+    if (homepageGrid) homepageGrid.style.display = 'block';
+    if (directoryListEl) directoryListEl.style.display = 'none';
+    
+    // Load homepage featured images
+    appLoadHomepageFeatured();
 }
 
 export function showDirectoryViewOnly() {

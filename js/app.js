@@ -31,7 +31,10 @@ import {
     paginationAbortController, setPaginationAbortController,
     preloadAbortController, setPreloadAbortController,
     activePageRequests, addActivePageRequest, removeActivePageRequest, 
-    isPageRequestActive, clearAllActivePageRequests
+    isPageRequestActive, clearAllActivePageRequests,
+    isHomepageMode, setIsHomepageMode,
+    homepageFeaturedImages, setHomepageFeaturedImages,
+    isLoadingHomepageFeatured, setIsLoadingHomepageFeatured
 } from './state.js';
 
 // Import utils
@@ -289,8 +292,8 @@ async function fetchData(url, options = {}) {
 */
 
 // --- Hiển thị/ẩn views chính ---
-function showDirectoryView() {
-    console.log('[app.js] showDirectoryView called.');
+function showDirectoryView(forceHomepageMode = null) {
+    console.log('[app.js] showDirectoryView called, forceHomepageMode:', forceHomepageMode);
     
     // Reset navigation and loading flags
     isProcessingNavigation = false;
@@ -320,13 +323,6 @@ function showDirectoryView() {
         preloadAbortController.abort();
         setPreloadAbortController(null);
     }
-    // Don't abort searchAbortController here - let loadTopLevelDirectories handle it
-    // This prevents double-abort which can cause timing issues
-    // if (searchAbortController) {
-    //     console.log('[app.js] Aborting search controller');
-    //     searchAbortController.abort();
-    //     setSearchAbortController(null);
-    // }
     
     // Clear all active page requests
     clearAllActivePageRequests();
@@ -347,6 +343,29 @@ function showDirectoryView() {
     // Clear hash if present
     if (location.hash) {
         history.pushState("", document.title, window.location.pathname + window.location.search);
+    }
+    
+    // Determine display mode
+    if (forceHomepageMode !== null) {
+        setIsHomepageMode(forceHomepageMode);
+    }
+    
+    // Show/hide appropriate containers based on mode
+    const homepageGrid = document.getElementById('homepage-featured-grid');
+    const directoryList = document.getElementById('directory-list');
+    const searchInput = document.getElementById('searchInput');
+    
+    if (isHomepageMode) {
+        // Homepage mode: show featured grid, hide folder list
+        if (homepageGrid) homepageGrid.style.display = 'block';
+        if (directoryList) directoryList.style.display = 'none';
+        if (searchInput) searchInput.value = ''; // Clear search when going to homepage
+        console.log('[app.js] Showing homepage featured grid mode');
+    } else {
+        // Search mode: hide featured grid, show folder list
+        if (homepageGrid) homepageGrid.style.display = 'none';
+        if (directoryList) directoryList.style.display = 'block';
+        console.log('[app.js] Showing folder search mode');
     }
     
     showDirectoryViewOnly(); 
@@ -960,6 +979,7 @@ async function initializeApp() {
         navigateToFolder: navigateToFolder, 
         showLoadingIndicator: showLoadingIndicator, 
         hideLoadingIndicator: hideLoadingIndicator,
+        loadHomepageFeatured: loadHomepageFeaturedImages, // Pass homepage loader
         searchInputEl: searchInputEl, // Pass the search input element
         clearSearchBtnEl: searchClearEl // Pass the clear search button element
     });
@@ -999,12 +1019,90 @@ async function initializeApp() {
     console.log("App initialized.");
 }
 
+// --- Load Homepage Featured Images ---
+async function loadHomepageFeaturedImages() {
+    console.log('[app.js] loadHomepageFeaturedImages called');
+    
+    if (isLoadingHomepageFeatured) {
+        console.log('[app.js] Already loading homepage featured images, skipping');
+        return;
+    }
+    
+    setIsLoadingHomepageFeatured(true);
+    
+    try {
+        showLoadingIndicator('Đang tải ảnh nổi bật...');
+        
+        const responseData = await fetchDataApi('get_homepage_featured', { limit: 50 });
+        
+        if (responseData.status !== 'success') {
+            throw new Error(responseData.message || 'Không thể tải ảnh featured');
+        }
+        
+        const featuredImages = responseData.data.files || [];
+        console.log('[app.js] Loaded featured images:', featuredImages.length);
+        
+        setHomepageFeaturedImages(featuredImages);
+        setCurrentImageList(featuredImages); // For PhotoSwipe compatibility
+        setTotalImages(featuredImages.length);
+        
+        // Render images to homepage grid
+        const homepageGrid = document.getElementById('homepage-featured-grid');
+        if (homepageGrid && featuredImages.length > 0) {
+            // Clear previous content
+            homepageGrid.innerHTML = '';
+            
+            // Use the same masonry rendering as album view
+            renderImageItemsToGrid(featuredImages, false, homepageGrid);
+            
+            // Setup PhotoSwipe for homepage grid
+            setupPhotoSwipeIfNeeded();
+            
+            // Update search prompt for homepage
+            const searchPromptEl = document.getElementById('search-prompt');
+            if (searchPromptEl) {
+                searchPromptEl.textContent = `Hiển thị ${featuredImages.length} ảnh nổi bật. Nhập từ khóa để tìm album.`;
+                searchPromptEl.style.visibility = 'visible';
+            }
+        } else if (homepageGrid) {
+            homepageGrid.innerHTML = '<div class="no-featured-message"><p>Chưa có ảnh nổi bật nào được đánh dấu.</p></div>';
+            
+            const searchPromptEl = document.getElementById('search-prompt');
+            if (searchPromptEl) {
+                searchPromptEl.textContent = 'Chưa có ảnh nổi bật. Nhập từ khóa để tìm album.';
+                searchPromptEl.style.visibility = 'visible';
+            }
+        }
+        
+        hideLoadingIndicator();
+        console.log('[app.js] Homepage featured images loaded successfully');
+        
+    } catch (error) {
+        console.error('[app.js] Error loading homepage featured images:', error);
+        hideLoadingIndicator();
+        
+        const homepageGrid = document.getElementById('homepage-featured-grid');
+        if (homepageGrid) {
+            homepageGrid.innerHTML = '<div class="error-message"><p>Không thể tải ảnh nổi bật. Vui lòng thử lại sau.</p></div>';
+        }
+        
+        const searchPromptEl = document.getElementById('search-prompt');
+        if (searchPromptEl) {
+            searchPromptEl.textContent = 'Lỗi tải ảnh nổi bật. Nhập từ khóa để tìm album.';
+            searchPromptEl.style.visibility = 'visible';
+        }
+    } finally {
+        setIsLoadingHomepageFeatured(false);
+    }
+}
+
 // --- Initialize Home Page Function ---
 async function initializeHomePage() {
     console.log('[app.js] initializeHomePage called');
     try {
         showDirectoryView();
-        await loadTopLevelDirectories();
+        setIsHomepageMode(true);
+        await loadHomepageFeaturedImages();
         console.log('[app.js] Home page initialized successfully');
     } catch (error) {
         console.error('[app.js] Error initializing home page:', error);
@@ -1159,19 +1257,19 @@ function initializeAppEventListeners() {
             // Clear UI immediately
             clearImageGrid();
             
-            // Force show directory view (this will handle remaining cleanup)
-            showDirectoryView();
+            // Force show directory view in homepage mode
+            showDirectoryView(true); // Force homepage mode
             
-            // Simple loading and directory load - no complex timeout logic
+            // Load homepage featured images
             try {
                 showGlobalLoadingOverlay('Đang tải trang chủ...');
-                await loadTopLevelDirectories(null, true); // Suppress nested loading
+                await loadHomepageFeaturedImages();
                 console.log('[app.js] Logo click navigation completed successfully');
             } catch (error) {
                 console.error('[app.js] Error during logo click navigation:', error);
                 // Simple fallback: try once more, then reload if still fails
                 try {
-                    await loadTopLevelDirectories(null, true);
+                    await loadHomepageFeaturedImages();
                 } catch (retryError) {
                     console.error('[app.js] Retry failed, forcing page reload:', retryError);
                     window.location.reload();

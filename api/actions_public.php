@@ -1670,6 +1670,123 @@ switch ($action) {
         }
         break;
 
+    // Homepage Featured Images - Random 50 images for main gallery
+    case 'get_homepage_featured':
+        try {
+            $limit = isset($_GET['limit']) ? max(1, min(100, (int)$_GET['limit'])) : 50;
+            
+            // Get random featured images (both 'featured' and 'portrait' types)
+            $sql = "
+                SELECT 
+                    fi.source_key,
+                    fi.image_relative_path,
+                    fi.folder_path,
+                    fi.featured_type,
+                    fi.priority_order,
+                    fi.alt_text,
+                    fi.description
+                FROM featured_images fi
+                WHERE fi.is_featured = 1
+                ORDER BY RAND()
+                LIMIT ?
+            ";
+            
+            $stmt = $pdo->prepare($sql);
+            $stmt->execute([$limit]);
+            $featured_images = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Process images and format like list_files response
+            $processed_images = [];
+            foreach ($featured_images as $image) {
+                // Construct the full source-prefixed path
+                $full_path = $image['source_key'] . '/' . ltrim($image['image_relative_path'], '/');
+                
+                // Validate that the source exists and file exists
+                $path_info = validate_source_and_file_path($full_path);
+                if ($path_info === null || !file_exists($path_info['absolute_path'])) {
+                    continue; // Skip if file doesn't exist
+                }
+                
+                // Check file extension and type
+                $extension = strtolower(pathinfo($path_info['absolute_path'], PATHINFO_EXTENSION));
+                $is_video = in_array($extension, ['mp4','mov','avi','mkv','webm'], true);
+                $is_image = in_array($extension, $allowed_ext, true);
+                
+                if (!$is_image && !$is_video) {
+                    continue; // Skip unsupported file types
+                }
+                
+                // Check 150px cache for homepage thumbnails
+                $cache_path_150 = get_thumbnail_cache_path($full_path, 150, $is_video);
+                if (!file_exists($cache_path_150) || filesize($cache_path_150) === 0) {
+                    // Queue job for missing 150px cache
+                    add_thumbnail_job_to_queue($pdo, $full_path, 150, $is_video ? 'video' : 'image');
+                    // Skip this image for now
+                    continue;
+                }
+                
+                // Get file info for metadata
+                $file_info = new SplFileInfo($path_info['absolute_path']);
+                
+                // Get image dimensions if possible
+                $width = null;
+                $height = null;
+                if ($is_image && function_exists('getimagesize')) {
+                    $dimensions = @getimagesize($path_info['absolute_path']);
+                    if ($dimensions) {
+                        $width = $dimensions[0];
+                        $height = $dimensions[1];
+                    }
+                }
+                
+                // Format like list_files response for compatibility with existing frontend
+                $image_data = [
+                    'name' => $file_info->getFilename(),
+                    'type' => $is_video ? 'video' : 'image',
+                    'path' => $full_path,
+                    'source_path' => $full_path, // For PhotoSwipe compatibility
+                    'size' => $file_info->getSize(),
+                    'mtime' => $file_info->getMTime(),
+                    'extension' => $extension,
+                    'width' => $width,
+                    'height' => $height,
+                    'is_featured' => true,
+                    'featured_type' => $image['featured_type'],
+                    'priority_order' => (int)$image['priority_order'],
+                    'alt_text' => $image['alt_text'],
+                    'description' => $image['description'],
+                    'folder_path' => $image['folder_path'],
+                    'source_key' => $image['source_key']
+                ];
+                
+                $processed_images[] = $image_data;
+            }
+            
+            // Shuffle for additional randomness
+            shuffle($processed_images);
+            
+            json_response([
+                'files' => $processed_images,
+                'folders' => [], // No folders for homepage
+                'breadcrumb' => [],
+                'current_dir' => 'Homepage Featured',
+                'pagination' => [
+                    'current_page' => 1,
+                    'total_pages' => 1,
+                    'total_items' => count($processed_images)
+                ],
+                'is_root' => false,
+                'is_homepage_featured' => true,
+                'total_featured_available' => count($featured_images),
+                'timestamp' => date('Y-m-d H:i:s')
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[get_homepage_featured] Error: " . $e->getMessage());
+            json_error('Lỗi khi lấy ảnh featured cho trang chủ: ' . $e->getMessage(), 500);
+        }
+        break;
+
     // AI Content Agent API - Get Featured Images by Category
     case 'ai_get_featured_images':
         try {

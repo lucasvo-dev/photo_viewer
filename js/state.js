@@ -7,6 +7,11 @@ export let isLoadingMore = false;
 export let currentPage = 1;
 export let totalImages = 0;
 
+// Homepage Featured Images State
+export let isHomepageMode = true; // true = homepage featured grid, false = folder search mode
+export let homepageFeaturedImages = [];
+export let isLoadingHomepageFeatured = false;
+
 // DOM Elements references - these are more like UI state, but closely tied to app state
 export let zipProgressBarContainerEl = null;
 export let zipFolderNameEl = null;
@@ -42,6 +47,20 @@ export function setCurrentPage(val) {
     console.log('[state.js] currentPage set to:', currentPage);
 }
 export function setTotalImages(value) { totalImages = value; }
+
+// Homepage state setters
+export function setIsHomepageMode(value) { 
+    isHomepageMode = !!value; 
+    console.log('[state.js] isHomepageMode set to:', isHomepageMode);
+}
+export function setHomepageFeaturedImages(value) { 
+    homepageFeaturedImages = Array.isArray(value) ? value : []; 
+    console.log('[state.js] homepageFeaturedImages set:', homepageFeaturedImages.length, 'images');
+}
+export function setIsLoadingHomepageFeatured(value) { 
+    isLoadingHomepageFeatured = !!value; 
+    console.log('[state.js] isLoadingHomepageFeatured set to:', isLoadingHomepageFeatured);
+}
 
 export function setZipProgressBarContainerEl(value) { zipProgressBarContainerEl = value; }
 export function setZipFolderNameEl(value) { zipFolderNameEl = value; }

@@ -150,7 +150,13 @@ if (isset($_GET['folder'])) {
                 Nhập từ khóa để tìm album ảnh của bạn.
             </p>
 
-            <ul id="directory-list" class="directory-list-styling">
+            <!-- Homepage Featured Images Grid -->
+            <div id="homepage-featured-grid" class="homepage-featured-grid">
+                <!-- Featured images masonry grid will be rendered here -->
+            </div>
+
+            <!-- Folder Search Results (hidden by default in homepage mode) -->
+            <ul id="directory-list" class="directory-list-styling" style="display: none;">
                 <!-- Search results -->
             </ul>
         </div>
