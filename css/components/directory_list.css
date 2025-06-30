@@ -1,9 +1,9 @@
 /* --- Folder List (Homepage & Inside Folder) --- */
 .directory-list-styling {
-    list-style:none; padding:0; margin:0 0 24px 0;
+    list-style:none; padding:0; margin:0 0 32px 0; /* Tăng margin bottom từ 24px lên 32px */
     display: grid; /* Có thể dùng Grid để bố cục tốt hơn */
     grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); /* Responsive grid */
-    gap: 16px; /* Khoảng cách giữa các thư mục */
+    gap: 20px; /* Tăng khoảng cách giữa các thư mục từ 16px lên 20px */
 }
 .directory-list-styling li {
     /* Các style cũ của li không cần nữa vì thẻ a chiếm hết */
@@ -14,8 +14,8 @@
     background: #161b22;
     border: 1px solid #30363d;
     border-radius: 8px;
-    padding: 14px; /* Default padding */
-    gap: 14px; /* Default gap */
+    padding: 16px; /* Tăng padding từ 14px lên 16px */
+    gap: 16px; /* Tăng gap từ 14px lên 16px */
     transition: background-color 0.2s, border-color 0.2s, transform 0.15s, box-shadow 0.2s;
     color: #c9d1d9;
     overflow: hidden; /* Keep overflow on the 'a' tag for overall card shape */
@@ -68,9 +68,12 @@ img[src$=".svg"] { /* Nếu dùng SVG placeholder */
 }
 
 @media (max-width: 399px) {
+    .directory-list-styling {
+        gap: 16px; /* Giữ gap tốt trên mobile */
+    }
     .directory-list-styling li a {
-        padding: 10px;
-        gap: 8px;
+        padding: 12px; /* Tăng từ 10px lên 12px cho mobile */
+        gap: 10px; /* Tăng từ 8px lên 10px cho mobile */
     }
     .directory-list-styling .folder-thumbnail { /* Ensure this targets within .directory-list-styling */
         width: 40px;

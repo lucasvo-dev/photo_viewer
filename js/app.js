@@ -814,11 +814,11 @@ async function handleUrlHash() { // Make function async
                     await loadSubItems(folderRelativePath); // Await the async operation
                 } else {
                     // If folderRelativePath is invalid (e.g. empty after decode, or contains '..')
-                    // Fall through to show directory view
-                    console.warn('[app.js] handleUrlHash: Invalid folder path after decoding. Showing directory view.');
+                    // Fall through to show homepage
+                    console.warn('[app.js] handleUrlHash: Invalid folder path after decoding. Showing homepage.');
                     showGlobalLoadingOverlay('Đang tải trang chủ...');
-                    showDirectoryView();
-                    await loadTopLevelDirectories(null, true); // Suppress loading indicator
+                    showDirectoryView(true); // Force homepage mode
+                    await loadHomepageFeaturedImages(); // Load featured images
                     hideGlobalLoadingOverlay();
                 }
             } catch (e) { 
@@ -828,22 +828,22 @@ async function handleUrlHash() { // Make function async
                 isProcessingNavigation = false;
                 
                 history.replaceState(null, '', ' '); 
-                // Fallback to directory view on error
+                // Fallback to homepage on error
                 showGlobalLoadingOverlay('Đang tải trang chủ...');
-                showDirectoryView();
-                await loadTopLevelDirectories(null, true); // Suppress loading indicator
+                showDirectoryView(true); // Force homepage mode
+                await loadHomepageFeaturedImages(); // Load featured images
                 hideGlobalLoadingOverlay();
             }
         } else {
-            // No hash or invalid hash - show home page
-            console.log('[app.js] handleUrlHash: No valid folder in hash, showing directory view.');
+            // No hash or invalid hash - show home page with featured images
+            console.log('[app.js] handleUrlHash: No valid folder in hash, showing homepage with featured images.');
             
             // Reset processing flag to ensure clean state
             isProcessingNavigation = false;
             
             showGlobalLoadingOverlay('Đang tải trang chủ...');
-            showDirectoryView();
-            await loadTopLevelDirectories(null, true); // Suppress loading indicator
+            showDirectoryView(true); // Force homepage mode
+            await loadHomepageFeaturedImages(); // Load featured images instead of directories
             hideGlobalLoadingOverlay();
         }
     } catch (error) {
