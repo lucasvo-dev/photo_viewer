@@ -524,10 +524,8 @@ document.addEventListener('DOMContentLoaded', () => {
                      handleCacheFolder(cacheButton, folderPath); 
                  });
     
-                 // Start polling if job is active
-                 if (folder.current_cache_job_status === 'pending' || folder.current_cache_job_status === 'processing') {
-                     startPolling(cacheButton, cacheStatusCell, folderPath);
-                 }
+                 // DON'T automatically start polling on page load
+                 // Polling will only start when user manually clicks cache button
              } else {
                 console.warn("Could not find cache button or status cell for row:", folderPath);
              }
@@ -851,8 +849,8 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Success message
                 showFeedback('📊 Dữ liệu Gallery đã được làm mới thành công!', 'success');
                 
-                // Note: Active polling for cache jobs will be automatically restarted 
-                // by renderFolderTable() when it detects jobs with 'pending' or 'processing' status
+                // Note: Polling will NOT restart automatically after refresh
+                // Users need to manually click cache buttons to resume polling if needed
                 
             } catch (error) {
                 console.error('[Manual Refresh] Error:', error);
