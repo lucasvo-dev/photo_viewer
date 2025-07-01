@@ -49,6 +49,59 @@ switch ($action) {
 
             // --- Handle Root Request (List Sources/Top-Level Dirs) ---
             if ($path_info['is_root']) {
+                // NEW: Use directory index for ultra-fast search instead of filesystem scanning
+                error_log("[list_files] Using directory index for root request, search_term: " . ($search_term ?? 'null'));
+                
+                $index_result = get_directory_index($search_term, $page, $items_per_page);
+                
+                // If directory index is available and working
+                if ($index_result['from_cache'] && !empty($index_result['directories'])) {
+                    $folders_data = [];
+                    
+                    foreach ($index_result['directories'] as $dir_item) {
+                        $folder_path_prefixed = $dir_item['directory_path'];
+                        
+                        // Build folder data from cached index
+                        $thumbnail_path = null;
+                        if ($dir_item['has_thumbnail'] && $dir_item['first_image_path']) {
+                            $thumbnail_path = $folder_path_prefixed . '/' . $dir_item['first_image_path'];
+                        }
+                        
+                        $folders_data[] = [
+                            'name' => $dir_item['directory_name'],
+                            'type' => 'folder',
+                            'path' => $folder_path_prefixed,
+                            'protected' => (bool)$dir_item['is_protected'],
+                            'authorized' => true, // We'll check this per-request if needed
+                            'thumbnail' => $thumbnail_path,
+                            'file_count' => (int)$dir_item['file_count'],
+                            'from_cache' => true,
+                            'last_modified' => $dir_item['last_modified']
+                        ];
+                    }
+                    
+                    error_log("[list_files] Retrieved " . count($folders_data) . " directories from index cache");
+                    
+                    json_response([
+                        'files' => [], // No files for root directory listing
+                        'folders' => $folders_data,
+                        'breadcrumb' => [],
+                        'current_dir' => '',
+                        'pagination' => $index_result['pagination'],
+                        'is_root' => true,
+                        'is_search' => ($search_term !== null && $search_term !== ''),
+                        'current_search_term' => $search_term ?? '',
+                        'performance_mode' => 'directory_index_cache',
+                        'cache_status' => 'hit'
+                    ]);
+                }
+                
+                // FALLBACK: If directory index is not available, use original filesystem scan
+                // but with optimizations and safety limits for large directories
+                error_log("[list_files] Directory index unavailable, falling back to filesystem scan");
+                $max_dirs_scan = 1000; // Safety limit for large servers
+                $dirs_scanned = 0;
+                
                 $all_subdirs = [];
                 // Fetch all protected folder names once
                 $all_protected_folders = [];
@@ -60,6 +113,11 @@ switch ($action) {
                 } catch (PDOException $e) { /* Log error, continue */ error_log("[list_files Root] Error fetching protected: " . $e->getMessage()); }
 
                 foreach (IMAGE_SOURCES as $source_key => $source_config) {
+                    if ($dirs_scanned >= $max_dirs_scan) {
+                        error_log("[list_files] Reached directory scan limit ({$max_dirs_scan}), stopping for performance");
+                        break;
+                    }
+                    
                     if (!is_array($source_config) || !isset($source_config['path'])) continue;
                     $source_base_path = $source_config['path'];
                     $resolved_source_base_path = realpath($source_base_path);
@@ -73,19 +131,20 @@ switch ($action) {
                         $iterator = new DirectoryIterator($resolved_source_base_path);
                         foreach ($iterator as $fileinfo) {
                             if ($fileinfo->isDot() || !$fileinfo->isDir()) continue;
+                            
+                            if ($dirs_scanned >= $max_dirs_scan) {
+                                break 2; // Break out of both loops
+                            }
 
                             $subdir_name = $fileinfo->getFilename();
                             $subdir_source_prefixed_path = $source_key . '/' . $subdir_name;
 
-                            // Client-side filtering is usually done in JS (loadTopLevelDirectories)
-                            // If server-side search for root is needed, implement here using $search_term
-                            // MODIFICATION: Added server-side search filtering
+                            // Server-side search filtering
                             if ($search_term !== null && $search_term !== '') {
                                 if (mb_stripos($subdir_name, $search_term, 0, 'UTF-8') === false) {
                                     continue; // Skip this directory if it doesn't match the search term
                                 }
                             }
-                            // END MODIFICATION
 
                             $all_subdirs[] = [
                                 'name' => $subdir_name,
@@ -93,17 +152,16 @@ switch ($action) {
                                 'path' => $subdir_source_prefixed_path,
                                 'is_dir' => true,
                                 'source_key' => $source_key,
-                                'absolute_path' => $fileinfo->getPathname(), // Keep absolute path for potential thumbnail search
-                                'mtime' => $fileinfo->getMTime() // Add modification time for sorting
+                                'absolute_path' => $fileinfo->getPathname(),
+                                'mtime' => $fileinfo->getMTime()
                             ];
+                            
+                            $dirs_scanned++;
                         }
-                    } catch (Exception $e) { /* Log error */ error_log("[list_files Root] Error scanning source '{$source_key}': " . $e->getMessage()); }
+                    } catch (Exception $e) { 
+                        error_log("[list_files Root] Error scanning source '{$source_key}': " . $e->getMessage()); 
+                    }
                 }
-
-                // MODIFICATION: Apply filtering if search_term is present
-                // This was moved up to be done per directory to avoid iterating twice.
-                // The original usort is fine here.
-                // END MODIFICATION
 
                 // Sort by modification time (newest first), then by name if same mtime
                 usort($all_subdirs, function($a, $b) {
@@ -126,17 +184,37 @@ switch ($action) {
                     $folder_path_prefixed = $item['path'];
                     $subfolder_access = check_folder_access($folder_path_prefixed); // Check access
 
-                    // Find thumbnail
+                    // Find thumbnail with optimized method
                     $thumbnail_source_prefixed_path = null;
-                    // Pass $allowed_ext to the helper function
-                    $first_image_relative_to_subdir = find_first_image_in_source($item['source_key'], $item['name'], $allowed_ext);
+                    
+                    // Use fast thumbnail finder for better performance
+                    $first_image_relative_to_subdir = find_first_image_fast($item['absolute_path'], 5); // Limit to 5 files
                     if ($first_image_relative_to_subdir !== null) {
                         $thumbnail_source_prefixed_path = $folder_path_prefixed . '/' . $first_image_relative_to_subdir;
                         $thumbnail_source_prefixed_path = str_replace('//', '/', $thumbnail_source_prefixed_path); // Normalize
                     }
 
-                    // Get cached file count for root folders
-                    $file_count = get_directory_file_count($item['source_key'], $item['name']);
+                    // Get cached file count for root folders (faster method)
+                    $file_count = 0;
+                    try {
+                        // Try cached count first
+                        $stmt = $pdo->prepare("
+                            SELECT file_count FROM directory_file_counts 
+                            WHERE source_key = ? AND directory_path = ? 
+                            AND last_scanned_at > DATE_SUB(NOW(), INTERVAL 24 HOUR)
+                        ");
+                        $stmt->execute([$item['source_key'], $item['name']]);
+                        $cached_count = $stmt->fetchColumn();
+                        
+                        if ($cached_count !== false) {
+                            $file_count = (int)$cached_count;
+                        } else {
+                            // Quick estimate instead of full recursive count
+                            $file_count = count_immediate_image_files($item['absolute_path']);
+                        }
+                    } catch (Exception $e) {
+                        error_log("[list_files] Error getting file count for {$folder_path_prefixed}: " . $e->getMessage());
+                    }
 
                     $folders_data[] = [
                         'name' => $item['name'],
@@ -145,7 +223,8 @@ switch ($action) {
                         'protected' => $subfolder_access['protected'],
                         'authorized' => $subfolder_access['authorized'],
                         'thumbnail' => $thumbnail_source_prefixed_path,
-                        'file_count' => $file_count
+                        'file_count' => $file_count,
+                        'from_cache' => false
                     ];
                 }
 
@@ -153,16 +232,7 @@ switch ($action) {
                 // The structure of $all_file_items already matches what was previously put into $files_data
                 $files_data = $paginated_items; 
 
-                error_log("[list_files DEBUG] For Path: {$subdir_requested}, Requested Page: {$page}, ItemsPerPage: {$items_per_page}");
-                error_log("[list_files DEBUG] Total Files Found (before pagination): " . count($all_subdirs));
-                error_log("[list_files DEBUG] Calculated Offset: {$offset}");
-                error_log("[list_files DEBUG] Files in Paginated Set: " . count($paginated_items));
-                if (!empty($paginated_items)) {
-                    error_log("[list_files DEBUG] First file in paginated set: " . $paginated_items[0]['name']);
-                    error_log("[list_files DEBUG] Last file in paginated set: " . end($paginated_items)['name']);
-                } else {
-                    error_log("[list_files DEBUG] Paginated set is empty.");
-                }
+                error_log("[list_files] Fallback scan completed: {$dirs_scanned} directories scanned, " . count($folders_data) . " returned");
 
                 json_response([
                     'files' => $files_data,
@@ -176,9 +246,12 @@ switch ($action) {
                     ],
                     'is_root' => true,
                     'is_search' => ($search_term !== null && $search_term !== ''),
-                    'current_search_term' => $search_term ?? ''
+                    'current_search_term' => $search_term ?? '',
+                    'performance_mode' => 'filesystem_fallback',
+                    'cache_status' => 'miss',
+                    'directories_scanned' => $dirs_scanned,
+                    'scan_limit_reached' => $dirs_scanned >= $max_dirs_scan
                 ]);
-                // No need to break here, as try block ends after this
             } else { // --- Handle Specific Directory Request ---
                 $source_key = $path_info['source_key'];
                 $current_relative_path = $path_info['relative_path'];

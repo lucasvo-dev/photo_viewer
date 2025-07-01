@@ -1809,49 +1809,270 @@ switch ($action) {
         break;
         
     case 'get_featured_images_stats':
-        error_log("[ADMIN_ACTION] Getting featured images statistics");
-        
-        $source_key = $_GET['source_key'] ?? '';
-        $folder_path = $_GET['folder_path'] ?? '';
-        
         try {
-            $where_conditions = ["1=1"];
-            $params = [];
+            $stats = [];
             
-            if ($source_key) {
-                $where_conditions[] = "source_key = ?";
-                $params[] = $source_key;
-            }
+            // Get total featured images count
+            $stmt = $pdo->query("SELECT COUNT(*) as total FROM featured_images WHERE is_featured = 1");
+            $stats['total_featured'] = $stmt->fetchColumn();
             
-            if ($folder_path) {
-                $where_conditions[] = "folder_path = ?";
-                $params[] = $folder_path;
-            }
-            
-            $where_sql = implode(" AND ", $where_conditions);
-            
-            $stmt = $pdo->prepare("
-                SELECT 
-                    COUNT(*) as total_featured,
-                    SUM(CASE WHEN featured_type = 'featured' THEN 1 ELSE 0 END) as featured_count,
-                    SUM(CASE WHEN featured_type = 'portrait' THEN 1 ELSE 0 END) as portrait_count
-                FROM featured_images
-                WHERE {$where_sql} AND is_featured = TRUE
+            // Get featured images by type
+            $stmt = $pdo->query("
+                SELECT featured_type, COUNT(*) as count 
+                FROM featured_images 
+                WHERE is_featured = 1 
+                GROUP BY featured_type
             ");
-            $stmt->execute($params);
+            $stats['by_type'] = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
             
-            $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+            // Get featured images by source
+            $stmt = $pdo->query("
+                SELECT source_key, COUNT(*) as count 
+                FROM featured_images 
+                WHERE is_featured = 1 
+                GROUP BY source_key
+            ");
+            $stats['by_source'] = $stmt->fetchAll(PDO::FETCH_KEY_PAIR);
             
-            json_response([
-                'success' => true,
-                'stats' => $stats
-            ]);
-        } catch (PDOException $e) {
-            error_log("[ADMIN_ACTION] Error getting featured stats: " . $e->getMessage());
-            json_error("Lỗi khi lấy thống kê featured: " . $e->getMessage());
+            // Get recent additions (last 7 days)
+            $stmt = $pdo->query("
+                SELECT COUNT(*) as recent_count 
+                FROM featured_images 
+                WHERE is_featured = 1 AND created_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+            ");
+            $stats['recent_additions'] = $stmt->fetchColumn();
+            
+            json_response(['status' => 'success', 'data' => $stats]);
+            
+        } catch (Exception $e) {
+            error_log("[get_featured_images_stats] Error: " . $e->getMessage());
+            json_error('Failed to get featured images statistics: ' . $e->getMessage(), 500);
         }
         break;
-        
+
+    // ========== DIRECTORY INDEX MANAGEMENT ==========
+    
+    case 'get_directory_index_stats':
+        try {
+            $stats = get_directory_index_stats();
+            
+            // Add additional admin-specific information
+            $additional_stats = [];
+            
+            // Get index build history (last 10 builds)
+            $stmt = $pdo->query("
+                SELECT 
+                    batch_id,
+                    COUNT(*) as directories_in_batch,
+                    MIN(updated_at) as batch_start,
+                    MAX(updated_at) as batch_end,
+                    TIMESTAMPDIFF(SECOND, MIN(updated_at), MAX(updated_at)) as batch_duration_seconds
+                FROM directory_index 
+                WHERE batch_id IS NOT NULL 
+                GROUP BY batch_id 
+                ORDER BY batch_end DESC 
+                LIMIT 10
+            ");
+            $additional_stats['recent_builds'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get source distribution
+            $stmt = $pdo->query("
+                SELECT 
+                    source_key,
+                    COUNT(*) as directory_count,
+                    SUM(file_count) as total_files,
+                    COUNT(CASE WHEN has_thumbnail = 1 THEN 1 END) as with_thumbnails,
+                    COUNT(CASE WHEN is_protected = 1 THEN 1 END) as protected_count
+                FROM directory_index 
+                WHERE is_active = 1
+                GROUP BY source_key
+                ORDER BY directory_count DESC
+            ");
+            $additional_stats['by_source'] = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            // Get performance metrics from file count cache
+            $stmt = $pdo->query("
+                SELECT 
+                    AVG(scan_duration_ms) as avg_scan_time_ms,
+                    MAX(scan_duration_ms) as max_scan_time_ms,
+                    COUNT(CASE WHEN scan_error IS NOT NULL THEN 1 END) as error_count,
+                    COUNT(*) as total_scans
+                FROM directory_file_counts
+                WHERE last_scanned_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+            ");
+            $perf_stats = $stmt->fetch(PDO::FETCH_ASSOC);
+            $additional_stats['performance'] = $perf_stats;
+            
+            json_response([
+                'status' => 'success', 
+                'data' => array_merge($stats, $additional_stats)
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[get_directory_index_stats] Error: " . $e->getMessage());
+            json_error('Failed to get directory index statistics: ' . $e->getMessage(), 500);
+        }
+        break;
+    
+    case 'rebuild_directory_index':
+        try {
+            // Check if rebuild is already in progress
+            $stmt = $pdo->query("
+                SELECT COUNT(*) 
+                FROM directory_index 
+                WHERE updated_at > DATE_SUB(NOW(), INTERVAL 5 MINUTE)
+                AND batch_id IS NOT NULL
+            ");
+            
+            if ($stmt->fetchColumn() > 0) {
+                json_error('Directory index rebuild is already in progress. Please wait a few minutes.', 429);
+            }
+            
+            $source_key = $_POST['source_key'] ?? null;
+            $max_time = isset($_POST['max_time']) ? max(60, min(1800, (int)$_POST['max_time'])) : 300;
+            $force_rebuild = isset($_POST['force']) && $_POST['force'] === 'true';
+            
+            error_log("[rebuild_directory_index] Admin triggered rebuild: source={$source_key}, max_time={$max_time}, force={$force_rebuild}");
+            
+            // Check if rebuild is needed (unless forced)
+            if (!$force_rebuild) {
+                $current_stats = get_directory_index_stats();
+                if ($current_stats['health_score'] >= 80 && !$current_stats['needs_rebuild']) {
+                    json_response([
+                        'status' => 'skipped',
+                        'message' => 'Directory index is already fresh (health score: ' . $current_stats['health_score'] . '%)',
+                        'stats' => $current_stats
+                    ]);
+                }
+            }
+            
+            // Run the rebuild
+            $start_time = time();
+            $scan_results = build_directory_index($source_key, $max_time);
+            $duration = time() - $start_time;
+            
+            // Get updated stats
+            $updated_stats = get_directory_index_stats();
+            
+            error_log("[rebuild_directory_index] Completed in {$duration}s: " . json_encode($scan_results));
+            
+            json_response([
+                'status' => 'success',
+                'message' => 'Directory index rebuilt successfully',
+                'scan_results' => $scan_results,
+                'updated_stats' => $updated_stats,
+                'duration' => $duration
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[rebuild_directory_index] Error: " . $e->getMessage());
+            json_error('Failed to rebuild directory index: ' . $e->getMessage(), 500);
+        }
+        break;
+    
+    case 'clear_directory_index':
+        try {
+            $confirm = $_POST['confirm'] ?? false;
+            
+            if (!$confirm) {
+                json_error('Confirmation required. Send confirm=true to proceed.', 400);
+            }
+            
+            // Clear the directory index
+            $stmt = $pdo->query("DELETE FROM directory_index");
+            $deleted_count = $stmt->rowCount();
+            
+            error_log("[clear_directory_index] Admin cleared directory index: {$deleted_count} entries removed");
+            
+            json_response([
+                'status' => 'success',
+                'message' => "Directory index cleared successfully. {$deleted_count} entries removed.",
+                'deleted_count' => $deleted_count
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[clear_directory_index] Error: " . $e->getMessage());
+            json_error('Failed to clear directory index: ' . $e->getMessage(), 500);
+        }
+        break;
+    
+    case 'test_directory_performance':
+        try {
+            $test_search_term = $_GET['search'] ?? 'test';
+            $test_results = [];
+            
+            // Test 1: Directory index search performance
+            $start_time = microtime(true);
+            $index_result = get_directory_index($test_search_term, 1, 50);
+            $index_time = round((microtime(true) - $start_time) * 1000, 2);
+            
+            $test_results['directory_index'] = [
+                'time_ms' => $index_time,
+                'results_count' => count($index_result['directories']),
+                'from_cache' => $index_result['from_cache'],
+                'status' => $index_result['from_cache'] ? 'fast' : 'fallback'
+            ];
+            
+            // Test 2: Filesystem fallback performance (limited for safety)
+            $start_time = microtime(true);
+            $filesystem_count = 0;
+            $max_test_dirs = 100; // Limit for safety
+            
+            foreach (IMAGE_SOURCES as $source_key => $source_config) {
+                if ($filesystem_count >= $max_test_dirs) break;
+                
+                if (!is_array($source_config) || !isset($source_config['path'])) continue;
+                $resolved_path = realpath($source_config['path']);
+                
+                if (!$resolved_path || !is_dir($resolved_path)) continue;
+                
+                try {
+                    $iterator = new DirectoryIterator($resolved_path);
+                    foreach ($iterator as $fileinfo) {
+                        if ($fileinfo->isDot() || !$fileinfo->isDir()) continue;
+                        
+                        $dir_name = $fileinfo->getFilename();
+                        if (mb_stripos($dir_name, $test_search_term, 0, 'UTF-8') !== false) {
+                            $filesystem_count++;
+                        }
+                        
+                        if ($filesystem_count >= $max_test_dirs) break 2;
+                    }
+                } catch (Exception $e) {
+                    continue;
+                }
+            }
+            
+            $filesystem_time = round((microtime(true) - $start_time) * 1000, 2);
+            
+            $test_results['filesystem_fallback'] = [
+                'time_ms' => $filesystem_time,
+                'results_count' => $filesystem_count,
+                'status' => 'tested_limited',
+                'test_limit' => $max_test_dirs
+            ];
+            
+            // Performance comparison
+            $speedup_factor = $filesystem_time > 0 ? round($filesystem_time / max(1, $index_time), 1) : 'N/A';
+            
+            $test_results['performance_summary'] = [
+                'speedup_factor' => $speedup_factor,
+                'index_status' => $index_result['from_cache'] ? 'optimal' : 'needs_rebuild',
+                'recommendation' => $index_result['from_cache'] ? 'System performing optimally' : 'Rebuild directory index for better performance'
+            ];
+            
+            json_response([
+                'status' => 'success',
+                'test_search_term' => $test_search_term,
+                'results' => $test_results
+            ]);
+            
+        } catch (Exception $e) {
+            error_log("[test_directory_performance] Error: " . $e->getMessage());
+            json_error('Failed to test directory performance: ' . $e->getMessage(), 500);
+        }
+        break;
+
     // Default case for unknown admin actions
     default:
         json_error("Hành động không hợp lệ", 400);

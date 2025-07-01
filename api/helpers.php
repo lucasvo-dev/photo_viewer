@@ -1262,5 +1262,497 @@ function getFeaturedStatus($source_key, $image_path) {
     }
 }
 
+/**
+ * ========== DIRECTORY INDEXING SYSTEM FOR PERFORMANCE ==========
+ * These functions provide a complete directory caching system to dramatically
+ * improve search and browse performance with large numbers of directories.
+ */
+
+/**
+ * Get or build directory index from cache for fast search operations
+ * This replaces the slow filesystem scanning in list_files root request
+ * 
+ * @param string|null $search_term Optional search filter
+ * @param int $page Page number for pagination
+ * @param int $items_per_page Items per page
+ * @return array Paginated directory results with metadata
+ */
+function get_directory_index($search_term = null, $page = 1, $items_per_page = 100) {
+    global $pdo;
+    
+    try {
+        // Build the base query
+        $sql = "
+            SELECT 
+                di.source_key,
+                di.directory_name,
+                di.directory_path,
+                di.relative_path,
+                di.first_image_path,
+                di.file_count,
+                di.last_modified,
+                di.is_protected,
+                di.has_thumbnail,
+                di.created_at as indexed_at
+            FROM directory_index di
+            WHERE di.is_active = 1
+        ";
+        
+        $params = [];
+        
+        // Apply search filter if provided
+        if ($search_term !== null && trim($search_term) !== '') {
+            $sql .= " AND di.directory_name LIKE ?";
+            $params[] = '%' . trim($search_term) . '%';
+        }
+        
+        // Order by last modified (newest first), then by name
+        $sql .= " ORDER BY di.last_modified DESC, di.directory_name ASC";
+        
+        // Get total count for pagination
+        $countSql = str_replace(
+            "SELECT di.source_key, di.directory_name, di.directory_path, di.relative_path, di.first_image_path, di.file_count, di.last_modified, di.is_protected, di.has_thumbnail, di.created_at as indexed_at FROM directory_index di",
+            "SELECT COUNT(*) FROM directory_index di",
+            $sql
+        );
+        
+        $countStmt = $pdo->prepare($countSql);
+        $countStmt->execute($params);
+        $total_items = $countStmt->fetchColumn();
+        
+        // Apply pagination
+        $offset = ($page - 1) * $items_per_page;
+        $sql .= " LIMIT ? OFFSET ?";
+        $params[] = $items_per_page;
+        $params[] = $offset;
+        
+        // Execute main query
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        $directories = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        
+        // Calculate pagination info
+        $total_pages = ceil($total_items / $items_per_page);
+        
+        error_log("[DirectoryIndex] Retrieved " . count($directories) . "/{$total_items} directories from cache (page {$page})");
+        
+        return [
+            'directories' => $directories,
+            'pagination' => [
+                'current_page' => $page,
+                'total_pages' => $total_pages,
+                'total_items' => (int)$total_items,
+                'items_per_page' => $items_per_page
+            ],
+            'from_cache' => true
+        ];
+        
+    } catch (Exception $e) {
+        error_log("[DirectoryIndex] Error getting directory index: " . $e->getMessage());
+        
+        // Fallback to filesystem scan with limited results for safety
+        return [
+            'directories' => [],
+            'pagination' => [
+                'current_page' => 1,
+                'total_pages' => 0,
+                'total_items' => 0,
+                'items_per_page' => $items_per_page
+            ],
+            'from_cache' => false,
+            'error' => 'Directory index unavailable'
+        ];
+    }
+}
+
+/**
+ * Build or refresh the directory index for all sources
+ * This should be run via background process/cron for best performance
+ * 
+ * @param string|null $specific_source_key Only scan specific source
+ * @param int $max_scan_time_seconds Maximum time to spend scanning
+ * @return array Scan results with statistics
+ */
+function build_directory_index($specific_source_key = null, $max_scan_time_seconds = 300) {
+    global $pdo;
+    
+    $start_time = time();
+    $scan_stats = [
+        'sources_scanned' => 0,
+        'directories_found' => 0,
+        'directories_updated' => 0,
+        'directories_created' => 0,
+        'thumbnails_found' => 0,
+        'protected_folders' => 0,
+        'scan_duration' => 0,
+        'memory_peak' => 0
+    ];
+    
+    try {
+        error_log("[DirectoryIndexBuilder] Starting directory index build" . 
+                 ($specific_source_key ? " for source: {$specific_source_key}" : " for all sources"));
+        
+        // Get protected folders list once
+        $protected_folders = [];
+        try {
+            $stmt = $pdo->query("SELECT folder_name FROM folder_passwords");
+            while ($folder = $stmt->fetchColumn()) {
+                $protected_folders[$folder] = true;
+            }
+        } catch (PDOException $e) {
+            error_log("[DirectoryIndexBuilder] Error fetching protected folders: " . $e->getMessage());
+        }
+        
+        // Mark start of batch update
+        $batch_id = uniqid('batch_', true);
+        
+        foreach (IMAGE_SOURCES as $source_key => $source_config) {
+            // Skip if scanning specific source and this isn't it
+            if ($specific_source_key && $source_key !== $specific_source_key) {
+                continue;
+            }
+            
+            // Check time limit
+            if (time() - $start_time >= $max_scan_time_seconds) {
+                error_log("[DirectoryIndexBuilder] Time limit reached, stopping scan");
+                break;
+            }
+            
+            if (!is_array($source_config) || !isset($source_config['path'])) {
+                continue;
+            }
+            
+            $source_base_path = $source_config['path'];
+            $resolved_source_base_path = realpath($source_base_path);
+            
+            if (!$resolved_source_base_path || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
+                error_log("[DirectoryIndexBuilder] Skipping invalid source '{$source_key}': {$source_base_path}");
+                continue;
+            }
+            
+            $scan_stats['sources_scanned']++;
+            error_log("[DirectoryIndexBuilder] Scanning source: {$source_key} at {$resolved_source_base_path}");
+            
+            try {
+                $iterator = new DirectoryIterator($resolved_source_base_path);
+                foreach ($iterator as $fileinfo) {
+                    if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                        continue;
+                    }
+                    
+                    // Check time limit again during intensive scanning
+                    if (time() - $start_time >= $max_scan_time_seconds) {
+                        break 2; // Break out of both loops
+                    }
+                    
+                    $dir_name = $fileinfo->getFilename();
+                    $relative_path = $dir_name;
+                    $source_prefixed_path = $source_key . '/' . $dir_name;
+                    $absolute_path = $fileinfo->getPathname();
+                    $last_modified = $fileinfo->getMTime();
+                    
+                    $scan_stats['directories_found']++;
+                    
+                    // Check if protected
+                    $is_protected = isset($protected_folders[$dir_name]);
+                    if ($is_protected) {
+                        $scan_stats['protected_folders']++;
+                    }
+                    
+                    // Find first image and thumbnail efficiently
+                    $first_image_path = null;
+                    $has_thumbnail = false;
+                    
+                    try {
+                        // Use a limited scan for first image to avoid deep recursion
+                        $first_image_path = find_first_image_fast($absolute_path, 10); // Limit to 10 files max
+                        
+                        if ($first_image_path) {
+                            $thumbnail_source_prefixed = $source_prefixed_path . '/' . $first_image_path;
+                            $thumbnail_cache_path = get_thumbnail_cache_path($thumbnail_source_prefixed, 150, false);
+                            $has_thumbnail = file_exists($thumbnail_cache_path) && filesize($thumbnail_cache_path) > 0;
+                            
+                            if ($has_thumbnail) {
+                                $scan_stats['thumbnails_found']++;
+                            }
+                        }
+                    } catch (Exception $e) {
+                        error_log("[DirectoryIndexBuilder] Error finding first image in {$source_prefixed_path}: " . $e->getMessage());
+                    }
+                    
+                    // Get or estimate file count (use cached if available, otherwise estimate)
+                    $file_count = 0;
+                    try {
+                        // Try to get from existing cache first
+                        $stmt = $pdo->prepare("
+                            SELECT file_count FROM directory_file_counts 
+                            WHERE source_key = ? AND directory_path = ? 
+                            AND last_scanned_at > DATE_SUB(NOW(), INTERVAL 7 DAY)
+                        ");
+                        $stmt->execute([$source_key, $relative_path]);
+                        $cached_count = $stmt->fetchColumn();
+                        
+                        if ($cached_count !== false) {
+                            $file_count = (int)$cached_count;
+                        } else {
+                            // Quick estimate: count only immediate files, not recursive
+                            $file_count = count_immediate_image_files($absolute_path);
+                        }
+                    } catch (Exception $e) {
+                        error_log("[DirectoryIndexBuilder] Error getting file count for {$source_prefixed_path}: " . $e->getMessage());
+                    }
+                    
+                    // Insert or update directory index
+                    try {
+                        $stmt = $pdo->prepare("
+                            INSERT INTO directory_index 
+                            (source_key, directory_name, directory_path, relative_path, first_image_path, 
+                             file_count, last_modified, is_protected, has_thumbnail, batch_id, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, CURRENT_TIMESTAMP)
+                            ON DUPLICATE KEY UPDATE
+                            first_image_path = VALUES(first_image_path),
+                            file_count = VALUES(file_count),
+                            last_modified = VALUES(last_modified),
+                            is_protected = VALUES(is_protected),
+                            has_thumbnail = VALUES(has_thumbnail),
+                            batch_id = VALUES(batch_id),
+                            updated_at = CURRENT_TIMESTAMP,
+                            is_active = 1
+                        ");
+                        
+                        $affected = $stmt->execute([
+                            $source_key,
+                            $dir_name,
+                            $source_prefixed_path,
+                            $relative_path,
+                            $first_image_path,
+                            $file_count,
+                            $last_modified,
+                            $is_protected ? 1 : 0,
+                            $has_thumbnail ? 1 : 0,
+                            $batch_id
+                        ]);
+                        
+                        if ($stmt->rowCount() > 0) {
+                            // Check if it was an INSERT or UPDATE
+                            $check_stmt = $pdo->prepare("
+                                SELECT COUNT(*) FROM directory_index 
+                                WHERE source_key = ? AND relative_path = ? AND batch_id != ?
+                            ");
+                            $check_stmt->execute([$source_key, $relative_path, $batch_id]);
+                            
+                            if ($check_stmt->fetchColumn() > 0) {
+                                $scan_stats['directories_updated']++;
+                            } else {
+                                $scan_stats['directories_created']++;
+                            }
+                        }
+                        
+                    } catch (PDOException $e) {
+                        error_log("[DirectoryIndexBuilder] Error updating directory index for {$source_prefixed_path}: " . $e->getMessage());
+                    }
+                    
+                    // Memory management
+                    if ($scan_stats['directories_found'] % 100 === 0) {
+                        $current_memory = memory_get_peak_usage(true);
+                        $scan_stats['memory_peak'] = max($scan_stats['memory_peak'], $current_memory);
+                        error_log("[DirectoryIndexBuilder] Progress: {$scan_stats['directories_found']} dirs, Memory: " . 
+                                 round($current_memory / 1024 / 1024, 2) . "MB");
+                    }
+                }
+                
+            } catch (Exception $e) {
+                error_log("[DirectoryIndexBuilder] Error scanning source '{$source_key}': " . $e->getMessage());
+            }
+        }
+        
+        // Mark old entries as inactive (not in this batch)
+        try {
+            $stmt = $pdo->prepare("
+                UPDATE directory_index 
+                SET is_active = 0 
+                WHERE batch_id != ? AND updated_at < DATE_SUB(NOW(), INTERVAL 1 HOUR)
+            ");
+            $stmt->execute([$batch_id]);
+            $deactivated = $stmt->rowCount();
+            error_log("[DirectoryIndexBuilder] Marked {$deactivated} old entries as inactive");
+        } catch (PDOException $e) {
+            error_log("[DirectoryIndexBuilder] Error marking old entries inactive: " . $e->getMessage());
+        }
+        
+        $scan_stats['scan_duration'] = time() - $start_time;
+        $scan_stats['memory_peak'] = memory_get_peak_usage(true);
+        
+        error_log("[DirectoryIndexBuilder] Completed: " . json_encode($scan_stats));
+        
+        return $scan_stats;
+        
+    } catch (Exception $e) {
+        error_log("[DirectoryIndexBuilder] Fatal error: " . $e->getMessage());
+        $scan_stats['error'] = $e->getMessage();
+        $scan_stats['scan_duration'] = time() - $start_time;
+        return $scan_stats;
+    }
+}
+
+/**
+ * Fast first image finder with limited recursion to avoid performance issues
+ * 
+ * @param string $directory_path Absolute directory path
+ * @param int $max_files Maximum files to check before giving up
+ * @return string|null Relative path to first image found
+ */
+function find_first_image_fast($directory_path, $max_files = 10) {
+    if (!is_dir($directory_path) || !is_readable($directory_path)) {
+        return null;
+    }
+    
+    $files_checked = 0;
+    $allowed_extensions = ALLOWED_EXTENSIONS;
+    
+    try {
+        // First try immediate directory
+        $iterator = new DirectoryIterator($directory_path);
+        foreach ($iterator as $fileinfo) {
+            if ($fileinfo->isDot() || !$fileinfo->isFile()) {
+                continue;
+            }
+            
+            $extension = strtolower($fileinfo->getExtension());
+            if (in_array($extension, $allowed_extensions, true)) {
+                return $fileinfo->getFilename();
+            }
+            
+            $files_checked++;
+            if ($files_checked >= $max_files) {
+                break;
+            }
+        }
+        
+        // If no immediate images found, try first level subdirectories
+        if ($files_checked < $max_files) {
+            $iterator->rewind();
+            foreach ($iterator as $fileinfo) {
+                if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                    continue;
+                }
+                
+                $subdir_path = $fileinfo->getPathname();
+                try {
+                    $subdir_iterator = new DirectoryIterator($subdir_path);
+                    foreach ($subdir_iterator as $subfile) {
+                        if ($subfile->isDot() || !$subfile->isFile()) {
+                            continue;
+                        }
+                        
+                        $extension = strtolower($subfile->getExtension());
+                        if (in_array($extension, $allowed_extensions, true)) {
+                            return $fileinfo->getFilename() . '/' . $subfile->getFilename();
+                        }
+                        
+                        $files_checked++;
+                        if ($files_checked >= $max_files) {
+                            break 2;
+                        }
+                    }
+                } catch (Exception $e) {
+                    // Skip problematic subdirectories
+                    continue;
+                }
+            }
+        }
+        
+    } catch (Exception $e) {
+        error_log("[FindFirstImageFast] Error scanning {$directory_path}: " . $e->getMessage());
+        return null;
+    }
+    
+    return null;
+}
+
+/**
+ * Count immediate image files in directory (non-recursive for speed)
+ * 
+ * @param string $directory_path Absolute directory path
+ * @return int Number of image files found
+ */
+function count_immediate_image_files($directory_path) {
+    if (!is_dir($directory_path) || !is_readable($directory_path)) {
+        return 0;
+    }
+    
+    $count = 0;
+    $allowed_extensions = array_merge(ALLOWED_EXTENSIONS, ['mp4', 'mov', 'avi', 'mkv', 'webm']);
+    
+    try {
+        $iterator = new DirectoryIterator($directory_path);
+        foreach ($iterator as $fileinfo) {
+            if ($fileinfo->isDot() || !$fileinfo->isFile()) {
+                continue;
+            }
+            
+            $extension = strtolower($fileinfo->getExtension());
+            if (in_array($extension, $allowed_extensions, true)) {
+                $count++;
+            }
+        }
+    } catch (Exception $e) {
+        error_log("[CountImmediateFiles] Error counting files in {$directory_path}: " . $e->getMessage());
+        return 0;
+    }
+    
+    return $count;
+}
+
+/**
+ * Get directory index statistics for monitoring
+ * 
+ * @return array Statistics about the directory index
+ */
+function get_directory_index_stats() {
+    global $pdo;
+    
+    try {
+        $stmt = $pdo->query("
+            SELECT 
+                COUNT(*) as total_directories,
+                COUNT(CASE WHEN is_active = 1 THEN 1 END) as active_directories,
+                COUNT(CASE WHEN has_thumbnail = 1 THEN 1 END) as with_thumbnails,
+                COUNT(CASE WHEN is_protected = 1 THEN 1 END) as protected_directories,
+                COUNT(DISTINCT source_key) as sources_indexed,
+                SUM(file_count) as total_files_estimated,
+                AVG(file_count) as avg_files_per_directory,
+                MAX(updated_at) as last_update_time,
+                MIN(updated_at) as first_index_time
+            FROM directory_index
+        ");
+        
+        $stats = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        // Get index health score
+        $health_score = 100;
+        if ($stats['total_directories'] > 0) {
+            $active_ratio = $stats['active_directories'] / $stats['total_directories'];
+            $thumbnail_ratio = $stats['with_thumbnails'] / $stats['active_directories'];
+            
+            $health_score = round(($active_ratio * 0.7 + $thumbnail_ratio * 0.3) * 100);
+        }
+        
+        $stats['health_score'] = $health_score;
+        $stats['needs_rebuild'] = $health_score < 80;
+        
+        return $stats;
+        
+    } catch (Exception $e) {
+        error_log("[DirectoryIndexStats] Error: " . $e->getMessage());
+        return [
+            'error' => $e->getMessage(),
+            'total_directories' => 0,
+            'health_score' => 0,
+            'needs_rebuild' => true
+        ];
+    }
+}
+
 // Ensure this is at the very end of the file or before a closing PHP tag if any.
 // If there are other functions after this, make sure there's no accidental output. 

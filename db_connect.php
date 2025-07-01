@@ -747,6 +747,41 @@ try {
             error_log("[DB Setup] Error creating directory_file_counts table: " . $e->getMessage());
         }
 
+        // Create directory_index table for ultra-fast directory search and browsing
+        $sql_directory_index = "CREATE TABLE IF NOT EXISTS directory_index (
+            id INT AUTO_INCREMENT PRIMARY KEY,
+            source_key VARCHAR(50) NOT NULL,
+            directory_name VARCHAR(255) NOT NULL,
+            directory_path VARCHAR(1024) NOT NULL, -- Full source-prefixed path
+            relative_path VARCHAR(1024) NOT NULL,  -- Path relative to source
+            first_image_path VARCHAR(1024) NULL,   -- Relative path to first image for thumbnail
+            file_count INT DEFAULT 0,
+            last_modified TIMESTAMP NULL,          -- Directory's last modified time
+            is_protected TINYINT(1) DEFAULT 0,     -- Whether directory requires password
+            has_thumbnail TINYINT(1) DEFAULT 0,    -- Whether thumbnail cache exists
+            is_active TINYINT(1) DEFAULT 1,        -- Whether directory still exists
+            batch_id VARCHAR(100) NULL,            -- For tracking index rebuilds
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            
+            UNIQUE KEY unique_source_directory (source_key, relative_path(500)),
+            INDEX idx_source_key (source_key),
+            INDEX idx_directory_name (directory_name),
+            INDEX idx_last_modified (last_modified),
+            INDEX idx_is_active (is_active),
+            INDEX idx_has_thumbnail (has_thumbnail),
+            INDEX idx_file_count (file_count),
+            INDEX idx_search_name (directory_name, is_active),
+            INDEX idx_batch_updated (batch_id, updated_at)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci";
+
+        try {
+            $pdo->exec($sql_directory_index);
+            error_log("[DB Setup] directory_index table created/verified successfully");
+        } catch (PDOException $e) {
+            error_log("[DB Setup] Error creating directory_index table: " . $e->getMessage());
+        }
+
     }
 } catch (PDOException $e) {
     error_log("Failed to create or check database tables (folder_stats, folder_passwords): " . $e->getMessage());
