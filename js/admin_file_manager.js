@@ -17,6 +17,7 @@ class AdminFileManager {
         this.preload750Cache = null;
         this.currentLoadKey = null;
         this.isNavigating = false;
+        this.isNavigatingPreview = false; // Prevent preview navigation spam
         
         // Sorting preference
         this.sortOrder = 'name'; // 'date' or 'name'
@@ -592,16 +593,27 @@ class AdminFileManager {
 
         const fullPath = this.getImageFullPath(image);
         
+        // RACE CONDITION FIX: Track current loading request
+        const loadingId = `${fullPath}_${Date.now()}`;
+        this.currentPreviewLoadingId = loadingId;
+        
+        console.log(`[FM] 🎯 Starting load for: ${image.name} (ID: ${loadingId})`);
+        
         // Check fast cache first for instant loading
         const fastCacheKey = `fast_${fullPath}`;
         if (this.fastPreloadCache && this.fastPreloadCache.has(fastCacheKey)) {
             const cachedImg = this.fastPreloadCache.get(fastCacheKey);
             if (cachedImg && cachedImg.complete && cachedImg.src && !cachedImg.loading) {
-                imgPreview.src = cachedImg.src;
-                imgPreview.style.opacity = '1';
-                imgPreview.style.filter = 'none';
-                console.log(`[FM] 🚀 INSTANT load from fast cache: ${image.name}`);
-                if (onLoaded) onLoaded();
+                // Check if this request is still current
+                if (this.currentPreviewLoadingId === loadingId) {
+                    imgPreview.src = cachedImg.src;
+                    imgPreview.style.opacity = '1';
+                    imgPreview.style.filter = 'none';
+                    console.log(`[FM] 🚀 INSTANT load from fast cache: ${image.name}`);
+                    if (onLoaded) onLoaded();
+                } else {
+                    console.log(`[FM] ⏭️ Skipping cache load, request superseded: ${image.name}`);
+                }
                 return;
             }
         }
@@ -611,22 +623,35 @@ class AdminFileManager {
         if (this.preload750Cache && this.preload750Cache.has(cacheKey)) {
             const cachedImg = this.preload750Cache.get(cacheKey);
             if (cachedImg && cachedImg.complete && cachedImg.src) {
-                imgPreview.src = cachedImg.src;
-                imgPreview.style.opacity = '1';
-                imgPreview.style.filter = 'none';
-                console.log(`[FM] ⚡ Load from old cache: ${image.name}`);
-                if (onLoaded) onLoaded();
+                // Check if this request is still current
+                if (this.currentPreviewLoadingId === loadingId) {
+                    imgPreview.src = cachedImg.src;
+                    imgPreview.style.opacity = '1';
+                    imgPreview.style.filter = 'none';
+                    console.log(`[FM] ⚡ Load from old cache: ${image.name}`);
+                    if (onLoaded) onLoaded();
+                } else {
+                    console.log(`[FM] ⏭️ Skipping cache load, request superseded: ${image.name}`);
+                }
                 return;
             }
         }
 
-        // Show loading state
-        imgPreview.style.opacity = '0.7';
-        imgPreview.style.filter = 'blur(2px)';
+        // Show loading state only if this is still the current request
+        if (this.currentPreviewLoadingId === loadingId) {
+            imgPreview.style.opacity = '0.7';
+            imgPreview.style.filter = 'blur(2px)';
+        }
         
         // Strategy: Try thumbnail first, fallback to full image
         let retryCount = 0;
         const handleError = () => {
+            // Only process error if this is still the current request
+            if (this.currentPreviewLoadingId !== loadingId) {
+                console.log(`[FM] ⏭️ Skipping error handling, request superseded: ${image.name}`);
+                return;
+            }
+            
             retryCount++;
             if (retryCount === 1) {
                 // Retry with cache buster
@@ -643,22 +668,30 @@ class AdminFileManager {
         };
         
         imgPreview.onload = () => {
-            imgPreview.style.opacity = '1';
-            imgPreview.style.filter = 'none';
-            
-            // Cache successful load
-            if (!this.preload750Cache) this.preload750Cache = new Map();
-            const cacheImg = new Image();
-            cacheImg.src = imgPreview.src;
-            this.preload750Cache.set(cacheKey, cacheImg);
-            
-            if (onLoaded) onLoaded();
+            // Only apply loaded state if this is still the current request
+            if (this.currentPreviewLoadingId === loadingId) {
+                imgPreview.style.opacity = '1';
+                imgPreview.style.filter = 'none';
+                
+                // Cache successful load
+                if (!this.preload750Cache) this.preload750Cache = new Map();
+                const cacheImg = new Image();
+                cacheImg.src = imgPreview.src;
+                this.preload750Cache.set(cacheKey, cacheImg);
+                
+                console.log(`[FM] ✅ Successfully loaded: ${image.name} (ID: ${loadingId})`);
+                if (onLoaded) onLoaded();
+            } else {
+                console.log(`[FM] ⏭️ Skipping onload, request superseded: ${image.name} (ID: ${loadingId})`);
+            }
         };
         
         imgPreview.onerror = handleError;
         
-        // Start with 750px thumbnail
-        imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        // Start with 750px thumbnail (only if still current request)
+        if (this.currentPreviewLoadingId === loadingId) {
+            imgPreview.src = `/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=750`;
+        }
     }
 
     // OPTIMIZED PRELOAD: Học tập từ photo gallery với instant loading
@@ -1055,8 +1088,16 @@ class AdminFileManager {
     }
 
     navigatePreview(direction) {
+        // Prevent rapid navigation that causes race conditions
+        if (this.isNavigatingPreview) {
+            return;
+        }
+        
         const newIndex = this.currentPreviewIndex + direction;
         if (newIndex >= 0 && newIndex < this.images.length) {
+            // Set navigation flag to prevent concurrent calls
+            this.isNavigatingPreview = true;
+            
             // Update state immediately for faster response
             this.currentPreviewIndex = newIndex;
             
@@ -1065,6 +1106,11 @@ class AdminFileManager {
             
             // Update filmstrip active state
             this.updateFilmstripActiveThumbnail(this.currentPreviewIndex);
+            
+            // Clear navigation flag after a short delay
+            setTimeout(() => {
+                this.isNavigatingPreview = false;
+            }, 150); // 150ms throttle to prevent spam but allow smooth navigation
         }
     }
 
@@ -1304,8 +1350,11 @@ class AdminFileManager {
     }
 
     closePreview() {
+        // Reset navigation states
         this.previewOpen = false;
         this.currentPreviewIndex = -1;
+        this.isNavigatingPreview = false; // Reset preview navigation state
+        this.currentPreviewLoadingId = null; // Clear current loading tracking
         
         // Remove event listeners
         if (this.boundHandlePreviewKeypress) {
