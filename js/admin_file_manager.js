@@ -575,15 +575,20 @@ class AdminFileManager {
         // OPTIMIZED: Start aggressive preload immediately for instant navigation
         this.preloadNearbyImages(this.currentPreviewIndex);
         
-        // Load main image
+        // Load main image and render filmstrip when it's ready
         this.loadMainPreviewImage(image, () => {
             console.log(`[FM] 🎯 Main image loaded: ${image.name}`);
+            // Render filmstrip AFTER main image loads to ensure sync
+            this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
         });
         
-        // Render filmstrip with minimal delay
+        // Temporary fallback: render filmstrip after delay if main image takes too long
         setTimeout(() => {
-        this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
-        }, 10);
+            if (!document.querySelector('#fm-preview-filmstrip .fm-filmstrip-thumb.active')) {
+                console.log('[FM] 🔄 Fallback: Rendering filmstrip due to timeout');
+                this.renderThumbnailFilmstrip(this.images, this.currentPreviewIndex);
+            }
+        }, 2000); // 2 second fallback
     }
 
     // Load main preview image với optimized strategy
@@ -609,8 +614,11 @@ class AdminFileManager {
                     imgPreview.src = cachedImg.src;
                     imgPreview.style.opacity = '1';
                     imgPreview.style.filter = 'none';
-                    console.log(`[FM] 🚀 INSTANT load from fast cache: ${image.name}`);
-                    if (onLoaded) onLoaded();
+                    console.log(`[FM] 🚀 INSTANT load from fast cache: ${image.name} | Current index: ${this.currentPreviewIndex}`);
+                    if (onLoaded) {
+                        console.log(`[FM] 🔄 Calling onLoaded callback for cached: ${image.name}`);
+                        onLoaded();
+                    }
                 } else {
                     console.log(`[FM] ⏭️ Skipping cache load, request superseded: ${image.name}`);
                 }
@@ -628,8 +636,11 @@ class AdminFileManager {
                     imgPreview.src = cachedImg.src;
                     imgPreview.style.opacity = '1';
                     imgPreview.style.filter = 'none';
-                    console.log(`[FM] ⚡ Load from old cache: ${image.name}`);
-                    if (onLoaded) onLoaded();
+                    console.log(`[FM] ⚡ Load from old cache: ${image.name} | Current index: ${this.currentPreviewIndex}`);
+                    if (onLoaded) {
+                        console.log(`[FM] 🔄 Calling onLoaded callback for old cache: ${image.name}`);
+                        onLoaded();
+                    }
                 } else {
                     console.log(`[FM] ⏭️ Skipping cache load, request superseded: ${image.name}`);
                 }
@@ -663,7 +674,11 @@ class AdminFileManager {
                 // Final fallback
                 imgPreview.style.opacity = '0.3';
                 imgPreview.style.filter = 'grayscale(1)';
-                if (onLoaded) onLoaded();
+                console.log(`[FM] ❌ Final fallback for: ${image.name}`);
+                if (onLoaded) {
+                    console.log(`[FM] 🔄 Calling onLoaded callback for failed: ${image.name}`);
+                    onLoaded();
+                }
             }
         };
         
@@ -679,8 +694,11 @@ class AdminFileManager {
                 cacheImg.src = imgPreview.src;
                 this.preload750Cache.set(cacheKey, cacheImg);
                 
-                console.log(`[FM] ✅ Successfully loaded: ${image.name} (ID: ${loadingId})`);
-                if (onLoaded) onLoaded();
+                console.log(`[FM] ✅ Successfully loaded: ${image.name} (ID: ${loadingId}) | Current index: ${this.currentPreviewIndex}`);
+                if (onLoaded) {
+                    console.log(`[FM] 🔄 Calling onLoaded callback for: ${image.name}`);
+                    onLoaded();
+                }
             } else {
                 console.log(`[FM] ⏭️ Skipping onload, request superseded: ${image.name} (ID: ${loadingId})`);
             }
@@ -912,10 +930,10 @@ class AdminFileManager {
     }
 
     // This function is now a simple wrapper
-    updatePreviewImage(image) {
+    updatePreviewImage(image, onImageLoaded = null) {
         this.updatePreviewContent(image);
         this.updatePreviewNavigation();
-        this.loadMainPreviewImage(image);
+        this.loadMainPreviewImage(image, onImageLoaded);
     }
     
     // This function is removed as it's merged into the new openPreview logic.
@@ -1101,11 +1119,12 @@ class AdminFileManager {
             // Update state immediately for faster response
             this.currentPreviewIndex = newIndex;
             
-            // Update the main image immediately
-            this.updatePreviewImage(this.images[this.currentPreviewIndex]);
-            
-            // Update filmstrip active state
-            this.updateFilmstripActiveThumbnail(this.currentPreviewIndex);
+            // DON'T update filmstrip immediately - let loadMainPreviewImage handle it on success
+            // Update the main image with callback to sync filmstrip only on successful load
+            this.updatePreviewImage(this.images[this.currentPreviewIndex], () => {
+                // Only update filmstrip when image successfully loads
+                this.updateFilmstripActiveThumbnail(this.currentPreviewIndex);
+            });
             
             // Clear navigation flag after a short delay
             setTimeout(() => {
@@ -1123,8 +1142,11 @@ class AdminFileManager {
         this.currentPreviewIndex = index;
         const image = this.images[index];
 
-        this.updatePreviewImage(image);
-        this.updateFilmstripActiveThumbnail(index);
+        // Update preview image with callback to sync filmstrip only on successful load
+        this.updatePreviewImage(image, () => {
+            // Only update filmstrip when image successfully loads
+            this.updateFilmstripActiveThumbnail(index);
+        });
         
         // Intelligent preload for next images
         this.intelligentPreload750px(index);
@@ -1142,7 +1164,17 @@ class AdminFileManager {
             return;
         }
 
-        console.log(`[FM] 🎯 Updating filmstrip active thumbnail to index: ${newIndex}`);
+        // Get current preview image name for sync verification
+        const currentImageName = this.images[this.currentPreviewIndex]?.name || 'unknown';
+        const newImageName = this.images[newIndex]?.name || 'unknown';
+        
+        console.log(`[FM] 🎯 Updating filmstrip: index ${newIndex} (${newImageName}) | Current preview: ${this.currentPreviewIndex} (${currentImageName})`);
+
+        // SYNC CHECK: Only update if newIndex matches current preview index
+        if (newIndex !== this.currentPreviewIndex) {
+            console.warn(`[FM] ⚠️ SYNC MISMATCH: Filmstrip index ${newIndex} !== Preview index ${this.currentPreviewIndex}. Skipping update.`);
+            return;
+        }
 
         // Remove active class from all thumbnails
         filmstripContainer.querySelectorAll('.fm-filmstrip-thumb').forEach(thumb => {
@@ -1153,7 +1185,7 @@ class AdminFileManager {
         const currentThumb = filmstripContainer.querySelector(`[data-index="${newIndex}"]`);
         if (currentThumb) {
             currentThumb.classList.add('active');
-            console.log(`[FM] ✅ Active thumbnail set for index ${newIndex}`);
+            console.log(`[FM] ✅ Active thumbnail set for index ${newIndex} (${newImageName})`);
             
             // Scroll to current thumbnail
             currentThumb.scrollIntoView({
@@ -1167,14 +1199,14 @@ class AdminFileManager {
             const fallbackThumb = filmstripContainer.querySelector(`[data-lazy-load-index="${newIndex}"]`);
             if (fallbackThumb) {
                 fallbackThumb.classList.add('active');
-                console.log(`[FM] 🔄 Fallback: Active thumbnail set using lazy-load-index for index ${newIndex}`);
+                console.log(`[FM] 🔄 Fallback: Active thumbnail set using lazy-load-index for index ${newIndex} (${newImageName})`);
                 fallbackThumb.scrollIntoView({
                     behavior: 'smooth',
                     block: 'nearest',
                     inline: 'center'
                 });
             } else {
-                console.error(`[FM] ❌ No thumbnail found for index ${newIndex} (both data-index and data-lazy-load-index failed)`);
+                console.error(`[FM] ❌ No thumbnail found for index ${newIndex} (${newImageName}) - both data-index and data-lazy-load-index failed`);
             }
         }
     }
