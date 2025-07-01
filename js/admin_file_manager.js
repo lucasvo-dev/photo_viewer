@@ -10,6 +10,7 @@ class AdminFileManager {
         this.currentPath = '';
         this.currentItems = [];
         this.images = [];
+        this.imageSources = []; // Initialize imageSources array
         this.selectedItems = new Set();
         this.previewOpen = false;
         this.currentPreviewIndex = -1;
@@ -131,6 +132,9 @@ class AdminFileManager {
                     { key: 'guu_2025_e', name: 'E Drive 2025' }
                 ];
             }
+            
+            // Store sources in instance variable
+            this.imageSources = sources;
             
             const sourceSelect = document.getElementById('fm-source-select');
             if (!sourceSelect) {
