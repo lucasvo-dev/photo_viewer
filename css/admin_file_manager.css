@@ -3371,3 +3371,66 @@
         min-height: 18px;
     }
 }
+
+/* Grid Item Name - FORCE VISIBILITY */
+.fm-grid-item-name {
+    font-size: 0.85rem !important;
+    color: #e6edf3 !important;
+    text-align: center;
+    margin-top: 8px;
+    white-space: normal !important; /* Cho phép wrap để tránh cắt tên dài */
+    overflow: visible !important; /* Hiển thị đầy đủ tên */
+    text-overflow: clip !important;
+    font-weight: 500;
+    word-break: break-word;
+    line-height: 1.3;
+    min-height: 24px !important; /* Đảm bảo có đủ không gian */
+    opacity: 1 !important; /* Force visible */
+    display: block !important; /* Force display */
+    z-index: 1;
+    position: relative;
+    background: transparent;
+}
+
+/* Grid Item Meta */
+.fm-grid-item-meta {
+    font-size: 0.75rem;
+    color: #8b949e !important;
+    margin-top: 4px;
+    text-align: center;
+    opacity: 1 !important;
+    display: block !important;
+}
+
+/* Grid Item Category */
+.fm-grid-item-category {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: rgba(88, 166, 255, 0.15);
+    color: #58a6ff;
+    display: flex !important;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    margin-top: 8px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%; /* Đảm bảo không vượt quá container */
+    border: 1px solid rgba(88, 166, 255, 0.3);
+}
+
+/* Grid Category Indicator - POSITIONED ON GRID ITEM */
+.fm-grid-category-indicator {
+    position: absolute;
+    top: 8px; /* Đặt ở góc trên */
+    left: 8px; /* Góc trái để không conflict với actions ở phải */
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid rgba(33, 38, 45, 0.8);
+    z-index: 4; /* Cao nhất để hiển thị trên mọi element */
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4); /* Shadow để nổi bật trên thumbnail */
+    backdrop-filter: blur(2px); /* Blur background để dễ nhìn */
+}

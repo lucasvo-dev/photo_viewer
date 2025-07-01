@@ -21,6 +21,9 @@ class AdminFileManager {
         // Sorting preference
         this.sortOrder = 'name'; // 'date' or 'name'
         
+        // View mode preference (grid is default)
+        this.viewMode = 'grid'; // 'list' or 'grid'
+        
         // URL hash navigation support
         this.hashChangeHandler = null;
         this.popstateHandler = null;
@@ -299,8 +302,12 @@ class AdminFileManager {
         this.currentItems = items || [];
         this.images = this.currentItems.filter(item => item.is_image);
         
-        // Always render list view (grid view removed)
+        // Render based on current view mode
+        if (this.viewMode === 'grid') {
+            this.renderGridView(items);
+        } else {
         this.renderListView(items);
+        }
     }
 
     renderListView(items) {
@@ -400,6 +407,14 @@ class AdminFileManager {
                         <i class="fas fa-trash"></i> Xóa đã chọn
                     </button>
                 </div>
+                <div class="view-controls">
+                    <button id="fm-view-list" class="view-btn ${this.viewMode === 'list' ? 'active' : ''}" title="List View">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button id="fm-view-grid" class="view-btn ${this.viewMode === 'grid' ? 'active' : ''}" title="Grid View">
+                        <i class="fas fa-th"></i>
+                    </button>
+                </div>
                 ${showSortControl ? `
                     <div class="fm-sort-controls">
                         <label class="fm-sort-label">
@@ -419,9 +434,280 @@ class AdminFileManager {
         `;
 
         this.bindItemEvents();
+        this.bindViewToggleEvents();
     }
 
+    renderGridView(items) {
+        const content = document.getElementById('file-manager-content');
+        
+        if (!items || items.length === 0) {
+            content.innerHTML = `
+                <div class="fm-empty">
+                    <i class="fas fa-folder-open"></i>
+                    <p>Thư mục trống</p>
+                </div>
+            `;
+            return;
+        }
 
+        // Calculate folder statistics
+        const totalItems = items.length;
+        const directories = items.filter(item => item.type === 'directory').length;
+        const files = items.filter(item => item.type === 'file').length;
+        const featuredCount = items.filter(item => item.is_featured).length;
+        const totalSize = items.reduce((sum, item) => sum + (item.size || 0), 0);
+        
+        // Always show sort control if there are items
+        const showSortControl = totalItems > 0;
+
+        const itemsHtml = items.map(item => this.renderGridItem(item)).join('');
+        
+        // Check if current folder has category
+        const currentCategory = this.getCurrentFolderCategory(items);
+        
+        content.innerHTML = `
+            ${currentCategory ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="${currentCategory.icon_class || 'fas fa-folder'}"></i>
+                        Category: <strong style="color: ${currentCategory.color_code}">${currentCategory.category_name}</strong>
+                        ${currentCategory.inherited ? '<span class="fm-category-inherited">(Inherited from parent)</span>' : ''}
+                    </div>
+                </div>
+            ` : !this.isRootDirectory() ? `
+                <div class="fm-category-section">
+                    <div class="fm-category-info">
+                        <i class="fas fa-tag"></i>
+                        Chưa có category
+                    </div>
+                    <button onclick="fileManager.setFolderCategory()" class="button small primary">
+                        <i class="fas fa-plus"></i> Set Category
+                    </button>
+                </div>
+            ` : ''}
+            <div class="fm-toolbar">
+                <div class="fm-stats">
+                    <span class="fm-stat-item">
+                        <i class="fas fa-folder"></i> ${directories} thư mục
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-file"></i> ${files} file
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-star"></i> ${featuredCount} featured
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-hdd"></i> ${this.formatFileSize(totalSize)}
+                    </span>
+                    <span class="fm-stat-item">
+                        <i class="fas fa-list"></i> Tổng: ${totalItems} mục
+                    </span>
+                </div>
+                ${!this.isRootDirectory() ? `
+                    <div class="fm-category-controls">
+                        <div class="fm-category-current">
+                            ${currentCategory ? `
+                                <span class="category-badge" style="background: ${currentCategory.color_code}">
+                                    <i class="${currentCategory.icon_class || 'fas fa-tag'}"></i>
+                                    ${currentCategory.category_name}
+                                </span>
+                            ` : `
+                                <span class="category-badge no-category">
+                                    <i class="fas fa-tag"></i>
+                                    Chưa phân loại
+                                </span>
+                            `}
+                        </div>
+                        <button class="category-dropdown-btn" onclick="fileManager.showCategoryDropdown(event, '${this.currentPath}')">
+                            <i class="fas fa-tag"></i>
+                            <i class="fas fa-chevron-down"></i>
+                        </button>
+                    </div>
+                ` : ''}
+            </div>
+            <div class="fm-controls">
+                <div class="selection-controls">
+                    <label>
+                        <input type="checkbox" id="fm-select-all"> Chọn tất cả file
+                    </label>
+                    <button id="fm-delete-selected" class="button danger" disabled>
+                        <i class="fas fa-trash"></i> Xóa đã chọn
+                    </button>
+                </div>
+                <div class="view-controls">
+                    <button id="fm-view-list" class="view-btn ${this.viewMode === 'list' ? 'active' : ''}" title="List View">
+                        <i class="fas fa-list"></i>
+                    </button>
+                    <button id="fm-view-grid" class="view-btn ${this.viewMode === 'grid' ? 'active' : ''}" title="Grid View">
+                        <i class="fas fa-th"></i>
+                    </button>
+                </div>
+                ${showSortControl ? `
+                    <div class="fm-sort-controls">
+                        <label class="fm-sort-label">
+                            <i class="fas fa-sort"></i> Sắp xếp:
+                        </label>
+                        <select id="fm-sort-order" class="fm-sort-select">
+                            <option value="date" ${this.sortOrder === 'date' ? 'selected' : ''}>Ngày (mới nhất)</option>
+                            <option value="name" ${this.sortOrder === 'name' ? 'selected' : ''}>Tên (A-Z)</option>
+                        </select>
+                        ${directories > 0 && files === 0 ? '<small class="fm-sort-note">Áp dụng cho folders</small>' : ''}
+                    </div>
+                ` : ''}
+            </div>
+            <div class="fm-grid">
+                ${itemsHtml}
+            </div>
+        `;
+
+        this.bindItemEvents();
+        this.bindViewToggleEvents();
+    }
+
+    renderGridItem(item) {
+        const isDirectory = item.type === 'directory';
+        const size = isDirectory ? '' : this.formatFileSize(item.size);
+        const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
+        
+        // File count for directories
+        const fileCount = isDirectory && item.file_count !== undefined ? 
+            `${item.file_count} files` : '';
+
+        // Category info for items
+        let categoryInfo = '';
+        if (isDirectory && item.category) {
+            categoryInfo = `<span class="fm-grid-item-category">
+                <i class="${item.category.icon_class || 'fas fa-tag'}"></i>
+                ${item.category.category_name}
+            </span>`;
+        }
+
+        // Generate icon content - use thumbnail for images, icon for others
+        let iconContent;
+        if (!isDirectory && item.is_image) {
+            // Use 150px thumbnail for grid view
+            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
+            
+            // Add featured badge if image is featured
+            const featuredBadge = (item.is_featured && item.featured_type) ? `
+                <span class="fm-grid-featured-badge ${item.featured_type}">
+                    ${item.featured_type === 'portrait' ? '👤' : '⭐'}
+                </span>
+            ` : '';
+            
+            iconContent = `
+                <div class="fm-grid-thumbnail-container">
+                    <img class="fm-grid-thumbnail" 
+                         src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
+                         alt="${item.name}"
+                         onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                         onload="this.style.opacity='1';"
+                         onmouseenter="fileManager.preload750pxOnHover('${item.name}', '${fullPath}');">
+                    <div class="fm-grid-fallback-icon" style="display: none;">
+                        <i class="fas fa-image"></i>
+                    </div>
+                    ${featuredBadge}
+                </div>
+            `;
+        } else {
+            // Use icon for directories and non-image files
+            const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
+            
+            // Check if directory has thumbnail (first image)
+            if (isDirectory && item.thumbnail) {
+                iconContent = `
+                    <div class="fm-grid-thumbnail-container">
+                        <img class="fm-grid-thumbnail folder-thumb" 
+                             src="/api.php?action=get_thumbnail&path=${encodeURIComponent(item.thumbnail)}&size=150" 
+                             alt="${item.name}"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                             onload="this.style.opacity='1';">
+                        <div class="fm-grid-fallback-icon" style="display: none;">
+                            <i class="fas fa-folder"></i>
+                        </div>
+                    </div>
+                `;
+            } else {
+                iconContent = `
+                    <div class="fm-grid-icon-container">
+                        <i class="${icon}"></i>
+                    </div>
+                `;
+            }
+        }
+
+        // Determine the main action for the entire item
+        const mainAction = isDirectory ? 'open' : (item.is_image ? 'preview' : 'view');
+
+        return `
+            <div class="fm-grid-item" data-path="${item.path}" data-type="${item.type}" data-action="${mainAction}">
+                <div class="fm-grid-item-checkbox">
+                    <input type="checkbox" class="item-checkbox">
+                </div>
+                <div class="fm-grid-item-content">
+                    ${iconContent}
+                    <div class="fm-grid-item-name" title="${item.name}">${item.name}</div>
+                    <div class="fm-grid-item-meta">
+                        ${fileCount && isDirectory ? fileCount : (size || '')}
+                    </div>
+                    ${categoryInfo}
+                </div>
+                ${isDirectory && item.category ? `<span class="fm-grid-category-indicator" style="background: ${item.category.color_code}" title="${item.category.category_name}"></span>` : ''}
+                <div class="fm-grid-item-actions">
+                    <button class="fm-grid-action-btn" data-action="rename" title="Đổi tên">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    ${isDirectory ? `
+                        <button class="fm-grid-action-btn" onclick="fileManager.showCategoryDropdown(event, '${item.path}')" title="Set Category">
+                            <i class="fas fa-tag"></i>
+                        </button>
+                    ` : ''}
+                    <button class="fm-grid-action-btn danger" data-action="delete" title="Xóa">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    ${item.is_image ? `
+                        <div class="fm-grid-featured-dropdown">
+                            <button class="fm-grid-action-btn featured-status-btn ${item.is_featured ? 'is-featured' : ''}" data-action="toggle-featured-dropdown" title="Set Featured Status">
+                                ${item.is_featured 
+                                    ? (item.featured_type === 'portrait' ? '<i class="fas fa-user-circle"></i>' : '<i class="fas fa-star"></i>') 
+                                    : '<i class="far fa-star"></i>'
+                                }
+                            </button>
+                            <div class="dropdown-content">
+                                <a href="#" data-action="set-featured" data-type="none"><i class="fas fa-ban"></i> Bỏ chọn</a>
+                                <a href="#" data-action="set-featured" data-type="featured"><i class="fas fa-star"></i> Featured</a>
+                                <a href="#" data-action="set-featured" data-type="portrait"><i class="fas fa-user-circle"></i> Portrait</a>
+                            </div>
+                        </div>
+                    ` : ''}
+                </div>
+            </div>
+        `;
+    }
+
+    bindViewToggleEvents() {
+        const listBtn = document.getElementById('fm-view-list');
+        const gridBtn = document.getElementById('fm-view-grid');
+        
+        if (listBtn) {
+            listBtn.addEventListener('click', () => this.switchViewMode('list'));
+        }
+        
+        if (gridBtn) {
+            gridBtn.addEventListener('click', () => this.switchViewMode('grid'));
+        }
+    }
+
+    switchViewMode(mode) {
+        if (this.viewMode === mode) return; // Already in this mode
+        
+        this.viewMode = mode;
+        
+        // Re-render with new view mode
+        this.renderDirectory(this.currentItems);
+        
+        console.log(`[FM] Switched to ${mode} view`);
+    }
 
     renderItem(item) {
         const isDirectory = item.type === 'directory';
@@ -472,7 +758,22 @@ class AdminFileManager {
         } else {
             // Use icon for directories and non-image files
             const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
+            
+            // Check if directory has thumbnail (first image)
+            if (isDirectory && item.thumbnail) {
+                iconContent = `
+                    <div class="fm-item-thumbnail-container">
+                        <img class="fm-item-thumbnail folder-thumb" 
+                             src="/api.php?action=get_thumbnail&path=${encodeURIComponent(item.thumbnail)}&size=150" 
+                             alt="${item.name}"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='inline-block';"
+                             onload="this.style.opacity='1';">
+                        <i class="fas fa-folder fm-item-fallback-icon" style="display: none;"></i>
+                    </div>
+                `;
+            } else {
             iconContent = `<i class="${icon}"></i>`;
+            }
         }
 
         // Determine the main action for the entire item
@@ -1526,14 +1827,14 @@ class AdminFileManager {
 
         // Define and store the new click handler
         this.itemClickHandler = (e) => {
-            const item = e.target.closest('.fm-item');
+            const item = e.target.closest('.fm-item, .fm-grid-item');
             if (!item) return;
 
             // Check if click is on action buttons - don't trigger main action
-            if (e.target.closest('.fm-item-actions') || 
-                e.target.closest('.fm-item-checkbox') ||
+            if (e.target.closest('.fm-item-actions, .fm-grid-item-actions') || 
+                e.target.closest('.fm-item-checkbox, .fm-grid-item-checkbox') ||
                 e.target.closest('.fm-category-dropdown') ||
-                e.target.closest('.fm-featured-dropdown')) {
+                e.target.closest('.fm-featured-dropdown, .fm-grid-featured-dropdown')) {
                 return;
             }
 
@@ -1621,11 +1922,11 @@ class AdminFileManager {
         // Define and store the new change handler
         this.itemChangeHandler = (e) => {
             if (e.target.classList.contains('item-checkbox')) {
-                const item = e.target.closest('.fm-item');
+                const item = e.target.closest('.fm-item, .fm-grid-item');
                 const itemType = item.dataset.type;
                 
                 if (itemType === 'directory' && e.target.checked) {
-                    const selectedFolders = document.querySelectorAll('.fm-item[data-type="directory"] .item-checkbox:checked');
+                    const selectedFolders = document.querySelectorAll('.fm-item[data-type="directory"] .item-checkbox:checked, .fm-grid-item[data-type="directory"] .item-checkbox:checked');
                     if (selectedFolders.length > 1) {
                         e.target.checked = false;
                         this.showCompactMessage('Chỉ được chọn tối đa 1 thư mục để đảm bảo an toàn', 'warning');
@@ -1642,7 +1943,7 @@ class AdminFileManager {
         
         // Add hover preload for image items
         const itemHoverHandler = (e) => {
-            const item = e.target.closest('.fm-item');
+            const item = e.target.closest('.fm-item, .fm-grid-item');
             if (item && item.dataset.type === 'file') {
                 const itemPath = item.dataset.path;
                 const imageItem = this.currentItems.find(i => i.path === itemPath && i.is_image);
