@@ -89,7 +89,7 @@ switch ($action) {
         $path_filter = $_GET['path_filter'] ?? null;
         // NEW: Handle sort parameter
         $sort_by = $_GET['sort'] ?? 'cache_priority'; // Default: cache priority
-        
+
         try {
             $folders_data = [];
             $protected_status = [];
@@ -249,34 +249,34 @@ switch ($action) {
             
             // FALLBACK: Filesystem scanning (when directory index fails or path filter is used)
             if (isset($this_is_fallback)) {
-                foreach (IMAGE_SOURCES as $source_key => $source_config) {
-                    if (!is_array($source_config) || !isset($source_config['path'])) continue;
-                    $source_base_path = $source_config['path'];
-                    $resolved_source_base_path = realpath($source_base_path);
+            foreach (IMAGE_SOURCES as $source_key => $source_config) {
+                if (!is_array($source_config) || !isset($source_config['path'])) continue;
+                $source_base_path = $source_config['path'];
+                $resolved_source_base_path = realpath($source_base_path);
 
-                    if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
-                        error_log("[admin_list_folders] Skipping source '{$source_key}': Path invalid or not readable.");
-                        continue;
-                    }
+                if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
+                    error_log("[admin_list_folders] Skipping source '{$source_key}': Path invalid or not readable.");
+                    continue;
+                }
 
-                    try {
-                        $iterator = new DirectoryIterator($resolved_source_base_path);
-                        foreach ($iterator as $fileinfo) {
-                            if ($fileinfo->isDot() || !$fileinfo->isDir()) {
-                                continue;
-                            }
+                try {
+                    $iterator = new DirectoryIterator($resolved_source_base_path);
+                    foreach ($iterator as $fileinfo) {
+                        if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                            continue;
+                        }
 
-                            $dir_name = $fileinfo->getFilename();
-                            $source_prefixed_path = $source_key . '/' . $dir_name;
+                        $dir_name = $fileinfo->getFilename();
+                        $source_prefixed_path = $source_key . '/' . $dir_name;
 
-                            // Apply path filter if provided
-                            $is_target_folder = ($path_filter === null || $source_prefixed_path === $path_filter);
+                        // Apply path filter if provided
+                        $is_target_folder = ($path_filter === null || $source_prefixed_path === $path_filter);
 
-                            // Apply search filter if provided (and no path filter or it's the target folder)
-                            $passes_search = ($admin_search_term === null || mb_stripos($dir_name, $admin_search_term, 0, 'UTF-8') !== false);
+                        // Apply search filter if provided (and no path filter or it's the target folder)
+                        $passes_search = ($admin_search_term === null || mb_stripos($dir_name, $admin_search_term, 0, 'UTF-8') !== false);
 
-                            // Only proceed if it's the target folder (if filtering) AND passes search (if searching)
-                            if ($is_target_folder && $passes_search) {
+                        // Only proceed if it's the target folder (if filtering) AND passes search (if searching)
+                        if ($is_target_folder && $passes_search) {
                             $stats = $folder_stats[$source_prefixed_path] ?? [
                                 'views' => 0,
                                 'downloads' => 0,
@@ -371,17 +371,17 @@ switch ($action) {
                                 'has_cache' => $stats['last_cached_fully_at'] ? true : false, // For sorting
                             ];
                             } // Close if ($is_target_folder && $passes_search)
-                        }
-                    } catch (Exception $e) {
-                        error_log("[admin_list_folders] Error scanning source '{$source_key}': " . $e->getMessage());
                     }
-                } // End foreach IMAGE_SOURCES
+                } catch (Exception $e) {
+                    error_log("[admin_list_folders] Error scanning source '{$source_key}': " . $e->getMessage());
+                }
+            } // End foreach IMAGE_SOURCES
             } // End if (isset($this_is_fallback))
 
             // Apply sorting based on sort_by parameter
             switch ($sort_by) {
                 case 'name':
-                    usort($folders_data, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
+            usort($folders_data, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
                     break;
                     
                 case 'newest':

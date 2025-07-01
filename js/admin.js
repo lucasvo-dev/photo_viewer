@@ -351,8 +351,29 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Fetch and Render Folders ---
+    // Global variable to track if fetch is in progress
+    let isFetching = false;
+
     async function fetchAndRenderFolders(searchTerm = '', sortBy = 'cache_priority') {
         if (!folderListBody) return;
+        
+        // Prevent concurrent requests
+        if (isFetching) {
+            console.log('Fetch already in progress, skipping...');
+            return;
+        }
+        
+        isFetching = true;
+        
+        // CRITICAL: Stop all active polling jobs to prevent conflicts
+        console.log('Stopping all active polling jobs before fetch...');
+        const activePollerKeys = Object.keys(activePollers);
+        activePollerKeys.forEach(key => {
+            clearInterval(activePollers[key]);
+            delete activePollers[key];
+        });
+        console.log(`Stopped ${activePollerKeys.length} active pollers`);
+
         folderListBody.innerHTML = '<tr><td colspan="8">Đang tải dữ liệu...</td></tr>';
 
         let apiUrl = 'api.php?action=admin_list_folders';
@@ -370,23 +391,49 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         try {
-            const response = await fetch(apiUrl);
+            console.log(`Fetching data: ${apiUrl}`);
+            
+            // Add timeout to prevent hanging requests
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+            
+            const response = await fetch(apiUrl, { 
+                signal: controller.signal,
+                method: 'GET',
+                headers: {
+                    'Cache-Control': 'no-cache'
+                }
+            });
+            
+            clearTimeout(timeoutId);
+            
             if (!response.ok) {
-                throw new Error(`Lỗi HTTP ${response.status}`);
+                throw new Error(`Lỗi HTTP ${response.status}: ${response.statusText}`);
             }
+            
             const result = await response.json();
 
             if (result.error) {
                 throw new Error(result.error);
             }
             
+            console.log(`Successfully loaded ${result.folders?.length || 0} folders`);
+            
             // Render the table
-            renderFolderTable(result.folders);
+            renderFolderTable(result.folders || []);
             
         } catch (error) {
             console.error("Lỗi tải danh sách thư mục:", error);
-            folderListBody.innerHTML = `<tr><td colspan="8" style="color: red;">Lỗi tải dữ liệu: ${error.message}</td></tr>`; // Updated colspan
-            showFeedback(`Lỗi tải danh sách: ${error.message}`, 'error');
+            
+            if (error.name === 'AbortError') {
+                folderListBody.innerHTML = `<tr><td colspan="8" style="color: orange;">⏱️ Request timeout - vui lòng thử lại</td></tr>`;
+                showFeedback('Request timeout - vui lòng thử lại', 'error');
+            } else {
+                folderListBody.innerHTML = `<tr><td colspan="8" style="color: red;">❌ Lỗi tải dữ liệu: ${error.message}</td></tr>`;
+                showFeedback(`Lỗi tải danh sách: ${error.message}`, 'error');
+            }
+        } finally {
+            isFetching = false;
         }
     }
 
@@ -782,19 +829,19 @@ document.addEventListener('DOMContentLoaded', () => {
         refreshGalleryButton.addEventListener('click', async () => {
             console.log('Manual gallery refresh triggered');
             
-            // Stop all active pollers temporarily
-            const activePollerKeys = Object.keys(activePollers);
-            activePollerKeys.forEach(key => {
-                clearInterval(activePollers[key]);
-                delete activePollers[key];
-            });
+            // Prevent refresh if already fetching
+            if (isFetching) {
+                console.log('Fetch already in progress, ignoring refresh button...');
+                showFeedback('⏳ Đang tải dữ liệu, vui lòng chờ...', 'info');
+                return;
+            }
             
             // Visual feedback
             refreshGalleryButton.disabled = true;
             refreshGalleryButton.innerHTML = '🔄 Đang làm mới...';
             
             try {
-                // Load fresh data
+                // Load fresh data using the improved fetchAndRenderFolders (it handles polling cleanup)
                 console.log('[Manual Refresh] Loading fresh gallery data...');
                 
                 const searchTerm = adminSearchInput?.value.trim() || '';
@@ -817,21 +864,29 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    if (adminSearchInput) {
-        const debouncedSearch = debounce(() => {
-            console.log('Debounced search triggering fetch...');
-            const searchTerm = adminSearchInput.value.trim();
-            const sortBy = adminSortSelect?.value || 'cache_priority';
-            fetchAndRenderFolders(searchTerm, sortBy);
-        }, 500); // 500ms debounce
+    // Combined debounced function for both search and sort
+    const debouncedFetchFolders = debounce(() => {
+        if (isFetching) {
+            console.log('Fetch in progress, skipping debounced call...');
+            return;
+        }
+        
+        console.log('Debounced fetch triggering...');
+        const searchTerm = adminSearchInput?.value.trim() || '';
+        const sortBy = adminSortSelect?.value || 'cache_priority';
+        fetchAndRenderFolders(searchTerm, sortBy);
+    }, 300); // Reduced to 300ms for better responsiveness
 
+    if (adminSearchInput) {
         adminSearchInput.addEventListener('input', () => {
-             debouncedSearch(); // Kích hoạt debounce
+             console.log('Search input changed, debouncing...');
+             debouncedFetchFolders(); 
         });
         
          // Xử lý trường hợp xóa sạch ô tìm kiếm
          adminSearchInput.addEventListener('search', () => {
               if(adminSearchInput.value === '') {
+                   console.log('Search cleared, immediate fetch...');
                    const sortBy = adminSortSelect?.value || 'cache_priority';
                    fetchAndRenderFolders('', sortBy);
               }
@@ -841,13 +896,11 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Admin search input not found!");
     }
 
-    // Sort dropdown listener
+    // Sort dropdown listener with debounce
     if (adminSortSelect) {
         adminSortSelect.addEventListener('change', () => {
             console.log('Sort option changed:', adminSortSelect.value);
-            const searchTerm = adminSearchInput?.value.trim() || '';
-            const sortBy = adminSortSelect.value;
-            fetchAndRenderFolders(searchTerm, sortBy);
+            debouncedFetchFolders(); // Use debounced function
         });
     } else {
         console.error("Admin sort select not found!");
