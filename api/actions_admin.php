@@ -1641,35 +1641,76 @@ switch ($action) {
             json_error("Tên mới không hợp lệ. Chỉ cho phép chữ, số, dấu cách, dấu chấm, gạch dưới và gạch ngang.", 400);
         }
 
+        error_log("[file_manager_rename] Received rename request - source: {$source_key}, old_path: {$old_path}, new_name: {$new_name}");
+
+        // Pre-validate that old_path exists in the source
+        if (empty($old_path)) {
+            json_error("Đường dẫn cũ không được để trống.", 400);
+        }
+
         $source_prefixed_path = $source_key . '/' . ltrim($old_path, '/');
+        error_log("[file_manager_rename] Source prefixed path: {$source_prefixed_path}");
+        
+        // Try directory validation first, then file validation
         $path_info = validate_source_and_path($source_prefixed_path);
+        if (!$path_info) {
+            // If directory validation fails, try file validation
+            $path_info = validate_source_and_file_path($source_prefixed_path);
+            error_log("[file_manager_rename] Tried file validation: " . ($path_info ? 'VALID' : 'INVALID'));
+        } else {
+            error_log("[file_manager_rename] Directory validation: VALID");
+        }
 
         if (!$path_info) {
+            error_log("[file_manager_rename] Both directory and file validation failed for: {$source_prefixed_path}");
             json_error("Đường dẫn cũ không hợp lệ.", 400);
         }
 
         $old_absolute_path = $path_info['absolute_path'];
         $parent_directory = dirname($old_absolute_path);
-        $new_absolute_path = $parent_directory . DIRECTORY_SEPARATOR . $new_name;
+        
+        // If renaming a file and new_name doesn't have extension, preserve original extension
+        $final_new_name = $new_name;
+        if (is_file($old_absolute_path)) {
+            $old_extension = pathinfo($old_absolute_path, PATHINFO_EXTENSION);
+            $new_extension = pathinfo($new_name, PATHINFO_EXTENSION);
+            
+            if (!empty($old_extension) && empty($new_extension)) {
+                $final_new_name = $new_name . '.' . $old_extension;
+                error_log("[file_manager_rename] Auto-appended extension: {$new_name} -> {$final_new_name}");
+            }
+        }
+        
+        $new_absolute_path = $parent_directory . DIRECTORY_SEPARATOR . $final_new_name;
+
+        error_log("[file_manager_rename] Old absolute path: {$old_absolute_path}");
+        error_log("[file_manager_rename] New absolute path: {$new_absolute_path}");
 
         if (!file_exists($old_absolute_path)) {
+            error_log("[file_manager_rename] Old path does not exist: {$old_absolute_path}");
             json_error("File/thư mục không tồn tại.", 404);
         }
 
         if (file_exists($new_absolute_path)) {
+            error_log("[file_manager_rename] New path already exists: {$new_absolute_path}");
             json_error("Tên mới đã tồn tại.", 409);
         }
 
         if (rename($old_absolute_path, $new_absolute_path)) {
-            $new_relative_path = dirname($old_path) . '/' . $new_name;
+            $new_relative_path = dirname($old_path) . '/' . $final_new_name;
             $new_relative_path = ltrim($new_relative_path, './');
+            
+            error_log("[file_manager_rename] Successfully renamed from {$old_absolute_path} to {$new_absolute_path}");
+            error_log("[file_manager_rename] New relative path: {$new_relative_path}");
 
             json_response([
                 'old_path' => $old_path,
                 'new_path' => $new_relative_path,
-                'new_name' => $new_name
+                'new_name' => $final_new_name
             ]);
         } else {
+            error_log("[file_manager_rename] Failed to rename from {$old_absolute_path} to {$new_absolute_path}");
+            error_log("[file_manager_rename] Error: " . error_get_last()['message'] ?? 'Unknown error');
             json_error("Không thể đổi tên file/thư mục.");
         }
         break;

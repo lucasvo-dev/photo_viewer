@@ -1529,9 +1529,63 @@ class AdminFileManager {
             const item = e.target.closest('.fm-item');
             if (!item) return;
 
-            // Check if click is on action buttons - don't trigger main action
-            if (e.target.closest('.fm-item-actions') || 
-                e.target.closest('.fm-item-checkbox') ||
+            // Handle action buttons inside fm-item-actions FIRST
+            if (e.target.closest('.fm-item-actions')) {
+                const actionBtn = e.target.closest('[data-action]');
+                if (actionBtn) {
+                    const action = actionBtn.dataset.action;
+                    const itemPath = item.dataset.path;
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                    
+                    console.log(`[FM] Action button clicked: ${action} for ${itemPath}`);
+                    console.log(`[FM] Debug - currentSource: ${this.currentSource}, currentPath: ${this.currentPath}`);
+                    
+                    switch (action) {
+                        case 'rename':
+                            this.showRenameDialog(itemPath);
+                            break;
+                        case 'delete':
+                            this.deleteItem(itemPath);
+                            break;
+                        case 'toggle-featured-dropdown':
+                            // Close other dropdowns first
+                            document.querySelectorAll('.fm-featured-dropdown .dropdown-content.show').forEach(d => {
+                                if (d.closest('.fm-item') !== item) {
+                                    d.classList.remove('show');
+                                }
+                            });
+                            // Toggle current dropdown
+                            const dropdown = item.querySelector('.fm-featured-dropdown .dropdown-content');
+                            if (dropdown) {
+                                dropdown.classList.toggle('show');
+                            }
+                            break;
+                        case 'set-featured':
+                            const featuredType = e.target.closest('[data-type]')?.dataset.type;
+                            if (featuredType) {
+                                // Close dropdown
+                                const dropdownToClose = item.querySelector('.fm-featured-dropdown .dropdown-content.show');
+                                if (dropdownToClose) {
+                                    dropdownToClose.classList.remove('show');
+                                }
+                                // Set featured status
+                                try {
+                                    this.setFeatured(itemPath, featuredType);
+                                } catch (error) {
+                                    this.error('Error in set-featured action:', error);
+                                    this.showCompactMessage('Lỗi khi set featured status', 'error');
+                                }
+                            }
+                            break;
+                    }
+                }
+                return; // Still return to prevent main item action
+            }
+
+            // Check if click is on other special areas - don't trigger main action
+            if (e.target.closest('.fm-item-checkbox') ||
                 e.target.closest('.fm-category-dropdown') ||
                 e.target.closest('.fm-featured-dropdown')) {
                 return;
@@ -1580,35 +1634,7 @@ class AdminFileManager {
                     this.log(`View action triggered for: ${itemPath}`);
                     this.viewFile(itemPath);
                     break;
-                case 'toggle-featured-dropdown':
-                    e.preventDefault();
-                    e.stopPropagation();
-                    document.querySelectorAll('.fm-featured-dropdown .dropdown-content.show').forEach(d => {
-                        if (d.closest('.fm-item') !== item) {
-                            d.classList.remove('show');
-                        }
-                    });
-                    const dropdown = item.querySelector('.fm-featured-dropdown .dropdown-content');
-                    dropdown.classList.toggle('show');
-                    break;
-                case 'set-featured': { // Use block scope
-                    e.preventDefault();
-                    e.stopPropagation();
-                    const featuredType = e.target.closest('[data-type]').dataset.type;
-                    
-                    const dropdownToClose = item.querySelector('.fm-featured-dropdown .dropdown-content.show');
-                    if (dropdownToClose) {
-                        dropdownToClose.classList.remove('show');
-                    }
-                    
-                    try {
-                        this.setFeatured(itemPath, featuredType);
-                    } catch (error) {
-                        this.error('Error in set-featured action:', error);
-                        this.showCompactMessage('Lỗi khi set featured status', 'error');
-                    }
-                    break;
-                }
+                // Featured dropdown actions are now handled in the action buttons section above
                 case 'rename':
                     this.showRenameDialog(itemPath);
                     break;
@@ -2646,11 +2672,35 @@ class AdminFileManager {
             return;
         }
 
+        // Debug logging to diagnose path issues
+        console.log('[FM] Rename Debug:', {
+            currentSource: this.currentSource,
+            currentPath: this.currentPath,
+            oldPath: oldPath,
+            newName: newName,
+            oldPathType: typeof oldPath
+        });
+
         try {
+            // Create the full path relative to the source
+            let fullOldPath = oldPath;
+            
+            // If oldPath is just a filename, prepend currentPath
+            if (!oldPath.includes('/') && this.currentPath) {
+                fullOldPath = this.currentPath + '/' + oldPath;
+                console.log('[FM] Constructed full path:', fullOldPath);
+            }
+
             const formData = new FormData();
             formData.append('source', this.currentSource);
-            formData.append('old_path', oldPath);
+            formData.append('old_path', fullOldPath);
             formData.append('new_name', newName);
+
+            console.log('[FM] Sending rename request:', {
+                source: this.currentSource,
+                old_path: fullOldPath,
+                new_name: newName
+            });
 
             const response = await fetch('api.php?action=file_manager_rename', {
                 method: 'POST',
@@ -2658,13 +2708,21 @@ class AdminFileManager {
             });
 
             const result = await response.json();
+            console.log('[FM] Rename API response:', result);
 
             if (result.error) {
                 throw new Error(result.error);
             }
 
             this.closeDialog();
-            this.showMessage('Đổi tên thành công', 'success');
+            
+            // Show success message with final name (in case extension was auto-appended)
+            const finalName = result.new_name || newName;
+            if (finalName !== newName) {
+                this.showMessage(`Đổi tên thành công: "${newName}" → "${finalName}"`, 'success');
+            } else {
+                this.showMessage('Đổi tên thành công', 'success');
+            }
             
             // Refresh directory
             await this.loadDirectory(this.currentPath);
