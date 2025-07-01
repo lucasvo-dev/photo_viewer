@@ -1097,6 +1097,16 @@ switch ($action) {
                     
                     // Get inherited category for directory
                     $item['category'] = getCategoryForPath($source_key, $item_relative_path);
+                    
+                    // Add folder thumbnail support (similar to main gallery)
+                    $folder_absolute_path = $fileinfo->getPathname();
+                    $first_image_relative = find_first_image_fast($folder_absolute_path, 5);
+                    if ($first_image_relative !== null) {
+                        // Create thumbnail path using source_key prefix
+                        $thumbnail_path = $source_key . '/' . $item_relative_path . '/' . $first_image_relative;
+                        $thumbnail_path = str_replace('//', '/', $thumbnail_path); // Normalize double slashes
+                        $item['thumbnail'] = $thumbnail_path;
+                    }
                 }
 
                 $items[] = $item;
