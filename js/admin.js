@@ -2,6 +2,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // --- DOM Elements ---
     const folderListBody = document.getElementById('folder-list-body');
     const adminSearchInput = document.getElementById('adminSearchInput');
+    const adminSortSelect = document.getElementById('adminSortSelect');
     const adminMessageDiv = document.getElementById('admin-message');
     const adminFeedbackDiv = document.getElementById('admin-feedback');
     const adminLoadingDiv = document.getElementById('admin-loading');
@@ -350,13 +351,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- Fetch and Render Folders ---
-    async function fetchAndRenderFolders(searchTerm = '') {
+    async function fetchAndRenderFolders(searchTerm = '', sortBy = 'cache_priority') {
         if (!folderListBody) return;
         folderListBody.innerHTML = '<tr><td colspan="8">Đang tải dữ liệu...</td></tr>';
 
         let apiUrl = 'api.php?action=admin_list_folders';
+        const params = new URLSearchParams();
+        
         if (searchTerm) {
-            apiUrl += `&search=${encodeURIComponent(searchTerm)}`;
+            params.append('search', searchTerm);
+        }
+        if (sortBy) {
+            params.append('sort', sortBy);
+        }
+        
+        if (params.toString()) {
+            apiUrl += `&${params.toString()}`;
         }
 
         try {
@@ -590,7 +600,9 @@ document.addEventListener('DOMContentLoaded', () => {
             showFeedback(result.message || 'Đặt mật khẩu thành công!', 'success');
             passwordInput.value = ''; // Clear input
             // Reload the list to show updated status
-            fetchAndRenderFolders(adminSearchInput.value.trim()); 
+            const searchTerm = adminSearchInput?.value.trim() || '';
+            const sortBy = adminSortSelect?.value || 'cache_priority';
+            fetchAndRenderFolders(searchTerm, sortBy); 
 
         } catch (error) {
             console.error("Lỗi đặt mật khẩu:", error);
@@ -628,7 +640,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
             showFeedback(result.message || 'Xóa mật khẩu thành công!', 'success');
              // Reload the list to show updated status
-             fetchAndRenderFolders(adminSearchInput.value.trim());
+             const searchTerm = adminSearchInput?.value.trim() || '';
+             const sortBy = adminSortSelect?.value || 'cache_priority';
+             fetchAndRenderFolders(searchTerm, sortBy);
 
         } catch (error) {
             console.error("Lỗi xóa mật khẩu:", error);
@@ -783,7 +797,9 @@ document.addEventListener('DOMContentLoaded', () => {
                 // Load fresh data
                 console.log('[Manual Refresh] Loading fresh gallery data...');
                 
-                await fetchAndRenderFolders(adminSearchInput.value.trim());
+                const searchTerm = adminSearchInput?.value.trim() || '';
+                const sortBy = adminSortSelect?.value || 'cache_priority';
+                await fetchAndRenderFolders(searchTerm, sortBy);
                 
                 // Success message
                 showFeedback('📊 Dữ liệu Gallery đã được làm mới thành công!', 'success');
@@ -804,7 +820,9 @@ document.addEventListener('DOMContentLoaded', () => {
     if (adminSearchInput) {
         const debouncedSearch = debounce(() => {
             console.log('Debounced search triggering fetch...');
-            fetchAndRenderFolders(adminSearchInput.value.trim());
+            const searchTerm = adminSearchInput.value.trim();
+            const sortBy = adminSortSelect?.value || 'cache_priority';
+            fetchAndRenderFolders(searchTerm, sortBy);
         }, 500); // 500ms debounce
 
         adminSearchInput.addEventListener('input', () => {
@@ -814,7 +832,8 @@ document.addEventListener('DOMContentLoaded', () => {
          // Xử lý trường hợp xóa sạch ô tìm kiếm
          adminSearchInput.addEventListener('search', () => {
               if(adminSearchInput.value === '') {
-                   fetchAndRenderFolders('');
+                   const sortBy = adminSortSelect?.value || 'cache_priority';
+                   fetchAndRenderFolders('', sortBy);
               }
          });
 
@@ -822,7 +841,19 @@ document.addEventListener('DOMContentLoaded', () => {
         console.error("Admin search input not found!");
     }
 
+    // Sort dropdown listener
+    if (adminSortSelect) {
+        adminSortSelect.addEventListener('change', () => {
+            console.log('Sort option changed:', adminSortSelect.value);
+            const searchTerm = adminSearchInput?.value.trim() || '';
+            const sortBy = adminSortSelect.value;
+            fetchAndRenderFolders(searchTerm, sortBy);
+        });
+    } else {
+        console.error("Admin sort select not found!");
+    }
+
     // --- Initial Load ---
-    fetchAndRenderFolders();
+    fetchAndRenderFolders('', 'cache_priority');
 
 }); // End DOMContentLoaded

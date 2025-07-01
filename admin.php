@@ -198,10 +198,22 @@ $admin_username = isset($_SESSION['username']) ? htmlspecialchars($_SESSION['use
                 </div>
             </div>
 
-            <!-- Search Bar for Admin - Styled like homepage -->
-            <div class="search-container admin-search">
-                <input type="search" id="adminSearchInput" placeholder="Tìm thư mục..." aria-label="Tìm kiếm thư mục">
+            <!-- Search and Sort Controls -->
+            <div class="admin-controls">
+                <div class="search-container admin-search">
+                    <input type="search" id="adminSearchInput" placeholder="Tìm thư mục..." aria-label="Tìm kiếm thư mục">
+                </div>
+                
+                <div class="sort-container admin-sort">
+                    <label for="adminSortSelect">Sắp xếp:</label>
+                    <select id="adminSortSelect" aria-label="Cách sắp xếp thư mục">
+                        <option value="cache_priority">Ưu tiên Cache (Chưa cache → Mới nhất)</option>
+                        <option value="newest">Thư mục mới nhất</option>
+                        <option value="name">Tên thư mục (A-Z)</option>
+                    </select>
+                </div>
             </div>
+            
             <!-- Optional prompt for admin search -->
             <p id="admin-search-prompt" class="search-prompt admin-prompt" style="display: none; font-size: 0.85em; margin-top: 8px;">
                 Nhập tên thư mục để lọc danh sách.

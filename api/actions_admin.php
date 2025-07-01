@@ -87,7 +87,9 @@ switch ($action) {
         $admin_search_term = $search_term;
         // Handle specific path filter for polling/info modal - Initialize to null
         $path_filter = $_GET['path_filter'] ?? null;
-
+        // NEW: Handle sort parameter
+        $sort_by = $_GET['sort'] ?? 'cache_priority'; // Default: cache priority
+        
         try {
             $folders_data = [];
             $protected_status = [];
@@ -139,35 +141,142 @@ switch ($action) {
             // $latest_job_results = []; 
             // try { ... } catch ...
 
-            // Iterate through IMAGE_SOURCES
-            foreach (IMAGE_SOURCES as $source_key => $source_config) {
-                if (!is_array($source_config) || !isset($source_config['path'])) continue;
-                $source_base_path = $source_config['path'];
-                $resolved_source_base_path = realpath($source_base_path);
+            // NEW: Use directory index for fast search like main gallery if no specific path filter
+            if ($path_filter === null) {
+                error_log("[admin_list_folders] Using directory index for admin search, term: " . ($admin_search_term ?? 'null'));
+                
+                // Use directory index with unlimited results for admin (no pagination needed)
+                $index_result = get_directory_index($admin_search_term, 1, 10000);
+                
+                if ($index_result['from_cache'] && !empty($index_result['directories'])) {
+                    // Process directories from index
+                    foreach ($index_result['directories'] as $dir_item) {
+                        $source_prefixed_path = $dir_item['directory_path'];
+                        $dir_name = $dir_item['directory_name'];
+                        
+                        // Get all the additional info for admin
+                        $stats = $folder_stats[$source_prefixed_path] ?? [
+                            'views' => 0,
+                            'downloads' => 0,
+                            'last_cached_fully_at' => null
+                        ];
+                        
+                        $latest_job_info = [
+                            'message' => null,
+                            'image_count' => null,
+                            'created_at' => null,
+                            'status' => null,
+                            'total_files' => 0,
+                            'processed_files' => 0,
+                            'current_file' => null
+                        ];
 
-                if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
-                    error_log("[admin_list_folders] Skipping source '{$source_key}': Path invalid or not readable.");
-                    continue;
-                }
-
-                try {
-                    $iterator = new DirectoryIterator($resolved_source_base_path);
-                    foreach ($iterator as $fileinfo) {
-                        if ($fileinfo->isDot() || !$fileinfo->isDir()) {
-                            continue;
+                        // Fetch latest job info for this folder
+                        try {
+                            $sql_latest_job = "SELECT cj.result_message, cj.image_count, cj.created_at, cj.status, 
+                                                   cj.total_files, cj.processed_files, cj.current_file_processing
+                                                FROM cache_jobs cj 
+                                                WHERE cj.folder_path = ? 
+                                                ORDER BY cj.id DESC 
+                                                LIMIT 1";
+                            $stmt_latest_job = $pdo->prepare($sql_latest_job);
+                            $stmt_latest_job->execute([$source_prefixed_path]);
+                            $job_row = $stmt_latest_job->fetch(PDO::FETCH_ASSOC);
+                            if ($job_row) {
+                                $latest_job_info['message'] = $job_row['result_message'];
+                                $latest_job_info['image_count'] = $job_row['image_count'] ? (int)$job_row['image_count'] : null;
+                                $latest_job_info['created_at'] = $job_row['created_at'];
+                                $latest_job_info['status'] = $job_row['status'];
+                                $latest_job_info['total_files'] = (int)$job_row['total_files'];
+                                $latest_job_info['processed_files'] = (int)$job_row['processed_files'];
+                                $latest_job_info['current_file'] = ($job_row['status'] === 'processing') ? $job_row['current_file_processing'] : null;
+                            }
+                        } catch (PDOException $e_job) {
+                            error_log("[admin_list_folders] Error fetching latest job info for {$source_prefixed_path}: " . $e_job->getMessage());
                         }
 
-                        $dir_name = $fileinfo->getFilename();
-                        $source_prefixed_path = $source_key . '/' . $dir_name;
+                        // Determine image count
+                        $last_cached_image_count = null;
+                        if ($stats['last_cached_fully_at']) {
+                            if ($latest_job_info['created_at']) {
+                                $job_time = strtotime($latest_job_info['created_at']);
+                                if ($job_time && $job_time >= $stats['last_cached_fully_at']) {
+                                    $last_cached_image_count = $latest_job_info['image_count'];
+                                } else {
+                                    $last_cached_image_count = $latest_job_info['image_count']; 
+                                }
+                            } else {
+                                $last_cached_image_count = null; 
+                            }
+                        } else if ($latest_job_info['created_at']) {
+                            $last_cached_image_count = $latest_job_info['image_count'];
+                        }
+                       
+                        $current_job_status = $active_cache_jobs[$source_prefixed_path]['status'] ?? null;
+                        $progress_info = $active_cache_jobs[$source_prefixed_path] ?? $latest_job_info;
 
-                        // Apply path filter if provided
-                        $is_target_folder = ($path_filter === null || $source_prefixed_path === $path_filter);
+                        $folders_data[] = [
+                            'name' => $dir_name,
+                            'path' => $source_prefixed_path,
+                            'source' => explode('/', $source_prefixed_path)[0],
+                            'is_password_protected' => isset($protected_status[$source_prefixed_path]),
+                            'views' => (int)($stats['views'] ?? 0),
+                            'zip_downloads' => (int)($stats['downloads'] ?? 0),
+                            'last_cached_fully_at' => $stats['last_cached_fully_at'] ? (int)$stats['last_cached_fully_at'] : null,
+                            'current_cache_job_status' => $current_job_status,
+                            'latest_job_result_message' => $latest_job_info['message'],
+                            'last_cached_image_count' => $last_cached_image_count ? (int)$last_cached_image_count : null,
+                            'latest_job_status' => $latest_job_info['status'],
+                            'total_files' => (int)$progress_info['total_files'],
+                            'processed_files' => (int)$progress_info['processed_files'],
+                            'current_file_processing' => $current_job_status === 'processing' ? $progress_info['current_file'] : null,
+                            'last_modified' => $dir_item['last_modified'] ?? null, // From directory index
+                            'has_cache' => $stats['last_cached_fully_at'] ? true : false, // For sorting
+                        ];
+                    }
+                    
+                    error_log("[admin_list_folders] Retrieved " . count($folders_data) . " directories from index cache");
+                    
+                } else {
+                    // FALLBACK: Use filesystem scan if directory index is not available
+                    error_log("[admin_list_folders] Directory index unavailable, falling back to filesystem scan");
+                    $this_is_fallback = true;
+                }
+            } else {
+                // Specific path filter - use filesystem scan
+                $this_is_fallback = true;
+            }
+            
+            // FALLBACK: Filesystem scanning (when directory index fails or path filter is used)
+            if (isset($this_is_fallback)) {
+                foreach (IMAGE_SOURCES as $source_key => $source_config) {
+                    if (!is_array($source_config) || !isset($source_config['path'])) continue;
+                    $source_base_path = $source_config['path'];
+                    $resolved_source_base_path = realpath($source_base_path);
 
-                        // Apply search filter if provided (and no path filter or it's the target folder)
-                        $passes_search = ($admin_search_term === null || mb_stripos($dir_name, $admin_search_term, 0, 'UTF-8') !== false);
+                    if ($resolved_source_base_path === false || !is_dir($resolved_source_base_path) || !is_readable($resolved_source_base_path)) {
+                        error_log("[admin_list_folders] Skipping source '{$source_key}': Path invalid or not readable.");
+                        continue;
+                    }
 
-                        // Only proceed if it's the target folder (if filtering) AND passes search (if searching)
-                        if ($is_target_folder && $passes_search) {
+                    try {
+                        $iterator = new DirectoryIterator($resolved_source_base_path);
+                        foreach ($iterator as $fileinfo) {
+                            if ($fileinfo->isDot() || !$fileinfo->isDir()) {
+                                continue;
+                            }
+
+                            $dir_name = $fileinfo->getFilename();
+                            $source_prefixed_path = $source_key . '/' . $dir_name;
+
+                            // Apply path filter if provided
+                            $is_target_folder = ($path_filter === null || $source_prefixed_path === $path_filter);
+
+                            // Apply search filter if provided (and no path filter or it's the target folder)
+                            $passes_search = ($admin_search_term === null || mb_stripos($dir_name, $admin_search_term, 0, 'UTF-8') !== false);
+
+                            // Only proceed if it's the target folder (if filtering) AND passes search (if searching)
+                            if ($is_target_folder && $passes_search) {
                             $stats = $folder_stats[$source_prefixed_path] ?? [
                                 'views' => 0,
                                 'downloads' => 0,
@@ -257,16 +366,50 @@ switch ($action) {
                                 // Thêm các trường tiến trình vào response
                                 'total_files' => (int)$progress_info['total_files'],
                                 'processed_files' => (int)$progress_info['processed_files'],
-                                'current_file_processing' => $current_job_status === 'processing' ? $progress_info['current_file'] : null // Chỉ gửi file hiện tại nếu đang processing
+                                'current_file_processing' => $current_job_status === 'processing' ? $progress_info['current_file'] : null, // Chỉ gửi file hiện tại nếu đang processing
+                                'last_modified' => $fileinfo->getMTime(), // Add for sorting
+                                'has_cache' => $stats['last_cached_fully_at'] ? true : false, // For sorting
                             ];
+                            } // Close if ($is_target_folder && $passes_search)
                         }
+                    } catch (Exception $e) {
+                        error_log("[admin_list_folders] Error scanning source '{$source_key}': " . $e->getMessage());
                     }
-                } catch (Exception $e) {
-                    error_log("[admin_list_folders] Error scanning source '{$source_key}': " . $e->getMessage());
-                }
-            } // End foreach IMAGE_SOURCES
+                } // End foreach IMAGE_SOURCES
+            } // End if (isset($this_is_fallback))
 
-            usort($folders_data, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
+            // Apply sorting based on sort_by parameter
+            switch ($sort_by) {
+                case 'name':
+                    usort($folders_data, fn ($a, $b) => strnatcasecmp($a['name'], $b['name']));
+                    break;
+                    
+                case 'newest':
+                    usort($folders_data, function($a, $b) {
+                        // Sort by last_modified (newest first)
+                        $time_a = $a['last_modified'] ?? 0;
+                        $time_b = $b['last_modified'] ?? 0;
+                        return $time_b - $time_a; // Descending order
+                    });
+                    break;
+                    
+                case 'cache_priority':
+                default:
+                    usort($folders_data, function($a, $b) {
+                        // Priority 1: No cache folders first (ascending)
+                        $has_cache_a = $a['has_cache'] ? 1 : 0;
+                        $has_cache_b = $b['has_cache'] ? 1 : 0;
+                        if ($has_cache_a !== $has_cache_b) {
+                            return $has_cache_a - $has_cache_b; // No cache (0) comes before has cache (1)
+                        }
+                        
+                        // Priority 2: Within same cache status, newest first
+                        $time_a = $a['last_modified'] ?? 0;
+                        $time_b = $b['last_modified'] ?? 0;
+                        return $time_b - $time_a; // Descending order (newest first)
+                    });
+                    break;
+            }
 
             // === End Calculation ===
 
