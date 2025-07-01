@@ -6,7 +6,7 @@ echo.
 
 REM Get current directory
 set SCRIPT_DIR=%~dp0
-set PHP_PATH=C:\xampp\php\php.exe
+set PHP_PATH=D:\xampp\php\php.exe
 set WORKER_SCRIPT=%SCRIPT_DIR%worker_directory_index.php
 
 echo Current directory: %SCRIPT_DIR%

@@ -1847,7 +1847,7 @@ switch ($action) {
         } catch (Exception $e) {
             error_log("[get_featured_images_stats] Error: " . $e->getMessage());
             json_error('Failed to get featured images statistics: ' . $e->getMessage(), 500);
-        }
+            }
         break;
 
     // ========== DIRECTORY INDEX MANAGEMENT ==========
@@ -1942,7 +1942,7 @@ switch ($action) {
                         'status' => 'skipped',
                         'message' => 'Directory index is already fresh (health score: ' . $current_stats['health_score'] . '%)',
                         'stats' => $current_stats
-                    ]);
+            ]);
                 }
             }
             
@@ -2072,7 +2072,7 @@ switch ($action) {
             json_error('Failed to test directory performance: ' . $e->getMessage(), 500);
         }
         break;
-
+        
     // Default case for unknown admin actions
     default:
         json_error("Hành động không hợp lệ", 400);

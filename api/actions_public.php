@@ -1753,7 +1753,7 @@ switch ($action) {
             // First get total count
             $countSql = "SELECT COUNT(*) as total FROM featured_images WHERE is_featured = 1";
             $countStmt = $pdo->query($countSql);
-            $totalCount = $countStmt->fetchColumn();
+            $totalCount = (int)$countStmt->fetchColumn(); // Ensure integer type
             
             // For pagination, we need consistent ordering instead of pure RAND()
             // Use RAND() with seed based on daily timestamp to shuffle daily but keep consistent during pagination

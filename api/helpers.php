@@ -1318,7 +1318,7 @@ function get_directory_index($search_term = null, $page = 1, $items_per_page = 1
         
         $countStmt = $pdo->prepare($countSql);
         $countStmt->execute($params);
-        $total_items = $countStmt->fetchColumn();
+        $total_items = (int)$countStmt->fetchColumn(); // Ensure integer type
         
         // Apply pagination
         $offset = ($page - 1) * $items_per_page;
