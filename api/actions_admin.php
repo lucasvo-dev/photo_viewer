@@ -1479,6 +1479,41 @@ switch ($action) {
         }
 
         if (mkdir($new_folder_path, 0755)) {
+            // ADD TO DIRECTORY INDEX: Insert new directory into index
+            try {
+                $relative_folder_path = $parent_path ? ltrim($parent_path, '/') . '/' . $folder_name : $folder_name;
+                $source_prefixed_path = $source_key . '/' . ltrim($relative_folder_path, '/');
+                
+                $stmt = $pdo->prepare("
+                    INSERT INTO directory_index 
+                    (source_key, directory_name, directory_path, relative_path, file_count, 
+                     last_modified, is_protected, has_thumbnail, is_active, created_at, updated_at)
+                    VALUES (?, ?, ?, ?, 0, FROM_UNIXTIME(?), 0, 0, 1, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+                    ON DUPLICATE KEY UPDATE
+                    is_active = 1,
+                    last_modified = FROM_UNIXTIME(?),
+                    updated_at = CURRENT_TIMESTAMP
+                ");
+                
+                $current_time = time();
+                $stmt->execute([
+                    $source_key,
+                    $folder_name,
+                    $source_prefixed_path,
+                    $relative_folder_path,
+                    $current_time,
+                    $current_time
+                ]);
+                
+                if ($stmt->rowCount() > 0) {
+                    error_log("[file_manager_create_folder] Added new directory to index: {$source_prefixed_path}");
+                }
+                
+            } catch (Exception $e) {
+                error_log("[file_manager_create_folder] Failed to add to directory index for {$source_prefixed_path}: " . $e->getMessage());
+                // Don't fail the create operation if index update fails
+            }
+            
             json_response([
                 'folder_name' => $folder_name,
                 'folder_path' => $parent_path . '/' . $folder_name,
@@ -1564,6 +1599,44 @@ switch ($action) {
                     if (deleteDirectory($target_path)) {
                         $deleted_items[] = ['path' => $item_path, 'type' => 'directory'];
                         error_log("[file_manager_delete] Successfully deleted directory: {$item_path}");
+                        
+                        // UPDATE DIRECTORY INDEX: Mark directory as inactive/deleted
+                        try {
+                            $stmt = $pdo->prepare("
+                                UPDATE directory_index 
+                                SET is_active = 0, updated_at = CURRENT_TIMESTAMP 
+                                WHERE directory_path = ? OR directory_path LIKE ?
+                            ");
+                            $stmt->execute([
+                                $source_prefixed_path,
+                                $source_prefixed_path . '/%'  // Also mark subdirectories as inactive
+                            ]);
+                            $updated_index_count = $stmt->rowCount();
+                            
+                            if ($updated_index_count > 0) {
+                                error_log("[file_manager_delete] Updated directory index: marked {$updated_index_count} entries as inactive for {$source_prefixed_path}");
+                            }
+                            
+                            // Also clean up directory_file_counts table
+                            $stmt_counts = $pdo->prepare("
+                                DELETE FROM directory_file_counts 
+                                WHERE source_key = ? AND (directory_path = ? OR directory_path LIKE ?)
+                            ");
+                            $relative_path = ltrim($item_path, '/');
+                            $stmt_counts->execute([
+                                $source_key,
+                                $relative_path,
+                                $relative_path . '/%'
+                            ]);
+                            $deleted_counts = $stmt_counts->rowCount();
+                            
+                            if ($deleted_counts > 0) {
+                                error_log("[file_manager_delete] Cleaned {$deleted_counts} directory count entries for {$source_prefixed_path}");
+                            }
+                            
+                        } catch (Exception $e) {
+                            error_log("[file_manager_delete] Failed to update directory index for {$source_prefixed_path}: " . $e->getMessage());
+                        }
                     } else {
                         $error_msg = "Không thể xóa thư mục: {$item_path}";
                         $errors[] = $error_msg;
@@ -1702,6 +1775,78 @@ switch ($action) {
             
             error_log("[file_manager_rename] Successfully renamed from {$old_absolute_path} to {$new_absolute_path}");
             error_log("[file_manager_rename] New relative path: {$new_relative_path}");
+
+            // UPDATE DIRECTORY INDEX: Update paths for renamed directories
+            if (is_dir($new_absolute_path)) {
+                try {
+                    $old_relative = ltrim($old_path, '/');
+                    $new_relative = ltrim($new_relative_path, '/');
+                    $old_source_prefixed = $source_key . '/' . $old_relative;
+                    $new_source_prefixed = $source_key . '/' . $new_relative;
+                    
+                    // Update the renamed directory
+                    $stmt = $pdo->prepare("
+                        UPDATE directory_index 
+                        SET 
+                            directory_name = ?,
+                            directory_path = ?,
+                            relative_path = ?,
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE directory_path = ?
+                    ");
+                    $stmt->execute([
+                        $final_new_name,
+                        $new_source_prefixed,
+                        $new_relative,
+                        $old_source_prefixed
+                    ]);
+                    $updated_main = $stmt->rowCount();
+                    
+                    // Update all subdirectories (change path prefixes)
+                    $stmt_sub = $pdo->prepare("
+                        UPDATE directory_index 
+                        SET 
+                            directory_path = REPLACE(directory_path, ?, ?),
+                            relative_path = REPLACE(relative_path, ?, ?),
+                            updated_at = CURRENT_TIMESTAMP
+                        WHERE directory_path LIKE ?
+                    ");
+                    $stmt_sub->execute([
+                        $old_source_prefixed . '/',
+                        $new_source_prefixed . '/',
+                        $old_relative . '/',
+                        $new_relative . '/',
+                        $old_source_prefixed . '/%'
+                    ]);
+                    $updated_subs = $stmt_sub->rowCount();
+                    
+                    if ($updated_main > 0 || $updated_subs > 0) {
+                        error_log("[file_manager_rename] Updated directory index: {$updated_main} main + {$updated_subs} subdirectories for rename {$old_source_prefixed} -> {$new_source_prefixed}");
+                    }
+                    
+                    // Also update directory_file_counts table
+                    $stmt_counts = $pdo->prepare("
+                        UPDATE directory_file_counts 
+                        SET directory_path = REPLACE(directory_path, ?, ?)
+                        WHERE source_key = ? AND (directory_path = ? OR directory_path LIKE ?)
+                    ");
+                    $stmt_counts->execute([
+                        $old_relative,
+                        $new_relative,
+                        $source_key,
+                        $old_relative,
+                        $old_relative . '/%'
+                    ]);
+                    $updated_counts = $stmt_counts->rowCount();
+                    
+                    if ($updated_counts > 0) {
+                        error_log("[file_manager_rename] Updated {$updated_counts} directory count entries for rename");
+                    }
+                    
+                } catch (Exception $e) {
+                    error_log("[file_manager_rename] Failed to update directory index for rename {$old_source_prefixed} -> {$new_source_prefixed}: " . $e->getMessage());
+                }
+            }
 
             json_response([
                 'old_path' => $old_path,
@@ -2151,6 +2296,59 @@ switch ($action) {
         } catch (Exception $e) {
             error_log("[rebuild_directory_index] Error: " . $e->getMessage());
             json_error('Failed to rebuild directory index: ' . $e->getMessage(), 500);
+        }
+        break;
+    
+    case 'sync_directory_index_urgent':
+        // Emergency sync for directory index after file manager operations
+        if (!isset($_SESSION['user_role']) || $_SESSION['user_role'] !== 'admin') {
+            json_error("Chỉ admin mới có quyền sync directory index.", 403);
+        }
+
+        try {
+            $action_type = $_POST['action_type'] ?? 'full_rescan';
+            $affected_paths = $_POST['affected_paths'] ?? [];
+            
+            if ($action_type === 'mark_deleted' && !empty($affected_paths)) {
+                // Mark specific paths as deleted (for emergency fixes)
+                $updated_count = 0;
+                foreach ($affected_paths as $path) {
+                    $stmt = $pdo->prepare("
+                        UPDATE directory_index 
+                        SET is_active = 0, updated_at = CURRENT_TIMESTAMP 
+                        WHERE directory_path = ? OR directory_path LIKE ?
+                    ");
+                    $stmt->execute([$path, $path . '/%']);
+                    $updated_count += $stmt->rowCount();
+                }
+                
+                json_response([
+                    'status' => 'success',
+                    'message' => "Marked {$updated_count} directory entries as deleted",
+                    'action' => 'mark_deleted',
+                    'updated_count' => $updated_count
+                ]);
+                
+            } else {
+                // Full emergency rescan
+                error_log("[sync_directory_index_urgent] Emergency rescan triggered by admin");
+                
+                $start_time = time();
+                $scan_results = build_directory_index(null, 180); // 3 minute emergency scan
+                $duration = time() - $start_time;
+                
+                json_response([
+                    'status' => 'success',
+                    'message' => 'Emergency directory index sync completed',
+                    'scan_results' => $scan_results,
+                    'duration' => $duration,
+                    'action' => 'full_rescan'
+                ]);
+            }
+            
+        } catch (Exception $e) {
+            error_log("[sync_directory_index_urgent] Error: " . $e->getMessage());
+            json_error('Failed to sync directory index: ' . $e->getMessage(), 500);
         }
         break;
     
