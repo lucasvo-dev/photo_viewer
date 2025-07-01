@@ -407,7 +407,7 @@
     justify-content: center;
 }
 
-/* Thumbnail image for list view - FILES ONLY */
+/* Thumbnail image for list view */
 .fm-item-thumbnail {
     width: 60px;
     height: 60px;
@@ -419,11 +419,6 @@
     background-size: 200% 100%;
     animation: thumbnail-loading 1.5s infinite;
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-}
-
-/* HIDE THUMBNAILS FOR FOLDERS to prevent confusion */
-.fm-item[data-type="directory"] .fm-item-thumbnail {
-    display: none !important;
 }
 
 .fm-item-thumbnail[style*="opacity: 1"] {
@@ -2977,146 +2972,280 @@
 
 /* Grid Item */
 .fm-grid-item {
-    background: #30363d;
-    border: 1px solid #484f58;
+    background: #21262d;
+    border: 1px solid #30363d;
     border-radius: 8px;
-    padding: 8px;
+    padding: 8px 8px 12px 8px;
     display: flex;
     flex-direction: column;
     align-items: center;
-    position: relative;
-    transition: all 0.2s ease;
+    text-align: center;
     cursor: pointer;
-    min-height: 220px; /* Tăng height để có đủ space */
-    height: auto; /* Allow flexible height */
+    transition: all 0.2s ease;
+    position: relative;
+    min-height: 200px;
 }
 
 .fm-grid-item:hover {
-    background: #444c56;
-    border-color: #58a6ff;
+    background: #30363d;
+    border-color: #444c56;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
 }
 
-.fm-grid-item.folder {
-    background: #30363d;
+/* ENHANCED: Folder vs Image Visual Distinction */
+.fm-grid-item[data-type="directory"] {
+    background: linear-gradient(135deg, #1c2128, #21262d);
+    border: 1px solid rgba(139, 148, 158, 0.3);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.fm-grid-item[data-type="directory"]:hover {
+    background: linear-gradient(135deg, #22272e, #30363d);
+    border-color: #58a6ff;
+    box-shadow: 0 4px 16px rgba(88, 166, 255, 0.15);
+    transform: translateY(-3px);
+}
+
+.fm-grid-item[data-type="directory"] .fm-grid-thumbnail-container,
+.fm-grid-item[data-type="directory"] .fm-grid-icon-container {
+    background: linear-gradient(135deg, #161b22, #1c2128);
+    border: 1px solid rgba(139, 148, 158, 0.2);
+    box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.3);
+}
+
+.fm-grid-item[data-type="file"] {
+    background: #1a1e24;
+    border: 1px solid #30363d;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+}
+
+.fm-grid-item[data-type="file"]:hover {
+    background: #21262d;
+    border-color: rgba(139, 148, 158, 0.6);
+    box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+    transform: translateY(-2px);
+}
+
+.fm-grid-item[data-type="file"] .fm-grid-thumbnail-container {
+    background: #161b22;
+    border: 1px solid rgba(88, 166, 255, 0.1);
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+/* LIST VIEW: Folder vs Image Visual Distinction */
+.fm-item[data-type="directory"] {
+    background: linear-gradient(90deg, #1c2128, #21262d);
+    border-left: 3px solid rgba(255, 193, 7, 0.4);
+}
+
+.fm-item[data-type="directory"]:hover {
+    background: linear-gradient(90deg, #22272e, #30363d);
+    border-left-color: #ffc107;
+}
+
+.fm-item[data-type="directory"] .fm-item-icon {
+    background: rgba(255, 193, 7, 0.1);
+    border-radius: 6px;
+    padding: 4px;
+}
+
+.fm-item[data-type="file"] {
+    background: #1a1e24;
+    border-left: 3px solid rgba(88, 166, 255, 0.2);
+}
+
+.fm-item[data-type="file"]:hover {
+    background: #21262d;
+    border-left-color: rgba(88, 166, 255, 0.5);
+}
+
+.fm-item[data-type="file"] .fm-item-thumbnail-container {
+    border: 1px solid rgba(88, 166, 255, 0.15);
+    border-radius: 4px;
+}
+
+.fm-grid-item.selected {
+    border-color: #58a6ff;
+    background: rgba(88, 166, 255, 0.1);
+}
+
+/* Grid Item Checkbox */
+.fm-grid-item-checkbox {
+    position: absolute;
+    top: 8px;
+    left: 8px;
+    z-index: 2;
+}
+
+.fm-grid-item-checkbox input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    accent-color: #58a6ff;
+}
+
+/* Grid Item Content - IMPROVED SPACING */
+.fm-grid-item-content {
+    position: relative;
     display: flex;
     flex-direction: column;
     align-items: center;
+    padding: 36px 8px 16px 8px; /* Top, Right, Bottom, Left - More space for actions and content */
+    height: 100%;
+    gap: 6px; /* Consistent spacing between elements */
+    justify-content: flex-start;
+}
+
+/* Grid Thumbnail Container */
+.fm-grid-thumbnail-container {
+    position: relative;
+    width: 120px;
+    height: 120px;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #161b22;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    padding: 16px;
 }
 
-.fm-grid-item.folder .folder-icon {
-    font-size: 48px;
-    color: #7d8590;
-    margin-bottom: 8px;
-}
-
-.fm-grid-item.folder .folder-name {
-    font-weight: 500;
-    text-align: center;
-    word-break: break-word;
-    font-size: 14px;
-    color: #e6edf3;
-}
-
-.fm-grid-item.folder .folder-meta {
-    font-size: 12px;
-    color: #7d8590;
-    margin-top: 4px;
-}
-
-.fm-grid-item.image img {
+.fm-grid-thumbnail {
     width: 100%;
     height: 100%;
     object-fit: cover;
+    opacity: 0;
+    transition: opacity 0.3s ease;
 }
 
-.fm-grid-item.file {
+.fm-grid-thumbnail[style*="opacity: 1"] {
+    opacity: 1;
+}
+
+/* Folder Thumbnails */
+.fm-grid-thumbnail.folder-thumb,
+.fm-item-thumbnail.folder-thumb {
+    border-radius: 4px;
+    object-fit: cover;
+}
+
+.fm-grid-fallback-icon {
+    position: absolute;
+    inset: 0;
     display: flex;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
-    padding: 16px;
-    background: #21262d;
+    background: #161b22;
+    color: #6b7280;
+    font-size: 2rem;
 }
 
-.fm-grid-item.file .file-icon {
-    font-size: 48px;
-    color: #7d8590;
-    margin-bottom: 8px;
+.fm-grid-fallback-icon .fa-folder {
+    color: #ffc107;
 }
 
-.fm-grid-item.file .file-name {
+/* Grid Icon Container */
+.fm-grid-icon-container {
+    width: 120px;
+    height: 120px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: #161b22;
+    border-radius: 6px;
+    position: relative;
+}
+
+.fm-grid-icon-container i {
+    font-size: 3rem;
+    color: #6b7280;
+}
+
+.fm-grid-icon-container .fa-folder {
+    color: #ffc107;
+}
+
+.fm-grid-icon-container .fa-image,
+.fm-grid-icon-container .fa-file-image {
+    color: #2ea043;
+}
+
+.fm-grid-icon-container .fa-video,
+.fm-grid-icon-container .fa-file-video {
+    color: #f85149;
+}
+
+/* Grid Featured Badge */
+.fm-grid-featured-badge {
+    position: absolute;
+    top: 4px;
+    right: 4px;
+    width: 24px;
+    height: 24px;
+    background: rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
     font-size: 12px;
-    text-align: center;
-    word-break: break-word;
-    color: #e6edf3;
-    margin-bottom: 4px;
+    z-index: 2;
 }
 
-.fm-grid-item.file .file-meta {
-    font-size: 11px;
-    color: #7d8590;
+.fm-grid-featured-badge.featured {
+    color: #ffc107;
 }
 
+.fm-grid-featured-badge.portrait {
+    color: #adb5bd;
+}
+
+/* Grid Category Indicator */
+.fm-grid-category-indicator {
+    position: absolute;
+    bottom: 4px;
+    right: 4px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #21262d;
+}
+
+/* Grid Item Name */
 .fm-grid-item-name {
-    font-size: 0.85rem !important;
-    color: #e6edf3 !important;
+    font-size: 0.85rem;
+    color: #e6edf3;
     text-align: center;
-    margin-top: 10px; /* Tăng margin để tránh overlap với thumbnail */
-    margin-bottom: 6px; /* Add margin bottom */
-    white-space: normal !important;
-    overflow: visible !important;
-    text-overflow: clip !important;
+    margin-top: 8px;
+    white-space: normal; /* Cho phép wrap để tránh cắt tên dài */
+    overflow: visible; /* Hiển thị đầy đủ tên */
+    text-overflow: clip;
     font-weight: 500;
     word-break: break-word;
-    line-height: 1.2; /* Giảm line-height để compact hơn */
-    min-height: 20px !important;
-    max-height: 40px; /* Limit height để không quá dài */
-    opacity: 1 !important;
-    display: block !important;
-    z-index: 1;
-    position: relative;
-    background: transparent;
-    padding: 0 4px; /* Add horizontal padding */
-}
-
-.fm-grid-item:hover .fm-grid-item-name {
-    opacity: 1;
+    line-height: 1.3;
+    min-height: 22px; /* Đảm bảo có đủ không gian */
 }
 
 /* Grid Item Meta */
 .fm-grid-item-meta {
     font-size: 0.75rem;
-    color: #8b949e !important;
+    color: #8b949e;
     margin-top: 4px;
-    margin-bottom: 6px; /* Add margin bottom */
-    text-align: center;
-    opacity: 1 !important;
-    display: block !important;
-    min-height: 16px; /* Ensure consistent height */
 }
 
 /* Grid Item Category */
 .fm-grid-item-category {
     font-size: 0.7rem;
-    padding: 3px 8px;
-    border-radius: 4px;
-    background: rgba(88, 166, 255, 0.15);
+    padding: 2px 6px;
+    border-radius: 3px;
+    background: rgba(88, 166, 255, 0.1);
     color: #58a6ff;
-    display: flex !important;
+    display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 4px;
-    margin-top: 6px; /* Clear margin top */
+    gap: 3px;
+    margin-top: 6px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%;
-    border: 1px solid rgba(88, 166, 255, 0.3);
-    min-height: 20px; /* Consistent height */
+    max-width: 100%; /* Đảm bảo không vượt quá container */
 }
 
 .fm-grid-item-category i {
@@ -3251,8 +3380,8 @@
     }
     
     .fm-grid-item {
-        min-height: 180px; /* Smaller on mobile */
-        padding: 6px;
+        min-height: 160px;
+        padding: 8px;
     }
     
     .fm-grid-thumbnail-container,
@@ -3266,29 +3395,25 @@
     }
     
     .fm-grid-item-name {
-        font-size: 0.8rem !important;
-        margin-top: 8px;
-        margin-bottom: 4px;
-        min-height: 18px !important;
-        max-height: 36px;
+        font-size: 0.8rem;
     }
     
     .fm-grid-item-meta {
         font-size: 0.7rem;
-        margin-bottom: 4px;
+    }
+    
+    .fm-grid-item-content {
+        padding-top: 28px; /* Giảm padding trên mobile */
+    }
+    
+    .fm-grid-item-name {
+        font-size: 0.8rem;
+        min-height: 20px;
     }
     
     .fm-grid-item-category {
         font-size: 0.65rem;
-        padding: 2px 6px;
-        margin-top: 4px;
-        min-height: 18px;
-    }
-    
-    .fm-grid-category-indicator {
-        right: 30px;
-        width: 10px;
-        height: 10px;
+        padding: 1px 4px;
     }
 }
 
@@ -3300,7 +3425,7 @@
     }
     
     .fm-grid-item {
-        min-height: 160px;
+        min-height: 140px;
         padding: 6px;
     }
     
@@ -3315,822 +3440,77 @@
     }
     
     .fm-grid-item-name {
-        font-size: 0.75rem !important;
-        margin-top: 6px;
-        margin-bottom: 3px;
-        min-height: 16px !important;
-        max-height: 32px;
-    }
-    
-    .fm-grid-category-indicator {
-        right: 25px;
-        width: 8px;
-        height: 8px;
+        font-size: 0.75rem;
+        min-height: 18px;
     }
 }
 
-/* Grid Item Name - FORCE VISIBILITY */
+/* Grid Item Name - REDESIGNED LAYOUT */
 .fm-grid-item-name {
-    font-size: 0.85rem !important;
+    font-size: 0.8rem !important;
+    font-weight: 600 !important;
     color: #e6edf3 !important;
     text-align: center;
-    margin-top: 8px;
-    white-space: normal !important; /* Cho phép wrap để tránh cắt tên dài */
-    overflow: visible !important; /* Hiển thị đầy đủ tên */
+    margin-top: 10px !important;
+    margin-bottom: 6px !important;
+    white-space: normal !important;
+    overflow: visible !important;
     text-overflow: clip !important;
-    font-weight: 500;
     word-break: break-word;
-    line-height: 1.3;
-    min-height: 24px !important; /* Đảm bảo có đủ không gian */
-    opacity: 1 !important; /* Force visible */
-    display: block !important; /* Force display */
+    line-height: 1.2 !important;
+    min-height: 20px !important;
+    max-height: 40px; /* Limit height để tránh quá dài */
+    opacity: 1 !important;
+    display: block !important;
     z-index: 1;
     position: relative;
     background: transparent;
+    padding: 0 4px; /* Padding để text không dính edge */
 }
 
-/* Grid Item Meta */
+/* Grid Item Meta - SEPARATED LAYOUT */
 .fm-grid-item-meta {
-    font-size: 0.75rem;
+    font-size: 0.7rem !important;
     color: #8b949e !important;
-    margin-top: 4px;
+    margin-top: 2px !important;
+    margin-bottom: 6px !important;
     text-align: center;
     opacity: 1 !important;
     display: block !important;
+    line-height: 1.1;
+    min-height: 16px !important;
 }
 
-/* Grid Item Category */
+/* Grid Item Category - BOTTOM POSITIONED */
 .fm-grid-item-category {
-    font-size: 0.7rem;
-    padding: 3px 8px;
-    border-radius: 4px;
+    font-size: 0.65rem !important;
+    padding: 2px 6px;
+    border-radius: 12px;
     background: rgba(88, 166, 255, 0.15);
     color: #58a6ff;
-    display: flex !important;
+    display: inline-flex !important;
     align-items: center;
     justify-content: center;
-    gap: 4px;
-    margin-top: 8px;
+    gap: 3px;
+    margin-top: 4px !important;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    max-width: 100%; /* Đảm bảo không vượt quá container */
+    max-width: calc(100% - 8px);
     border: 1px solid rgba(88, 166, 255, 0.3);
+    font-weight: 500;
 }
 
-/* Grid Item Checkbox */
-.fm-grid-item-checkbox {
+/* Grid Category Indicator - POSITIONED AT TOP-RIGHT */
+.fm-grid-category-indicator {
     position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 5; /* Higher than category indicator */
-}
-
-.fm-grid-item-checkbox input[type="checkbox"] {
+    top: 6px; /* Đặt ở góc trên */
+    right: 6px; /* Góc phải để không overlap với checkbox */
     width: 16px;
     height: 16px;
-    accent-color: #58a6ff;
-}
-
-/* Grid Item Selected State */
-.fm-grid-item.selected {
-    border-color: #58a6ff;
-    background: rgba(88, 166, 255, 0.1);
-}
-
-/* Grid Item Content - Better spacing */
-.fm-grid-item-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding-top: 32px; /* Space for action buttons */
-    padding-bottom: 12px;
-    height: 100%;
-    width: 100%;
-    flex: 1; /* Take remaining space */
-}
-
-/* Grid Thumbnail Container */
-.fm-grid-thumbnail-container {
-    position: relative;
-    width: 120px;
-    height: 120px;
-    border-radius: 6px;
-    overflow: hidden;
-    background: #161b22;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.fm-grid-thumbnail {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-}
-
-.fm-grid-thumbnail[style*="opacity: 1"] {
-    opacity: 1;
-}
-
-/* Folder Thumbnails */
-.fm-grid-thumbnail.folder-thumb,
-.fm-item-thumbnail.folder-thumb {
-    border-radius: 4px;
-    object-fit: cover;
-}
-
-.fm-grid-fallback-icon {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #161b22;
-    color: #6b7280;
-    font-size: 2rem;
-}
-
-.fm-grid-fallback-icon .fa-folder {
-    color: #ffc107;
-}
-
-/* Grid Icon Container */
-.fm-grid-icon-container {
-    width: 120px;
-    height: 120px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #161b22;
-    border-radius: 6px;
-    position: relative;
-}
-
-.fm-grid-icon-container i {
-    font-size: 3rem;
-    color: #6b7280;
-}
-
-.fm-grid-icon-container .fa-folder {
-    color: #ffc107;
-}
-
-.fm-grid-icon-container .fa-image,
-.fm-grid-icon-container .fa-file-image {
-    color: #2ea043;
-}
-
-.fm-grid-icon-container .fa-video,
-.fm-grid-icon-container .fa-file-video {
-    color: #f85149;
-}
-
-/* Grid Featured Badge */
-.fm-grid-featured-badge {
-    position: absolute;
-    top: 4px;
-    right: 4px;
-    width: 24px;
-    height: 24px;
-    background: rgba(0, 0, 0, 0.7);
     border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 12px;
-    z-index: 2;
-}
-
-.fm-grid-featured-badge.featured {
-    color: #ffc107;
-}
-
-.fm-grid-featured-badge.portrait {
-    color: #adb5bd;
-}
-
-/* Grid Category Indicator - MOVED TO TOP-RIGHT */
-.fm-grid-category-indicator {
-    position: absolute;
-    top: 8px; /* Top position */
-    right: 40px; /* Right side, leaving space for action buttons */
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid rgba(33, 38, 45, 0.8);
-    z-index: 4; /* Higher than thumbnails but lower than checkbox */
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    backdrop-filter: blur(2px);
-}
-
-/* Responsive adjustments */
-@media (max-width: 1200px) {
-    .fm-grid-item {
-        min-height: 200px; /* Adjust for smaller screens */
-    }
-    
-    .fm-grid-category-indicator {
-        right: 35px; /* Adjust for smaller action buttons */
-    }
-}
-
-@media (max-width: 768px) {
-    .fm-grid-item {
-        min-height: 180px; /* Smaller on mobile */
-        padding: 6px;
-    }
-    
-    .fm-grid-item-content {
-        padding-top: 28px;
-        padding-bottom: 8px;
-    }
-    
-    .fm-grid-item-name {
-        font-size: 0.8rem !important;
-        margin-top: 8px;
-        margin-bottom: 4px;
-        min-height: 18px !important;
-        max-height: 36px;
-    }
-    
-    .fm-grid-item-meta {
-        font-size: 0.7rem;
-        margin-bottom: 4px;
-    }
-    
-    .fm-grid-item-category {
-        font-size: 0.65rem;
-        padding: 2px 6px;
-        margin-top: 4px;
-        min-height: 18px;
-    }
-    
-    .fm-grid-category-indicator {
-        right: 30px;
-        width: 10px;
-        height: 10px;
-    }
-}
-
-@media (max-width: 480px) {
-    .fm-grid-item {
-        min-height: 160px;
-        padding: 6px;
-    }
-    
-    .fm-grid-item-content {
-        padding-top: 24px;
-        padding-bottom: 6px;
-    }
-    
-    .fm-grid-item-name {
-        font-size: 0.75rem !important;
-        margin-top: 6px;
-        margin-bottom: 3px;
-        min-height: 16px !important;
-        max-height: 32px;
-    }
-    
-    .fm-grid-category-indicator {
-        right: 25px;
-        width: 8px;
-        height: 8px;
-    }
-}
-
-/* ===== IMPROVED GRID VIEW - JET APP INSPIRED ===== */
-
-/* Grid Container - Enhanced responsive design */
-.fm-grid-container {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 16px;
-    padding: 16px 0;
-    align-items: start;
-}
-
-/* Responsive grid adjustments */
-@media (max-width: 1200px) {
-    .fm-grid-container {
-        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
-        gap: 14px;
-    }
-}
-
-@media (max-width: 768px) {
-    .fm-grid-container {
-        grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-        gap: 12px;
-        padding: 12px 0;
-    }
-}
-
-@media (max-width: 480px) {
-    .fm-grid-container {
-        grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
-        gap: 10px;
-    }
-}
-
-/* Grid Item - Modern card design */
-.fm-grid-item {
-    background: #30363d;
-    border: 1px solid #484f58;
-    border-radius: 10px;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    position: relative;
-    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-    cursor: pointer;
-    min-height: 200px;
-    height: auto;
-    overflow: hidden;
-}
-
-.fm-grid-item:hover {
-    transform: translateY(-3px);
-    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.3);
-    border-color: #6e7681;
-    background: #373e47;
-}
-
-.fm-grid-item.selected {
-    transform: translateY(-4px);
-    border-color: #58a6ff;
-    box-shadow: 0 0 0 2px rgba(88, 166, 255, 0.3), 0 8px 30px rgba(0, 0, 0, 0.4);
-    background: #373e47;
-}
-
-/* Grid Item Content - Better spacing */
-.fm-grid-item-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    width: 100%;
-    height: 100%;
-    padding-top: 28px; /* Space for action buttons */
-}
-
-/* Action Buttons - Top-right positioning */
-.fm-grid-item-actions {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    display: flex;
-    gap: 4px;
-    z-index: 5;
-    opacity: 0;
-    transform: scale(0.8);
-    transition: all 0.2s ease;
-}
-
-.fm-grid-item:hover .fm-grid-item-actions {
-    opacity: 1;
-    transform: scale(1);
-}
-
-.fm-grid-item-actions .action-btn {
-    width: 24px;
-    height: 24px;
-    border-radius: 4px;
-    background: rgba(0, 0, 0, 0.8);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: #fff;
-    font-size: 0.7rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    backdrop-filter: blur(4px);
-}
-
-.fm-grid-item-actions .action-btn:hover {
-    background: rgba(88, 166, 255, 0.8);
-    border-color: #58a6ff;
-    transform: scale(1.1);
-}
-
-/* Checkbox - Top-left positioning */
-.fm-grid-item-checkbox {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    z-index: 6;
-    opacity: 0;
-    transform: scale(0.8);
-    transition: all 0.2s ease;
-}
-
-.fm-grid-item:hover .fm-grid-item-checkbox,
-.fm-grid-item-checkbox input:checked {
-    opacity: 1;
-    transform: scale(1);
-}
-
-.fm-grid-item-checkbox input[type="checkbox"] {
-    width: 18px;
-    height: 18px;
-    border-radius: 3px;
-    border: 2px solid rgba(255, 255, 255, 0.7);
-    background: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    cursor: pointer;
-    transition: all 0.2s ease;
-}
-
-.fm-grid-item-checkbox input[type="checkbox"]:checked {
-    background: #58a6ff;
-    border-color: #58a6ff;
-}
-
-/* Thumbnail Container - Enhanced styling */
-.fm-grid-thumbnail-container {
-    position: relative;
-    width: 100%;
-    max-width: 150px;
-    height: 100px;
-    margin-bottom: 12px;
-    border-radius: 8px;
-    overflow: hidden;
-    background: #21262d;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-}
-
-.fm-grid-thumbnail {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 0.2s ease;
-    border-radius: 8px;
-}
-
-.fm-grid-item:hover .fm-grid-thumbnail {
-    transform: scale(1.05);
-}
-
-/* Fallback Icon Container */
-.fm-grid-icon-container {
-    position: relative;
-    width: 100%;
-    max-width: 150px;
-    height: 100px;
-    margin-bottom: 12px;
-    border-radius: 8px;
-    background: #21262d;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 2px dashed #484f58;
-    transition: all 0.2s ease;
-}
-
-.fm-grid-item:hover .fm-grid-icon-container {
-    border-color: #6e7681;
-    background: #262c36;
-}
-
-.fm-grid-icon-container i {
-    font-size: 2.5rem;
-    color: #58a6ff;
-    transition: all 0.2s ease;
-}
-
-.fm-grid-item:hover .fm-grid-icon-container i {
-    color: #79c0ff;
-    transform: scale(1.1);
-}
-
-/* Folder Icon - Special styling */
-.fm-grid-icon-container i.fa-folder {
-    color: #f9c513;
-}
-
-.fm-grid-item:hover .fm-grid-icon-container i.fa-folder {
-    color: #ffd700;
-}
-
-/* File Names - Always visible and styled */
-.fm-grid-item-name {
-    font-size: 0.85rem;
-    color: #e6edf3;
-    text-align: center;
-    font-weight: 500;
-    word-break: break-word;
-    line-height: 1.3;
-    max-height: 2.6em;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    margin-bottom: 6px;
-    width: 100%;
-}
-
-/* File Meta Info - Always visible */
-.fm-grid-item-meta {
-    font-size: 0.75rem;
-    color: #8b949e;
-    text-align: center;
-    margin-top: auto;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    width: 100%;
-}
-
-/* Category Indicator - Top-right, non-overlapping */
-.fm-grid-category-indicator {
-    position: absolute;
-    top: 8px;
-    right: 44px; /* Leave space for action buttons */
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    border: 2px solid rgba(255, 255, 255, 0.8);
-    z-index: 4;
-    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
-    backdrop-filter: blur(2px);
-}
-
-/* Folder vs File Distinction */
-.fm-grid-item[data-type="directory"] {
-    border-left: 3px solid #f9c513;
-}
-
-.fm-grid-item[data-type="directory"]:hover {
-    border-left-color: #ffd700;
-}
-
-.fm-grid-item[data-type="file"] {
-    border-left: 3px solid #58a6ff;
-}
-
-.fm-grid-item[data-type="file"]:hover {
-    border-left-color: #79c0ff;
-}
-
-/* Special Featured Badge */
-.fm-featured-badge {
-    position: absolute;
-    top: -1px;
-    left: -1px;
-    background: linear-gradient(135deg, #f85149, #ff6b6b);
-    color: white;
-    font-size: 0.65rem;
-    padding: 2px 6px;
-    border-radius: 0 0 8px 0;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    z-index: 3;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
-}
-
-/* Loading state */
-.fm-grid-item.loading {
-    opacity: 0.6;
-    pointer-events: none;
-}
-
-.fm-grid-item.loading::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 24px;
-    height: 24px;
-    margin: -12px 0 0 -12px;
-    border: 2px solid #484f58;
-    border-top: 2px solid #58a6ff;
-    border-radius: 50%;
-    animation: spin 1s linear infinite;
-    z-index: 10;
-}
-
-@keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-}
-
-/* ===== VIEW TOGGLE BUTTONS ===== */
-.fm-view-toggle {
-    display: flex;
-    background: #21262d;
-    border-radius: 6px;
-    padding: 2px;
-    gap: 2px;
-    border: 1px solid #30363d;
-}
-
-.fm-view-toggle-btn {
-    padding: 8px 12px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: #8b949e;
-    cursor: pointer;
-    transition: all 0.2s ease;
-    font-size: 0.9rem;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-}
-
-.fm-view-toggle-btn:hover {
-    color: #e6edf3;
-    background: #30363d;
-}
-
-.fm-view-toggle-btn.active {
-    background: #58a6ff;
-    color: #ffffff;
-    box-shadow: 0 2px 4px rgba(88, 166, 255, 0.3);
-}
-
-/* ===== ENHANCED NAVIGATION ===== */
-
-/* Navigation Bar */
-.fm-navigation {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    background: #21262d;
-    border-radius: 8px;
-    margin-bottom: 16px;
-    border: 1px solid #30363d;
-}
-
-/* Back Button */
-.fm-back-button {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 12px;
-    background: #30363d;
-    border: 1px solid #484f58;
-    border-radius: 6px;
-    color: #e6edf3;
-    text-decoration: none;
-    font-size: 0.9rem;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    min-width: fit-content;
-    flex-shrink: 0;
-}
-
-.fm-back-button:hover {
-    background: #373e47;
-    border-color: #6e7681;
-    color: #58a6ff;
-    transform: translateX(-2px);
-}
-
-.fm-back-button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-}
-
-.fm-back-button:disabled:hover {
-    background: #30363d;
-    border-color: #484f58;
-    color: #e6edf3;
-    transform: none;
-}
-
-.fm-back-button i {
-    font-size: 0.8rem;
-    transition: transform 0.2s ease;
-}
-
-.fm-back-button:hover:not(:disabled) i {
-    transform: translateX(-2px);
-}
-
-/* Enhanced Breadcrumb */
-.fm-breadcrumb {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    flex: 1;
-    overflow: hidden;
-    padding: 8px 12px;
-    background: #161b22;
-    border-radius: 6px;
-    border: 1px solid #30363d;
-    min-height: 36px;
-}
-
-.breadcrumb-item {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 8px;
-    border-radius: 4px;
-    color: #8b949e;
-    text-decoration: none;
-    font-size: 0.85rem;
-    transition: all 0.2s ease;
-    cursor: pointer;
-    white-space: nowrap;
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.breadcrumb-item:hover {
-    background: #30363d;
-    color: #58a6ff;
-    transform: translateY(-1px);
-}
-
-.breadcrumb-item:last-child {
-    color: #e6edf3;
-    font-weight: 500;
-    cursor: default;
-    background: #30363d;
-}
-
-.breadcrumb-item:last-child:hover {
-    transform: none;
-    color: #e6edf3;
-}
-
-.breadcrumb-item i {
-    font-size: 0.8rem;
-    flex-shrink: 0;
-}
-
-.breadcrumb-separator {
-    color: #484f58;
-    font-size: 0.7rem;
-    margin: 0 2px;
-    flex-shrink: 0;
-}
-
-/* Home breadcrumb special styling */
-.breadcrumb-item[data-path=""] i {
-    color: #f9c513;
-}
-
-.breadcrumb-item[data-path=""]:hover i {
-    color: #ffd700;
-}
-
-/* Mobile Navigation */
-@media (max-width: 768px) {
-    .fm-navigation {
-        padding: 8px 12px;
-        gap: 8px;
-    }
-    
-    .fm-back-button {
-        padding: 6px 10px;
-        font-size: 0.8rem;
-    }
-    
-    .fm-breadcrumb {
-        padding: 6px 10px;
-        overflow-x: auto;
-        scrollbar-width: none;
-        -ms-overflow-style: none;
-    }
-    
-    .fm-breadcrumb::-webkit-scrollbar {
-        display: none;
-    }
-    
-    .breadcrumb-item {
-        font-size: 0.75rem;
-        padding: 3px 6px;
-        max-width: 100px;
-    }
-}
-
-@media (max-width: 480px) {
-    .fm-navigation {
-        flex-direction: column;
-        gap: 8px;
-        align-items: stretch;
-    }
-    
-    .fm-back-button {
-        align-self: flex-start;
-    }
-    
-    .fm-breadcrumb {
-        width: 100%;
-    }
+    border: 2px solid rgba(33, 38, 45, 0.9);
+    z-index: 4; /* Cao nhất để hiển thị trên mọi element */
+    box-shadow: 0 2px 8px rgba(0,0,0,0.5); /* Shadow để nổi bật trên thumbnail */
+    backdrop-filter: blur(3px); /* Blur background để dễ nhìn */
 }

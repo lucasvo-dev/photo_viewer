@@ -566,77 +566,120 @@ class AdminFileManager {
 
     renderGridItem(item) {
         const isDirectory = item.type === 'directory';
-        const mainAction = isDirectory ? 'open' : 'preview';
+        const size = isDirectory ? '' : this.formatFileSize(item.size);
+        const modified = new Date(item.modified * 1000).toLocaleString('vi-VN');
         
-        // Generate icon content based on type
+        // File count for directories
+        const fileCount = isDirectory && item.file_count !== undefined ? 
+            `${item.file_count} files` : '';
+
+        // Category info for items
+        let categoryInfo = '';
+        if (isDirectory && item.category) {
+            categoryInfo = `<span class="fm-grid-item-category">
+                <i class="${item.category.icon_class || 'fas fa-tag'}"></i>
+                ${item.category.category_name}
+            </span>`;
+        }
+
+        // Generate icon content - use thumbnail for images, icon for others
         let iconContent;
-        if (!isDirectory && item.thumbnail) {
-            // File with thumbnail
+        if (!isDirectory && item.is_image) {
+            // Use 150px thumbnail for grid view
+            const fullPath = this.currentPath ? `${this.currentSource}/${this.currentPath}/${item.name}` : `${this.currentSource}/${item.name}`;
+            
+            // Add featured badge if image is featured
+            const featuredBadge = (item.is_featured && item.featured_type) ? `
+                <span class="fm-grid-featured-badge ${item.featured_type}">
+                    ${item.featured_type === 'portrait' ? '👤' : '⭐'}
+                </span>
+            ` : '';
+            
             iconContent = `
                 <div class="fm-grid-thumbnail-container">
                     <img class="fm-grid-thumbnail" 
-                         src="/api.php?action=get_thumbnail&path=${encodeURIComponent(item.thumbnail)}&size=150" 
+                         src="/api.php?action=get_thumbnail&path=${encodeURIComponent(fullPath)}&size=150" 
                          alt="${item.name}"
                          onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
-                         onload="this.style.opacity='1';">
+                         onload="this.style.opacity='1';"
+                         onmouseenter="fileManager.preload750pxOnHover('${item.name}', '${fullPath}');">
                     <div class="fm-grid-fallback-icon" style="display: none;">
-                        <i class="${this.getFileIcon(item.extension)}"></i>
+                        <i class="fas fa-image"></i>
                     </div>
+                    ${featuredBadge}
                 </div>
             `;
         } else {
-            // Directory or file without thumbnail - show icon only
+            // Use icon for directories and non-image files
             const icon = isDirectory ? 'fas fa-folder' : this.getFileIcon(item.extension);
-            iconContent = `
-                <div class="fm-grid-icon-container">
-                    <i class="${icon}"></i>
-                </div>
-            `;
+            
+            // Check if directory has thumbnail (first image)
+            if (isDirectory && item.thumbnail) {
+                iconContent = `
+                    <div class="fm-grid-thumbnail-container">
+                        <img class="fm-grid-thumbnail folder-thumb" 
+                             src="/api.php?action=get_thumbnail&path=${encodeURIComponent(item.thumbnail)}&size=150" 
+                             alt="${item.name}"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                             onload="this.style.opacity='1';">
+                        <div class="fm-grid-fallback-icon" style="display: none;">
+                            <i class="fas fa-folder"></i>
+                        </div>
+                    </div>
+                `;
+            } else {
+                iconContent = `
+                    <div class="fm-grid-icon-container">
+                        <i class="${icon}"></i>
+                    </div>
+                `;
+            }
         }
 
-        // Category indicator
-        const categoryIndicator = item.category ? 
-            `<span class="fm-grid-category-indicator" style="background: ${item.category.color_code}"></span>` : '';
-
-        // Featured badge
-        const featuredBadge = item.featured_type ? 
-            `<div class="fm-featured-badge">${item.featured_type === 'featured' ? 'HOT' : 'POR'}</div>` : '';
-
-        // File info (count for directories, size for files)
-        const fileInfo = isDirectory ? 
-            (item.file_count !== undefined ? `${item.file_count} files` : 'Folder') :
-            (item.size ? this.formatFileSize(item.size) : 'File');
-
-        // Action buttons
-        const actionButtons = `
-            <div class="fm-grid-item-actions">
-                ${isDirectory ? `
-                    <button class="action-btn" title="Set Category" onclick="fileManager.showCategoryDropdown(event, '${item.path}')">
-                        <i class="fas fa-tag"></i>
-                    </button>
-                ` : `
-                    <button class="action-btn" title="Set Featured" onclick="fileManager.toggleFeaturedDropdown(this, '${item.path}')">
-                        <i class="fas fa-star"></i>
-                    </button>
-                `}
-                <button class="action-btn" title="Delete" onclick="fileManager.deleteItem('${item.path}')">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        `;
+        // Determine the main action for the entire item
+        const mainAction = isDirectory ? 'open' : (item.is_image ? 'preview' : 'view');
 
         return `
             <div class="fm-grid-item" data-path="${item.path}" data-type="${item.type}" data-action="${mainAction}">
                 <div class="fm-grid-item-checkbox">
                     <input type="checkbox" class="item-checkbox">
                 </div>
-                ${actionButtons}
-                ${categoryIndicator}
-                ${featuredBadge}
                 <div class="fm-grid-item-content">
                     ${iconContent}
                     <div class="fm-grid-item-name" title="${item.name}">${item.name}</div>
-                    <div class="fm-grid-item-meta">${fileInfo}</div>
+                    <div class="fm-grid-item-meta">
+                        ${fileCount && isDirectory ? fileCount : (size || '')}
+                    </div>
+                    ${categoryInfo}
+                </div>
+                ${isDirectory && item.category ? `<span class="fm-grid-category-indicator" style="background: ${item.category.color_code}" title="${item.category.category_name}"></span>` : ''}
+                <div class="fm-grid-item-actions">
+                    <button class="fm-grid-action-btn" data-action="rename" title="Đổi tên">
+                        <i class="fas fa-edit"></i>
+                    </button>
+                    ${isDirectory ? `
+                        <button class="fm-grid-action-btn" onclick="fileManager.showCategoryDropdown(event, '${item.path}')" title="Set Category">
+                            <i class="fas fa-tag"></i>
+                        </button>
+                    ` : ''}
+                    <button class="fm-grid-action-btn danger" data-action="delete" title="Xóa">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                    ${item.is_image ? `
+                        <div class="fm-grid-featured-dropdown">
+                            <button class="fm-grid-action-btn featured-status-btn ${item.is_featured ? 'is-featured' : ''}" data-action="toggle-featured-dropdown" title="Set Featured Status">
+                                ${item.is_featured 
+                                    ? (item.featured_type === 'portrait' ? '<i class="fas fa-user-circle"></i>' : '<i class="fas fa-star"></i>') 
+                                    : '<i class="far fa-star"></i>'
+                                }
+                            </button>
+                            <div class="dropdown-content">
+                                <a href="#" data-action="set-featured" data-type="none"><i class="fas fa-ban"></i> Bỏ chọn</a>
+                                <a href="#" data-action="set-featured" data-type="featured"><i class="fas fa-star"></i> Featured</a>
+                                <a href="#" data-action="set-featured" data-type="portrait"><i class="fas fa-user-circle"></i> Portrait</a>
+                            </div>
+                        </div>
+                    ` : ''}
                 </div>
             </div>
         `;
@@ -1976,47 +2019,7 @@ class AdminFileManager {
             return;
         }
 
-        const container = breadcrumb.parentElement;
-        
-        // Check if navigation container exists, if not create it
-        let navigationContainer = container.querySelector('.fm-navigation');
-        if (!navigationContainer) {
-            navigationContainer = document.createElement('div');
-            navigationContainer.className = 'fm-navigation';
-            container.insertBefore(navigationContainer, breadcrumb);
-            
-            // Move breadcrumb inside navigation
-            navigationContainer.appendChild(breadcrumb);
-        }
-
-        // Create or update back button
-        let backButton = navigationContainer.querySelector('.fm-back-button');
-        if (!backButton) {
-            backButton = document.createElement('button');
-            backButton.className = 'fm-back-button';
-            backButton.innerHTML = '<i class="fas fa-arrow-left"></i> Back';
-            navigationContainer.insertBefore(backButton, breadcrumb);
-        }
-
-        // Update back button state
-        const canGoBack = this.currentPath && this.currentPath !== '';
-        backButton.disabled = !canGoBack;
-        
-        // Add back button click handler
-        backButton.onclick = () => {
-            if (canGoBack) {
-                const pathParts = this.currentPath.split('/').filter(p => p);
-                if (pathParts.length > 0) {
-                    pathParts.pop();
-                    const newPath = pathParts.join('/');
-                    this.navigateToLocation(this.currentSource, newPath);
-                }
-            }
-        };
-
-        // Update breadcrumb styling and content
-        breadcrumb.style.display = 'flex';
-        breadcrumb.className = 'fm-breadcrumb';
+        breadcrumb.style.display = 'block';
         
         const parts = this.currentPath.split('/').filter(p => p);
         let cumulativePath = '';
