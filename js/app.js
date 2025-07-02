@@ -396,6 +396,9 @@ const escapePasswordPromptListener = (overlayId) => { ... }; // Adjusted
 async function loadSubItems(folderPath) {
     console.log(`[app.js] loadSubItems called for path: ${folderPath}`);
     
+    // Explicitly set to false when loading a folder's content
+    setIsHomepageMode(false);
+
     // Prevent conflicts with logo click navigation
     if (isLogoClickInProgress) {
         console.log('[app.js] loadSubItems: Logo click in progress, aborting folder navigation');
